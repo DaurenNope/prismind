@@ -1,0 +1,25 @@
+{
+  "supabaseUrl": "https://drnlmwmigwpfpifeodmm.supabase.co",
+  "supabaseKey": "sb_secret_SSm7zirMO2yRB4q6TArgMw_95NBTssD",
+  "tables": {
+    "posts": {
+      "schema": "public",
+      "columns": [
+        "id",
+        "title", 
+        "content",
+        "platform",
+        "author",
+        "author_handle",
+        "url",
+        "created_at",
+        "summary",
+        "value_score",
+        "smart_tags",
+        "ai_summary",
+        "folder_category",
+        "category"
+      ]
+    }
+  }
+} 
