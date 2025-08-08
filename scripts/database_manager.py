@@ -168,12 +168,138 @@ class DatabaseManager:
                 post_data.get('saved_at')
             ))
             conn.commit()
-    
-    def delete_post(self, post_id):
-        """Soft delete a post (mark as deleted)"""
+
+    # --------------------
+    # Simple CRUD API used by tests
+    # --------------------
+    def _row_to_dict(self, row: sqlite3.Row) -> dict:
+        return {k: row[k] for k in row.keys()}
+
+    def insert_post(self, post_data: Dict[str, Any]) -> int:
+        """Insert a post and return its internal numeric id."""
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute("UPDATE posts SET is_deleted = 1 WHERE post_id = ?", (post_id,))
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO posts (
+                    post_id, platform, author, content, created_at, url,
+                    value_score, engagement_score, sentiment, folder_category,
+                    ai_summary, key_concepts, is_deleted
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    post_data.get('post_id'),
+                    post_data.get('platform'),
+                    post_data.get('author'),
+                    post_data.get('content'),
+                    post_data.get('created_at'),
+                    post_data.get('url'),
+                    post_data.get('value_score'),
+                    post_data.get('engagement_score'),
+                    post_data.get('sentiment'),
+                    post_data.get('folder_category'),
+                    post_data.get('ai_summary'),
+                    post_data.get('key_concepts'),
+                    post_data.get('is_deleted', 0),
+                ),
+            )
             conn.commit()
+            return int(cursor.lastrowid)
+
+    def get_posts(self, limit: int | None = None) -> List[Dict[str, Any]]:
+        """Return non-deleted posts as list of dicts, optionally limited."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            sql = "SELECT * FROM posts WHERE is_deleted = 0 ORDER BY created_timestamp DESC"
+            if limit is not None:
+                sql += " LIMIT ?"
+                rows = conn.execute(sql, (limit,)).fetchall()
+            else:
+                rows = conn.execute(sql).fetchall()
+            return [self._row_to_dict(r) for r in rows]
+
+    def get_post_by_id(self, row_id: int) -> Dict[str, Any] | None:
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT * FROM posts WHERE id = ?", (row_id,)).fetchone()
+            return self._row_to_dict(row) if row else None
+
+    def update_post(self, identifier: int | str, updates: Dict[str, Any]) -> bool:
+        """Update fields for a post by internal numeric id or external post_id.
+
+        Returns True when an update statement is executed (even if no rows changed).
+        """
+        if not updates:
+            return True
+        set_clauses: list[str] = []
+        values: list[Any] = []
+        for key, value in updates.items():
+            set_clauses.append(f"{key} = ?")
+            values.append(value)
+        where_sql = "id = ?" if isinstance(identifier, int) else "post_id = ?"
+        values.append(identifier)
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(f"UPDATE posts SET {', '.join(set_clauses)} WHERE {where_sql}", values)
+            conn.commit()
+        return True
+    
+    def delete_post(self, identifier):
+        """Soft delete a post (mark as deleted).
+        Accepts either numeric internal id or string external post_id.
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            if isinstance(identifier, int):
+                conn.execute("UPDATE posts SET is_deleted = 1 WHERE id = ?", (identifier,))
+            else:
+                conn.execute("UPDATE posts SET is_deleted = 1 WHERE post_id = ?", (identifier,))
+            conn.commit()
+
+    def search_posts(self, query: str) -> List[Dict[str, Any]]:
+        """Search posts by content, author, or AI summary."""
+        like = f"%{query}%"
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT * FROM posts
+                WHERE is_deleted = 0 AND (
+                    content LIKE ? OR author LIKE ? OR ai_summary LIKE ?
+                )
+                ORDER BY created_timestamp DESC
+                """,
+                (like, like, like),
+            ).fetchall()
+            return [self._row_to_dict(r) for r in rows]
+
+    def get_posts_by_category(self, category: str) -> List[Dict[str, Any]]:
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT * FROM posts WHERE is_deleted = 0 AND folder_category = ? ORDER BY created_timestamp DESC",
+                (category,),
+            ).fetchall()
+            return [self._row_to_dict(r) for r in rows]
+
+    def get_top_posts(self, limit: int = 10) -> List[Dict[str, Any]]:
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT * FROM posts WHERE is_deleted = 0 ORDER BY value_score DESC, created_timestamp DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+            return [self._row_to_dict(r) for r in rows]
+
+    def get_database_stats(self) -> Dict[str, Any]:
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            total_posts = cursor.execute("SELECT COUNT(*) FROM posts").fetchone()[0]
+            active_posts = cursor.execute("SELECT COUNT(*) FROM posts WHERE is_deleted = 0").fetchone()[0]
+            deleted_posts = total_posts - active_posts
+            return {
+                'total_posts': total_posts,
+                'active_posts': active_posts,
+                'deleted_posts': deleted_posts,
+            }
     
     def get_all_posts(self, include_deleted=False):
         """Get all posts from database"""
@@ -513,8 +639,8 @@ class DatabaseManager:
             print(f"Error updating post content: {e}")
             return False
     
-    def update_post_smart_fields(self, post_id: str, smart_title: str = None, smart_tags: str = None):
-        """Update smart_title and smart_tags fields specifically"""
+    def update_post_smart_fields(self, post_id: str, **kwargs):
+        """Update any post fields with AI analysis results"""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
@@ -522,19 +648,40 @@ class DatabaseManager:
                 update_fields = []
                 update_values = []
                 
-                if smart_title is not None:
-                    update_fields.append("smart_title = ?")
-                    update_values.append(smart_title)
+                # Handle all possible AI analysis fields
+                field_mappings = {
+                    'category': 'category',
+                    'value_score': 'value_score',
+                    'sentiment': 'sentiment',
+                    'ai_summary': 'ai_summary',
+                    'key_concepts': 'key_concepts',
+                    'smart_tags': 'smart_tags',
+                    'intelligence_analysis': 'intelligence_analysis',
+                    'actionable_insights': 'actionable_insights',
+                    'smart_title': 'smart_title',
+                    'summary': 'summary',
+                    'summary_preview': 'summary_preview',
+                    'full_summary': 'full_summary',
+                    'main_topic': 'main_topic',
+                    'value_proposition': 'value_proposition',
+                    'summary_key_points': 'summary_key_points',
+                    'summary_tags': 'summary_tags',
+                    'summary_confidence': 'summary_confidence',
+                    'use_cases': 'use_cases'
+                }
                 
-                if smart_tags is not None:
-                    update_fields.append("smart_tags = ?")
-                    update_values.append(smart_tags)
+                for key, value in kwargs.items():
+                    if key in field_mappings and value is not None:
+                        db_field = field_mappings[key]
+                        update_fields.append(f"{db_field} = ?")
+                        update_values.append(value)
                 
                 if update_fields:
                     update_values.append(post_id)
                     query = f"UPDATE posts SET {', '.join(update_fields)} WHERE post_id = ?"
                     cursor.execute(query, update_values)
                     conn.commit()
+                    print(f"✅ Updated post {post_id} with {len(update_fields)} fields")
                     return True
                 
                 return False

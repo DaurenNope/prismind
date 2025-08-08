@@ -46,7 +46,17 @@ class IntelligentContentAnalyzer:
     
     def _init_ai_services(self):
         """Initialize available AI services in order of preference"""
-        
+
+        # 0. Ollama (Local Qwen) — prefer when available for local-first analysis
+        ollama_url = os.getenv('OLLAMA_URL')
+        if ollama_url:
+            self.ai_services.append({
+                'name': 'ollama',
+                'url': ollama_url.rstrip('/'),
+                'model': os.getenv('OLLAMA_MODEL', 'qwen2.5:7b')
+            })
+            print("✅ Ollama (Qwen) initialized")
+
         # 1. Mistral AI (Primary - best for analysis)
         mistral_key = os.getenv('MISTRAL_API_KEY')
         if mistral_key:
@@ -139,7 +149,9 @@ class IntelligentContentAnalyzer:
         # Try AI services in order
         for service in self.ai_services:
             try:
-                if service['name'] == 'mistral':
+                if service['name'] == 'ollama':
+                    return self._analyze_with_ollama(prompt, sentiment_scores, service)
+                elif service['name'] == 'mistral':
                     return self._analyze_with_mistral(prompt, sentiment_scores, service)
                 elif service['name'] == 'gemini':
                     return self._analyze_with_gemini(prompt, sentiment_scores, service)
@@ -230,6 +242,39 @@ class IntelligentContentAnalyzer:
             return analysis
         else:
             raise Exception(f"Mistral API error: {response.status_code}")
+
+    def _analyze_with_ollama(self, prompt: str, sentiment_scores: Dict, service: Dict) -> Dict[str, Any]:
+        """Analyze content using local Ollama (Qwen)"""
+        url = f"{service['url']}/api/chat"
+        payload = {
+            "model": service['model'],
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are an expert content analyst. Respond with JSON only matching the requested schema."
+                },
+                {"role": "user", "content": prompt},
+            ],
+            "stream": False,
+            "format": "json",
+            "options": {"temperature": 0.1}
+        }
+
+        resp = requests.post(url, json=payload, timeout=60)
+        if resp.status_code != 200:
+            raise Exception(f"Ollama API error: {resp.status_code}")
+        data = resp.json()
+        content = data.get('message', {}).get('content', '').strip()
+        # Clean JSON fences if any
+        if content.startswith('```json'):
+            content = content[7:-3]
+        elif content.startswith('```'):
+            content = content[3:-3]
+
+        analysis = json.loads(content)
+        analysis['sentiment_scores'] = sentiment_scores
+        analysis['ai_service'] = f"ollama:{service['model']}"
+        return analysis
     
     def _analyze_with_gemini(self, prompt: str, sentiment_scores: Dict, service: Dict) -> Dict[str, Any]:
         """Analyze content using Google Gemini"""

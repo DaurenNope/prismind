@@ -4,6 +4,7 @@ Multi-Platform Bookmark Collection - Extract from Twitter, Reddit, and Threads
 """
 
 import sys
+import json
 import os
 import asyncio
 from pathlib import Path
@@ -21,6 +22,123 @@ from core.extraction.twitter_extractor_playwright import TwitterExtractorPlaywri
 from core.extraction.reddit_extractor import RedditExtractor
 from core.extraction.threads_extractor import ThreadsExtractor
 from scripts.database_manager import DatabaseManager
+from core.analysis.intelligent_content_analyzer import IntelligentContentAnalyzer
+from core.analysis.local_media_analyzer import LocalMediaAnalyzer
+from supabase_manager import SupabaseManager
+
+def analyze_and_store_post(db_manager, post_dict):
+    """Analyze post with AI and store with analysis results"""
+    try:
+        # Convert dict to SocialPost for AI analysis
+        from core.extraction.social_extractor_base import SocialPost
+        from datetime import datetime
+        
+        # Parse created_at
+        created_at = post_dict.get('created_at', '')
+        if isinstance(created_at, str):
+            try:
+                created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+            except:
+                created_at = datetime.now()
+        elif not isinstance(created_at, datetime):
+            created_at = datetime.now()
+        
+        # Parse saved_at
+        saved_at = post_dict.get('saved_at', '')
+        if isinstance(saved_at, str) and saved_at:
+            try:
+                saved_at = datetime.fromisoformat(saved_at.replace('Z', '+00:00'))
+            except:
+                saved_at = None
+        elif not isinstance(saved_at, datetime):
+            saved_at = None
+        
+        post = SocialPost(
+            platform=post_dict['platform'],
+            post_id=post_dict['post_id'],
+            author=post_dict.get('author', ''),
+            author_handle=post_dict.get('author_handle', post_dict.get('author', '')),
+            content=post_dict.get('content', ''),
+            created_at=created_at,
+            url=post_dict.get('url', ''),
+            post_type=post_dict.get('post_type', 'post'),
+            media_urls=post_dict.get('media_urls', []),
+            hashtags=post_dict.get('hashtags', []),
+            mentions=post_dict.get('mentions', []),
+            engagement=post_dict.get('engagement', {}),
+            is_saved=post_dict.get('is_saved', True),
+            saved_at=saved_at,
+            folder_category=post_dict.get('folder_category', ''),
+            analysis=post_dict.get('analysis', None)
+        )
+        
+        # Analyze with AI
+        analyzer = IntelligentContentAnalyzer()
+        analysis_result = analyzer.analyze_bookmark(post)
+
+        # Integrate media analysis (optional)
+        if post.media_urls:
+            try:
+                media_analyzer = LocalMediaAnalyzer()
+                media_enhanced = media_analyzer.analyze_post_media({
+                    'post_id': post.post_id,
+                    'media_urls': post.media_urls,
+                    'value_score': analysis_result.get('value_score', 5)
+                })
+                # Merge media analysis into AI result
+                analysis_result['media_analysis'] = media_enhanced.get('media_analysis')
+                # Update value score with media boost if present
+                if media_enhanced.get('value_score'):
+                    analysis_result['value_score'] = media_enhanced['value_score']
+            except Exception as _:
+                pass
+        
+        # Add analysis results to post_dict
+        post_dict.update({
+            'category': analysis_result.get('category', 'uncertain'),
+            # Optionally reduce or disable value scoring for ranking only
+            'value_score': analysis_result.get('intelligent_value_score', analysis_result.get('value_score', None)) if os.getenv('USE_VALUE_SCORER', '0') == '1' else None,
+            'sentiment': analysis_result.get('sentiment', 'neutral'),
+            'ai_summary': analysis_result.get('summary', ''),
+            'key_concepts': str(analysis_result.get('key_concepts', [])),
+            'smart_tags': str(analysis_result.get('smart_tags', [])),
+            'intelligence_analysis': str(analysis_result.get('intelligence_analysis', {})),
+            'actionable_insights': str(analysis_result.get('actionable_insights', []))
+        })
+        
+        # Store with AI analysis in local SQLite
+        db_manager.add_post(post_dict)
+
+        # Optional: sync to Supabase if enabled (Supabase is source of truth)
+        if os.getenv('SAVE_TO_SUPABASE', '0') == '1':
+            try:
+                if not hasattr(analyze_and_store_post, '_supabase'):
+                    analyze_and_store_post._supabase = SupabaseManager()
+                supa = analyze_and_store_post._supabase
+                # Ensure numeric score or null
+                value_score = post_dict.get('value_score')
+                if isinstance(value_score, str):
+                    try:
+                        value_score = float(value_score)
+                    except:
+                        value_score = None
+                supa.insert_post({
+                    **post_dict,
+                    # Ensure JSONable
+                    'media_urls': json.dumps(post_dict.get('media_urls', [])),
+                    'hashtags': json.dumps(post_dict.get('hashtags', [])),
+                    'mentions': json.dumps(post_dict.get('mentions', [])),
+                    'key_concepts': post_dict.get('key_concepts'),
+                    'value_score': value_score,
+                })
+            except Exception as _:
+                pass
+        print(f"🤖 AI analyzed: {post_dict['post_id']} -> {analysis_result.get('category', 'uncertain')} (Score: {analysis_result.get('value_score', 0.0)})")
+        
+    except Exception as e:
+        print(f"❌ AI analysis failed for {post_dict.get('post_id', 'unknown')}: {e}")
+        # Store without AI analysis as fallback
+        db_manager.add_post(post_dict)
 
 async def collect_twitter_bookmarks(db_manager, existing_ids):
     """Collect Twitter bookmarks"""
@@ -65,9 +183,9 @@ async def collect_twitter_bookmarks(db_manager, existing_ids):
                     new_posts.append(post_dict)
                     existing_ids.add(post_id)
             
-            # Add new posts to database
+            # Add new posts to database with AI analysis
             for post_dict in new_posts:
-                db_manager.add_post(post_dict)
+                analyze_and_store_post(db_manager, post_dict)
             
             print(f"✅ Twitter: {len(new_posts)} new bookmarks added")
             return len(new_posts)
@@ -127,9 +245,9 @@ def collect_reddit_bookmarks(db_manager, existing_ids):
                     new_posts.append(post_dict)
                     existing_ids.add(post_id)
             
-            # Add new posts to database
+            # Add new posts to database with AI analysis
             for post_dict in new_posts:
-                db_manager.add_post(post_dict)
+                analyze_and_store_post(db_manager, post_dict)
             
             print(f"✅ Reddit: {len(new_posts)} new bookmarks added")
             return len(new_posts)
@@ -181,9 +299,9 @@ async def collect_threads_bookmarks(db_manager, existing_ids):
                     new_posts.append(post_dict)
                     existing_ids.add(post_id)
             
-            # Add new posts to database
+            # Add new posts to database with AI analysis
             for post_dict in new_posts:
-                db_manager.add_post(post_dict)
+                analyze_and_store_post(db_manager, post_dict)
             
             print(f"✅ Threads: {len(new_posts)} new bookmarks added")
             return len(new_posts)
@@ -228,8 +346,15 @@ async def main():
         reddit_count = collect_reddit_bookmarks(db_manager, existing_ids)
         total_new += reddit_count
         
-        # Threads
-        threads_count = await collect_threads_bookmarks(db_manager, existing_ids)
+        # Threads (temporarily disabled due to authentication issues)
+        print("\n🧵 THREADS COLLECTION (TEMPORARILY DISABLED)")
+        print("-" * 30)
+        print("❌ Threads authentication failed - cookies expired")
+        print("💡 To re-enable Threads collection:")
+        print("   1. Export fresh cookies from browser")
+        print("   2. Update config/threads_cookies_qronoya.json")
+        print("   3. Restart collection")
+        threads_count = 0
         total_new += threads_count
         
     except KeyboardInterrupt:

@@ -154,9 +154,11 @@ class ValueScorer:
                 engagement_score += 0.5
             
         elif platform == 'twitter':
-            likes = post_data.get('likes', 0)
-            retweets = post_data.get('retweets', 0)
-            replies = post_data.get('replies', 0)
+            # Accept either flat metrics or nested engagement dict
+            engagement = post_data.get('engagement') or {}
+            likes = post_data.get('likes', engagement.get('likes', 0))
+            retweets = post_data.get('retweets', engagement.get('retweets', 0))
+            replies = post_data.get('replies', engagement.get('comments', engagement.get('replies', 0)))
             
             # Twitter engagement is more inflated, so higher thresholds
             total_engagement = likes + (retweets * 2) + (replies * 3)
@@ -178,7 +180,8 @@ class ValueScorer:
                 if rt_ratio > 0.1:  # High retweet ratio indicates shareworthy content
                     engagement_score += 1.0
         
-        return engagement_score
+        # Ensure engagement score stays within 0..10 range bounds used by tests
+        return max(0.0, min(10.0, engagement_score))
     
     def _analyze_learning_potential(self, post_data: Dict[str, Any]) -> float:
         """Analyze educational and learning value"""

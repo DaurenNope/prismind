@@ -1,0 +1,10 @@
+# PrisMind Streamlit theme
+[theme]
+base = "dark"
+primaryColor = "#1DA1F2"
+backgroundColor = "#0E1117"
+secondaryBackgroundColor = "#161a23"
+textColor = "#e6e6e6"
+
+[server]
+headless = true

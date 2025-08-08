@@ -1,3 +1,10 @@
+## Feature flags
+
+- `SAVE_TO_SUPABASE=1`: push new analyzed posts to Supabase in addition to local SQLite.
+- `OLLAMA_URL=http://localhost:11434` and `OLLAMA_MODEL=qwen2.5:7b`: use local Qwen via Ollama as primary analyzer.
+- `USE_VALUE_SCORER=0`: disable saving numeric value_score (ranking only).
+- `ENABLE_LOCAL_FEEDBACK=0`: disable local feedback learning (kept for legacy tests).
+
 # PrisMind - Intelligent Universal Bookmarker
 
 PrisMind is a powerful personal intelligence engine that transforms your social media bookmarks into a structured, searchable knowledge base. It extracts your saved content from platforms like Twitter, Reddit, and Threads, analyzes it with AI to understand your interests, and organizes it into actionable insights.

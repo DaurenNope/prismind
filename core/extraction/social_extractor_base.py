@@ -7,7 +7,6 @@ from datetime import datetime
 class SocialPost:
     """Standard format for social media posts"""
     platform: str
-    post_id: str
     author: str
     author_handle: str
     content: str
@@ -22,6 +21,13 @@ class SocialPost:
     saved_at: Optional[datetime] = None
     folder_category: Optional[str] = None
     analysis: Optional[Dict] = None # To hold the analysis results
+    id: Optional[str] = None  # Optional internal id used by some tests
+    post_id: Optional[str] = None  # Optional; will default from id if not provided
+
+    def __post_init__(self):
+        # Backwards-compat: if post_id not provided but id is, mirror it
+        if self.post_id is None and self.id is not None:
+            self.post_id = self.id
 
 class SocialExtractorBase(ABC):
     """Base class for all social media extractors"""

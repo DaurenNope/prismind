@@ -5,6 +5,7 @@ import jmespath
 from parsel import Selector
 from nested_lookup import nested_lookup
 from playwright.async_api import async_playwright
+from playwright.sync_api import sync_playwright
 from datetime import datetime, timezone
 import logging
 import requests
