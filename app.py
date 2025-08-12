@@ -66,6 +66,43 @@ def init_session_state():
 
 init_session_state()
 
+# Simple database managers for cloud deployment
+class SimpleSupabaseManager:
+    """Simple Supabase manager for cloud deployment"""
+    def __init__(self, client):
+        self.client = client
+        self.table_name = 'posts'
+    
+    def get_all_posts(self):
+        try:
+            response = self.client.table(self.table_name).select('*').execute()
+            return pd.DataFrame(response.data)
+        except Exception as e:
+            st.error(f"Error fetching posts: {e}")
+            return pd.DataFrame()
+    
+    def get_posts(self, limit=100):
+        try:
+            response = self.client.table(self.table_name).select('*').limit(limit).execute()
+            return response.data
+        except Exception as e:
+            st.error(f"Error fetching posts: {e}")
+            return []
+
+class InMemoryDatabaseManager:
+    """Simple in-memory storage for demo purposes"""
+    def __init__(self):
+        self.posts = []
+    
+    def get_all_posts(self):
+        return pd.DataFrame(self.posts)
+    
+    def get_posts(self, limit=100):
+        return self.posts[:limit]
+    
+    def add_post(self, post_data):
+        self.posts.append(post_data)
+
 # Database manager wrapper
 @st.cache_resource
 def get_database_manager():
@@ -73,14 +110,22 @@ def get_database_manager():
     try:
         # Try Supabase first, fallback to SQLite
         if os.getenv('SUPABASE_URL'):
-            from supabase_manager import SupabaseManager
-            return SupabaseManager()
+            try:
+                from supabase import create_client
+                url = os.getenv('SUPABASE_URL')
+                key = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
+                if url and key:
+                    client = create_client(url, key)
+                    return SimpleSupabaseManager(client)
+            except ImportError:
+                st.error("❌ Supabase library not available. Install with: pip install supabase")
+                return None
         else:
-            from scripts.database_manager import DatabaseManager
-            return DatabaseManager()
+            # Fallback to basic in-memory storage for cloud deployment
+            return InMemoryDatabaseManager()
     except Exception as e:
         st.error(f"❌ Database connection failed: {e}")
-        return None
+        return InMemoryDatabaseManager()
 
 # Collection functions
 async def run_twitter_collection():
