@@ -1,0 +1,19 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+numReplicas = 1
+startCommand = "streamlit run scripts/dashboard.py --server.port $PORT --server.address 0.0.0.0"
+
+[environments.production]
+[environments.production.variables]
+STREAMLIT_SERVER_PORT = { $default = "8080" }
+STREAMLIT_SERVER_ADDRESS = "0.0.0.0"
+PYTHONPATH = "/app"
+
+# These will need to be set in Railway dashboard
+# SUPABASE_URL = ""
+# SUPABASE_SERVICE_ROLE_KEY = ""
+# MISTRAL_API_KEY = ""
+# GEMINI_API_KEY = ""

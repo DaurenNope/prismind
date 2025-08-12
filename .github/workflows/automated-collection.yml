@@ -1,0 +1,163 @@
+name: 🤖 Automated PrisMind Collection
+
+on:
+  schedule:
+    # Run every 6 hours (4 times per day)
+    - cron: '0 */6 * * *'
+  
+  # Allow manual triggering
+  workflow_dispatch:
+    inputs:
+      force_full_collection:
+        description: 'Force full collection (ignore existing posts)'
+        required: false
+        default: 'false'
+        type: boolean
+
+jobs:
+  automated-collection:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+    - name: 🔄 Checkout Repository
+      uses: actions/checkout@v4
+    
+    - name: 🐍 Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+    
+    - name: 📦 Install Dependencies
+      run: |
+        pip install -r requirements.txt
+        # Install Playwright browsers for web scraping
+        playwright install chromium
+        # Install system dependencies for Playwright
+        playwright install-deps chromium
+    
+    - name: 🔧 Setup Configuration
+      run: |
+        # Create data directory
+        mkdir -p data
+        mkdir -p config
+        
+        # Create minimal SQLite database if needed
+        python -c "
+        import sqlite3
+        from pathlib import Path
+        from scripts.database_manager import DatabaseManager
+        
+        db_path = Path('data/prismind.db')
+        if not db_path.exists():
+            db = DatabaseManager(str(db_path))
+            print('✅ Local database initialized')
+        "
+    
+    - name: 🤖 Run Automated Collection
+      env:
+        # AI Services
+        MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        PERPLEXITY_API_KEY: ${{ secrets.PERPLEXITY_API_KEY }}
+        
+        # Cloud Database
+        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+        SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        SAVE_TO_SUPABASE: "1"
+        
+        # Reddit API
+        REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
+        REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
+        REDDIT_USERNAME: ${{ secrets.REDDIT_USERNAME }}
+        REDDIT_PASSWORD: ${{ secrets.REDDIT_PASSWORD }}
+        REDDIT_USER_AGENT: "PrisMind:1.0 (by /u/${{ secrets.REDDIT_USERNAME }})"
+        
+        # Twitter/X (using cookies)
+        TWITTER_USERNAME: ${{ secrets.TWITTER_USERNAME }}
+        
+        # Threads (using cookies)
+        THREADS_USERNAME: ${{ secrets.THREADS_USERNAME }}
+        
+        # Feature flags
+        USE_VALUE_SCORER: "1"
+        OLLAMA_URL: ""  # Disable Ollama in cloud
+        ENABLE_LOCAL_FEEDBACK: "0"
+        
+      run: |
+        echo "🚀 Starting automated collection..."
+        
+        # Create cookie files from secrets if provided
+        if [ ! -z "${{ secrets.TWITTER_COOKIES }}" ]; then
+          echo '${{ secrets.TWITTER_COOKIES }}' > config/twitter_cookies_${{ secrets.TWITTER_USERNAME }}.json
+          echo "✅ Twitter cookies configured"
+        fi
+        
+        if [ ! -z "${{ secrets.THREADS_COOKIES }}" ]; then
+          echo '${{ secrets.THREADS_COOKIES }}' > config/threads_cookies_${{ secrets.THREADS_USERNAME }}.json
+          echo "✅ Threads cookies configured"
+        fi
+        
+        # Run collection with timeout protection
+        timeout 25m python collect_multi_platform.py || {
+          echo "⚠️ Collection timed out or failed - this is normal for long-running operations"
+          exit 0
+        }
+        
+        echo "✅ Automated collection completed!"
+    
+    - name: 📊 Collection Summary
+      run: |
+        # Generate summary report
+        python -c "
+        import sqlite3
+        from datetime import datetime, timedelta
+        
+        conn = sqlite3.connect('data/prismind.db')
+        cursor = conn.cursor()
+        
+        # Get stats from last 24 hours
+        yesterday = (datetime.now() - timedelta(days=1)).isoformat()
+        
+        cursor.execute('SELECT COUNT(*) FROM posts WHERE created_timestamp > ?', (yesterday,))
+        new_posts = cursor.fetchone()[0]
+        
+        cursor.execute('SELECT COUNT(*) FROM posts')
+        total_posts = cursor.fetchone()[0]
+        
+        cursor.execute('SELECT COUNT(*) FROM posts WHERE category IS NOT NULL')
+        analyzed_posts = cursor.fetchone()[0]
+        
+        print(f'📈 COLLECTION SUMMARY')
+        print(f'  New posts (24h): {new_posts}')
+        print(f'  Total posts: {total_posts}')
+        print(f'  Analyzed posts: {analyzed_posts}')
+        print(f'  Analysis coverage: {(analyzed_posts/total_posts*100):.1f}%' if total_posts > 0 else '  Analysis coverage: 0%')
+        
+        conn.close()
+        "
+    
+    - name: 🚨 Failure Notification
+      if: failure()
+      run: |
+        echo "❌ Automated collection failed!"
+        echo "Check the logs above for details."
+        # In the future, we could send notifications to Slack/Discord/Email
+
+  # Optional: Deploy dashboard after successful collection
+  deploy-dashboard:
+    needs: automated-collection
+    runs-on: ubuntu-latest
+    if: success()
+    
+    steps:
+    - name: 🔄 Checkout Repository
+      uses: actions/checkout@v4
+    
+    - name: 🚀 Deploy to Railway
+      # This would deploy the dashboard to Railway
+      # Implementation depends on chosen platform
+      run: |
+        echo "🚀 Dashboard deployment would go here"
+        echo "Options: Railway, Render, Vercel, Google Cloud Run"

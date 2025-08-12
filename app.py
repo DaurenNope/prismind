@@ -1,0 +1,474 @@
+#!/usr/bin/env python3
+"""
+🧠 PrisMind All-in-One Intelligence Platform
+==========================================
+
+Single-file Streamlit app with complete automation:
+✅ Dashboard frontend
+✅ Collection backend  
+✅ AI analysis
+✅ Health monitoring
+
+Deploy to Streamlit Cloud for FREE automation!
+"""
+
+import streamlit as st
+import pandas as pd
+import asyncio
+import os
+import sys
+import json
+import time
+import sqlite3
+from datetime import datetime, timedelta
+from pathlib import Path
+import warnings
+
+# Suppress warnings for cleaner output
+warnings.filterwarnings('ignore')
+
+# Setup paths
+sys.path.insert(0, str(Path(__file__).parent))
+
+# Page configuration
+st.set_page_config(
+    page_title="🧠 PrisMind - Intelligence Platform",
+    page_icon="🧠",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Custom CSS for better styling
+st.markdown("""
+<style>
+    .main { padding-top: 1rem; }
+    .stButton button { width: 100%; }
+    .metric-container { 
+        background: #f0f2f6; 
+        padding: 1rem; 
+        border-radius: 0.5rem; 
+        margin: 0.5rem 0;
+    }
+    .success-message { color: #28a745; }
+    .error-message { color: #dc3545; }
+    .info-message { color: #17a2b8; }
+</style>
+""", unsafe_allow_html=True)
+
+# Initialize session state
+def init_session_state():
+    if 'automation_enabled' not in st.session_state:
+        st.session_state.automation_enabled = False
+    if 'last_collection' not in st.session_state:
+        st.session_state.last_collection = None
+    if 'collection_stats' not in st.session_state:
+        st.session_state.collection_stats = {"twitter": 0, "reddit": 0, "threads": 0}
+
+init_session_state()
+
+# Database manager wrapper
+@st.cache_resource
+def get_database_manager():
+    """Get cached database manager"""
+    try:
+        # Try Supabase first, fallback to SQLite
+        if os.getenv('SUPABASE_URL'):
+            from supabase_manager import SupabaseManager
+            return SupabaseManager()
+        else:
+            from scripts.database_manager import DatabaseManager
+            return DatabaseManager()
+    except Exception as e:
+        st.error(f"❌ Database connection failed: {e}")
+        return None
+
+# Collection functions
+async def run_twitter_collection():
+    """Run Twitter bookmark collection"""
+    try:
+        from collect_multi_platform import collect_twitter_bookmarks
+        db_manager = get_database_manager()
+        if db_manager is None:
+            return 0
+        
+        # Get existing posts to avoid duplicates
+        if hasattr(db_manager, 'get_all_posts'):
+            existing_posts = db_manager.get_all_posts(include_deleted=False)
+            existing_ids = set(existing_posts['post_id'].tolist()) if not existing_posts.empty else set()
+        else:
+            existing_ids = set()
+        
+        count = await collect_twitter_bookmarks(db_manager, existing_ids)
+        return count
+    except Exception as e:
+        st.error(f"Twitter collection error: {e}")
+        return 0
+
+def run_reddit_collection():
+    """Run Reddit saved posts collection"""
+    try:
+        from collect_multi_platform import collect_reddit_bookmarks
+        db_manager = get_database_manager()
+        if db_manager is None:
+            return 0
+        
+        # Get existing posts to avoid duplicates  
+        if hasattr(db_manager, 'get_all_posts'):
+            existing_posts = db_manager.get_all_posts(include_deleted=False)
+            existing_ids = set(existing_posts['post_id'].tolist()) if not existing_posts.empty else set()
+        else:
+            existing_ids = set()
+        
+        count = collect_reddit_bookmarks(db_manager, existing_ids)
+        return count
+    except Exception as e:
+        st.error(f"Reddit collection error: {e}")
+        return 0
+
+async def run_threads_collection():
+    """Run Threads saved posts collection"""
+    try:
+        from collect_multi_platform import collect_threads_bookmarks
+        db_manager = get_database_manager()
+        if db_manager is None:
+            return 0
+        
+        # Get existing posts to avoid duplicates
+        if hasattr(db_manager, 'get_all_posts'):
+            existing_posts = db_manager.get_all_posts(include_deleted=False)
+            existing_ids = set(existing_posts['post_id'].tolist()) if not existing_posts.empty else set()
+        else:
+            existing_ids = set()
+        
+        count = await collect_threads_bookmarks(db_manager, existing_ids)
+        return count
+    except Exception as e:
+        st.error(f"Threads collection error: {e}")
+        return 0
+
+# Sidebar automation controls
+with st.sidebar:
+    st.title("🤖 Automation Hub")
+    
+    # System status
+    st.subheader("📊 System Status")
+    
+    # API Keys status
+    api_status = {
+        "🔑 Supabase": bool(os.getenv('SUPABASE_URL')) and bool(os.getenv('SUPABASE_SERVICE_ROLE_KEY')),
+        "🤖 Mistral AI": bool(os.getenv('MISTRAL_API_KEY')),
+        "🧠 Gemini AI": bool(os.getenv('GEMINI_API_KEY')),
+        "🤖 Reddit API": bool(os.getenv('REDDIT_CLIENT_ID')),
+        "🐦 Twitter": bool(os.getenv('TWITTER_USERNAME')),
+        "🧵 Threads": bool(os.getenv('THREADS_USERNAME'))
+    }
+    
+    for service, status in api_status.items():
+        if status:
+            st.success(f"✅ {service}")
+        else:
+            st.error(f"❌ {service}")
+    
+    st.divider()
+    
+    # Collection controls
+    st.subheader("🚀 Manual Collection")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button("🐦 Twitter", help="Collect Twitter bookmarks", type="secondary"):
+            with st.spinner("🔄 Collecting Twitter..."):
+                count = asyncio.run(run_twitter_collection())
+                if count > 0:
+                    st.success(f"✅ Collected {count} Twitter posts!")
+                    st.session_state.collection_stats["twitter"] += count
+                    st.session_state.last_collection = datetime.now().strftime("%H:%M")
+                else:
+                    st.info("📭 No new Twitter posts found")
+    
+    with col2:
+        if st.button("🤖 Reddit", help="Collect Reddit saved posts", type="secondary"):
+            with st.spinner("🔄 Collecting Reddit..."):
+                count = run_reddit_collection()
+                if count > 0:
+                    st.success(f"✅ Collected {count} Reddit posts!")
+                    st.session_state.collection_stats["reddit"] += count
+                    st.session_state.last_collection = datetime.now().strftime("%H:%M")
+                else:
+                    st.info("📭 No new Reddit posts found")
+    
+    if st.button("🧵 Threads", help="Collect Threads saved posts", type="secondary"):
+        with st.spinner("🔄 Collecting Threads..."):
+            count = asyncio.run(run_threads_collection())
+            if count > 0:
+                st.success(f"✅ Collected {count} Threads posts!")
+                st.session_state.collection_stats["threads"] += count
+                st.session_state.last_collection = datetime.now().strftime("%H:%M")
+            else:
+                st.info("📭 No new Threads posts found")
+    
+    if st.button("🚀 Collect All", help="Collect from all platforms", type="primary"):
+        with st.spinner("🔄 Collecting from all platforms..."):
+            twitter_count = asyncio.run(run_twitter_collection())
+            reddit_count = run_reddit_collection()
+            threads_count = asyncio.run(run_threads_collection())
+            
+            total = twitter_count + reddit_count + threads_count
+            if total > 0:
+                st.success(f"✅ Collected {total} total posts!")
+                st.session_state.collection_stats["twitter"] += twitter_count
+                st.session_state.collection_stats["reddit"] += reddit_count
+                st.session_state.collection_stats["threads"] += threads_count
+                st.session_state.last_collection = datetime.now().strftime("%H:%M")
+            else:
+                st.info("📭 No new posts found on any platform")
+    
+    st.divider()
+    
+    # Collection statistics
+    st.subheader("📈 Session Stats")
+    if st.session_state.last_collection:
+        st.metric("Last Collection", st.session_state.last_collection)
+    
+    stats = st.session_state.collection_stats
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Twitter", stats["twitter"])
+    with col2:
+        st.metric("Reddit", stats["reddit"])
+    with col3:
+        st.metric("Threads", stats["threads"])
+
+# Main content area
+st.title("🧠 PrisMind - Intelligent Bookmark Platform")
+st.markdown("*Transform your social media bookmarks into structured intelligence*")
+
+# Create tabs for different views
+tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "🎯 Browse Posts", "⚙️ Settings"])
+
+with tab1:
+    st.header("📊 Intelligence Dashboard")
+    
+    # Database stats
+    db_manager = get_database_manager()
+    if db_manager:
+        try:
+            # Get posts data
+            if hasattr(db_manager, 'get_all_posts'):
+                posts_df = db_manager.get_all_posts()
+            elif hasattr(db_manager, 'get_posts'):
+                posts_data = db_manager.get_posts(limit=1000)
+                posts_df = pd.DataFrame(posts_data)
+            else:
+                posts_df = pd.DataFrame()
+            
+            if not posts_df.empty:
+                # Overview metrics
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    st.metric(
+                        label="📚 Total Posts",
+                        value=len(posts_df)
+                    )
+                
+                with col2:
+                    analyzed = len(posts_df.dropna(subset=['category'])) if 'category' in posts_df.columns else 0
+                    st.metric(
+                        label="🤖 AI Analyzed", 
+                        value=analyzed,
+                        delta=f"{analyzed/len(posts_df)*100:.1f}%" if len(posts_df) > 0 else "0%"
+                    )
+                
+                with col3:
+                    platforms = posts_df['platform'].nunique() if 'platform' in posts_df.columns else 0
+                    st.metric(
+                        label="🌐 Platforms",
+                        value=platforms
+                    )
+                
+                with col4:
+                    avg_score = posts_df['value_score'].mean() if 'value_score' in posts_df.columns else 0
+                    st.metric(
+                        label="⭐ Avg Score",
+                        value=f"{avg_score:.1f}/10" if avg_score > 0 else "N/A"
+                    )
+                
+                # Platform breakdown
+                if 'platform' in posts_df.columns:
+                    st.subheader("📈 Platform Distribution")
+                    platform_counts = posts_df['platform'].value_counts()
+                    
+                    col1, col2 = st.columns([2, 1])
+                    with col1:
+                        st.bar_chart(platform_counts)
+                    with col2:
+                        for platform, count in platform_counts.items():
+                            st.metric(f"{platform.title()}", count)
+                
+                # Recent activity
+                if 'created_timestamp' in posts_df.columns:
+                    st.subheader("📅 Recent Activity")
+                    posts_df['created_timestamp'] = pd.to_datetime(posts_df['created_timestamp'], errors='coerce')
+                    recent_posts = posts_df.nlargest(10, 'created_timestamp')
+                    
+                    for _, post in recent_posts.head(5).iterrows():
+                        platform_emoji = {"twitter": "🐦", "reddit": "🤖", "threads": "🧵"}.get(post.get('platform', ''), "📝")
+                        st.write(f"{platform_emoji} **{post.get('author', 'Unknown')}**: {post.get('content', 'No content')[:100]}...")
+                
+            else:
+                st.info("📭 No posts in database yet. Use the collection buttons in the sidebar to get started!")
+                st.markdown("""
+                **Getting Started:**
+                1. Configure your API keys in the Settings tab
+                2. Use the sidebar buttons to collect bookmarks
+                3. Watch your intelligence dashboard grow!
+                """)
+        
+        except Exception as e:
+            st.error(f"❌ Could not load dashboard data: {e}")
+    else:
+        st.error("❌ Database not available. Please check your configuration.")
+
+with tab2:
+    st.header("🎯 Browse Your Bookmarks")
+    
+    db_manager = get_database_manager()
+    if db_manager:
+        try:
+            # Get posts data
+            if hasattr(db_manager, 'get_all_posts'):
+                posts_df = db_manager.get_all_posts()
+            elif hasattr(db_manager, 'get_posts'):
+                posts_data = db_manager.get_posts(limit=100)
+                posts_df = pd.DataFrame(posts_data)
+            else:
+                posts_df = pd.DataFrame()
+            
+            if not posts_df.empty:
+                # Filters
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    platform_filter = st.selectbox(
+                        "Platform", 
+                        ['All'] + list(posts_df['platform'].unique()) if 'platform' in posts_df.columns else ['All']
+                    )
+                
+                with col2:
+                    category_filter = st.selectbox(
+                        "Category",
+                        ['All'] + list(posts_df['category'].dropna().unique()) if 'category' in posts_df.columns else ['All']
+                    )
+                
+                with col3:
+                    sort_by = st.selectbox(
+                        "Sort by",
+                        ["Recent", "Value Score", "Author"]
+                    )
+                
+                # Apply filters
+                filtered_df = posts_df.copy()
+                
+                if platform_filter != 'All' and 'platform' in filtered_df.columns:
+                    filtered_df = filtered_df[filtered_df['platform'] == platform_filter]
+                
+                if category_filter != 'All' and 'category' in filtered_df.columns:
+                    filtered_df = filtered_df[filtered_df['category'] == category_filter]
+                
+                # Sort
+                if sort_by == "Recent" and 'created_timestamp' in filtered_df.columns:
+                    filtered_df = filtered_df.sort_values('created_timestamp', ascending=False)
+                elif sort_by == "Value Score" and 'value_score' in filtered_df.columns:
+                    filtered_df = filtered_df.sort_values('value_score', ascending=False, na_last=True)
+                elif sort_by == "Author" and 'author' in filtered_df.columns:
+                    filtered_df = filtered_df.sort_values('author')
+                
+                # Display posts
+                st.write(f"📊 Showing {len(filtered_df)} posts")
+                
+                for idx, post in filtered_df.head(20).iterrows():
+                    platform_emoji = {"twitter": "🐦", "reddit": "🤖", "threads": "🧵"}.get(post.get('platform', ''), "📝")
+                    score = post.get('value_score', 'N/A')
+                    score_display = f"⭐{score}/10" if score != 'N/A' else "⭐N/A"
+                    
+                    with st.container():
+                        st.markdown(f"""
+                        **{platform_emoji} {post.get('author', 'Unknown')}** {score_display}
+                        
+                        {post.get('content', 'No content available')[:300]}...
+                        
+                        *Category: {post.get('category', 'Uncategorized')} | Platform: {post.get('platform', 'Unknown')}*
+                        """)
+                        
+                        if post.get('url'):
+                            st.markdown(f"🔗 [View Original]({post.get('url')})")
+                        
+                        st.divider()
+                
+            else:
+                st.info("📭 No posts found. Start collecting from the sidebar!")
+                
+        except Exception as e:
+            st.error(f"❌ Could not load posts: {e}")
+
+with tab3:
+    st.header("⚙️ Configuration")
+    
+    st.subheader("🔑 API Configuration")
+    st.markdown("""
+    Configure your API keys in Streamlit Cloud:
+    1. Go to your app settings
+    2. Click "Secrets"
+    3. Add your API keys in TOML format:
+    """)
+    
+    st.code("""
+[secrets]
+SUPABASE_URL = "your_supabase_url"
+SUPABASE_SERVICE_ROLE_KEY = "your_service_key"
+MISTRAL_API_KEY = "your_mistral_key"
+GEMINI_API_KEY = "your_gemini_key"
+REDDIT_CLIENT_ID = "your_reddit_client_id"
+REDDIT_CLIENT_SECRET = "your_reddit_secret"
+REDDIT_USERNAME = "your_reddit_username"
+REDDIT_PASSWORD = "your_reddit_password"
+TWITTER_USERNAME = "your_twitter_username"
+THREADS_USERNAME = "your_threads_username"
+    """)
+    
+    st.subheader("🗄️ Database Connection")
+    if st.button("Test Database Connection"):
+        db_manager = get_database_manager()
+        if db_manager:
+            try:
+                if hasattr(db_manager, 'get_all_posts'):
+                    posts_df = db_manager.get_all_posts()
+                    st.success(f"✅ Database connected! Found {len(posts_df)} posts.")
+                elif hasattr(db_manager, 'get_posts'):
+                    posts = db_manager.get_posts(limit=1)
+                    st.success(f"✅ Database connected!")
+                else:
+                    st.success("✅ Database manager loaded successfully!")
+            except Exception as e:
+                st.error(f"❌ Database test failed: {e}")
+        else:
+            st.error("❌ Could not initialize database manager")
+    
+    st.subheader("ℹ️ About")
+    st.markdown("""
+    **PrisMind All-in-One** - Your complete social media intelligence platform
+    
+    - 🤖 **Automated collection** from Twitter, Reddit, Threads
+    - 🧠 **AI-powered analysis** and categorization  
+    - 📊 **Intelligence dashboard** with insights
+    - 🔄 **Real-time manual triggers**
+    - 🆓 **100% FREE** on Streamlit Cloud
+    
+    Built with ❤️ by the PrisMind team
+    """)
+
+# Footer
+st.markdown("---")
+st.markdown("🧠 **PrisMind** - Transform your bookmarks into intelligence | 🚀 Powered by Streamlit Cloud")

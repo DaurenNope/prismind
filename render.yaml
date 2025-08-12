@@ -1,0 +1,27 @@
+services:
+  # Free web service for dashboard
+  - type: web
+    name: prismind-dashboard
+    env: python
+    plan: free  # FREE tier - 750 hours/month
+    buildCommand: pip install -r requirements.txt && playwright install chromium
+    startCommand: streamlit run scripts/dashboard.py --server.port $PORT --server.address 0.0.0.0
+    envVars:
+      - key: PYTHONPATH
+        value: /opt/render/project/src
+      - key: STREAMLIT_SERVER_PORT
+        fromService:
+          type: web
+          name: prismind-dashboard
+          property: port
+      - key: STREAMLIT_SERVER_ADDRESS
+        value: 0.0.0.0
+      # These will be added via Render dashboard
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: MISTRAL_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
