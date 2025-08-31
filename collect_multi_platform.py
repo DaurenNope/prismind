@@ -279,70 +279,17 @@ def collect_reddit_bookmarks(db_manager, existing_ids):
         return 0
 
 async def collect_threads_bookmarks(db_manager, existing_ids):
-    """Collect Threads saved posts"""
-    print("\n🧵 THREADS COLLECTION")
+    """Collect Threads saved posts (DISABLED - authentication issues)"""
+    print("\n🧵 THREADS COLLECTION (DISABLED)")
     print("-" * 30)
-    
-    # Check for Threads cookies
-    threads_cookie = project_root / "config" / "threads_cookies_qronoya.json"
-    
-    if not threads_cookie.exists():
-        print("❌ Threads cookie file not found")
-        print("   Expected: config/threads_cookies_qronoya.json")
-        return 0
-    
-    try:
-        extractor = ThreadsExtractor()
-        
-        # Try to authenticate with existing cookies
-        auth_success = await extractor.authenticate(
-            username="qronoya",  # Default username from cookie file name
-            password="",  # Empty password when using cookies
-            cookies_path=str(threads_cookie)
-        )
-        
-        if not auth_success:
-            print("❌ Threads authentication failed")
-            return 0
-        
-        print("🔍 Extracting Threads saved posts...")
-        # Get limit from environment variable or use default
-        threads_limit = int(os.getenv('THREADS_LIMIT', '100'))
-        saved_posts = await extractor.get_saved_posts(limit=threads_limit)
-        
-        if saved_posts:
-            new_posts = []
-            for post in saved_posts:
-                post_dict = post.__dict__ if hasattr(post, '__dict__') else post
-                post_id = post_dict.get('post_id') or post_dict.get('id') or post_dict.get('url', '').split('/')[-1]
-                
-                if not post_id:
-                    print(f"   ⚠️ Skipping post without ID: {post_dict.get('title', 'Unknown')}")
-                    continue
-                    
-                if post_id not in existing_ids:
-                    new_posts.append(post_dict)
-                    existing_ids.add(post_id)
-            
-            # Add new posts to database with AI analysis
-            for post_dict in new_posts:
-                analyze_and_store_post(db_manager, post_dict)
-            
-            print(f"✅ Threads: {len(new_posts)} new bookmarks added")
-            return len(new_posts)
-        else:
-            print("📭 No Threads bookmarks found")
-            return 0
-            
-    except Exception as e:
-        print(f"❌ Threads collection error: {e}")
-        return 0
-    finally:
-        try:
-            if hasattr(extractor, 'close'):
-                await extractor.close()
-        except:
-            pass
+    print("❌ Threads collection is currently disabled")
+    print("💡 Reason: Authentication issues with Instagram/Threads")
+    print("💡 To re-enable Threads collection:")
+    print("   1. Export fresh cookies from browser")
+    print("   2. Update config/threads_cookies_qronoya.json")
+    print("   3. Test authentication manually")
+    print("   4. Remove this disabled message")
+    return 0
 
 async def main():
     """Main collection function"""
@@ -371,15 +318,8 @@ async def main():
         reddit_count = collect_reddit_bookmarks(db_manager, existing_ids)
         total_new += reddit_count
         
-        # Threads (temporarily disabled due to authentication issues)
-        print("\n🧵 THREADS COLLECTION (TEMPORARILY DISABLED)")
-        print("-" * 30)
-        print("❌ Threads authentication failed - cookies expired")
-        print("💡 To re-enable Threads collection:")
-        print("   1. Export fresh cookies from browser")
-        print("   2. Update config/threads_cookies_qronoya.json")
-        print("   3. Restart collection")
-        threads_count = 0
+        # Threads (disabled due to authentication issues)
+        threads_count = await collect_threads_bookmarks(db_manager, existing_ids)
         total_new += threads_count
         
     except KeyboardInterrupt:

@@ -67,6 +67,10 @@ def init_session_state():
         st.session_state.last_collection = None
     if 'collection_stats' not in st.session_state:
         st.session_state.collection_stats = {"twitter": 0, "reddit": 0, "threads": 0}
+    if 'background_collector' not in st.session_state:
+        st.session_state.background_collector = None
+    if 'background_running' not in st.session_state:
+        st.session_state.background_running = False
 
 init_session_state()
 
@@ -455,6 +459,53 @@ with st.sidebar:
                 st.session_state.last_collection = datetime.now().strftime("%H:%M")
             else:
                 st.info("📭 No new posts found on any platform")
+    
+    st.divider()
+    
+    # Background collection controls
+    st.subheader("🔄 Background Collection")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if not st.session_state.background_running:
+            if st.button("🚀 Start Background Collection", type="primary"):
+                try:
+                    from background_collector import start_background_collection
+                    st.session_state.background_collector = start_background_collection()
+                    st.session_state.background_running = True
+                    st.success("✅ Background collection started!")
+                    st.info("💡 Collection will run automatically every hour")
+                except Exception as e:
+                    st.error(f"❌ Failed to start background collection: {e}")
+        else:
+            st.success("🔄 Background collection is running")
+    
+    with col2:
+        if st.session_state.background_running:
+            if st.button("🛑 Stop Background Collection"):
+                if st.session_state.background_collector:
+                    st.session_state.background_collector.stop()
+                st.session_state.background_running = False
+                st.session_state.background_collector = None
+                st.success("✅ Background collection stopped!")
+    
+    # Background collection status
+    if st.session_state.background_running:
+        st.info("""
+        🔄 **Background Collection Active**
+        
+        - **Collection interval**: Every 60 minutes (configurable)
+        - **Max posts per run**: 100 (configurable)
+        - **Platforms**: Twitter (50 posts), Reddit (25 posts), Threads (disabled)
+        - **Duplicate detection**: Automatic
+        - **Error handling**: Automatic retry on failure
+        
+        💡 **Configuration**: Set environment variables:
+        - `COLLECTION_INTERVAL_MINUTES`: Collection frequency
+        - `MAX_POSTS_PER_RUN`: Max posts per collection cycle
+        - `TWITTER_LIMIT`, `REDDIT_LIMIT`: Platform-specific limits
+        """)
     
     st.divider()
     
