@@ -691,46 +691,87 @@ with tab1:
 with tab2:
     st.header("🎯 Browse Your Bookmarks")
     
+    # Initialize session state for pagination and filters
+    if 'current_page' not in st.session_state:
+        st.session_state.current_page = 0
+    if 'posts_per_page' not in st.session_state:
+        st.session_state.posts_per_page = 10
+    if 'search_query' not in st.session_state:
+        st.session_state.search_query = ""
+    
     db_manager = get_database_manager()
     if db_manager:
         try:
-            # Get posts data
-            if hasattr(db_manager, 'get_all_posts'):
-                posts_df = db_manager.get_all_posts()
-            elif hasattr(db_manager, 'get_posts'):
-                posts_data = db_manager.get_posts(limit=100)
-                posts_df = pd.DataFrame(posts_data)
-            else:
-                posts_df = pd.DataFrame()
+            # Cache posts data to avoid reloading
+            @st.cache_data(ttl=300)  # Cache for 5 minutes
+            def load_posts_data():
+                if hasattr(db_manager, 'get_all_posts'):
+                    return db_manager.get_all_posts()
+                elif hasattr(db_manager, 'get_posts'):
+                    posts_data = db_manager.get_posts(limit=1000)  # Increased limit
+                    return pd.DataFrame(posts_data)
+                else:
+                    return pd.DataFrame()
+            
+            posts_df = load_posts_data()
             
             if not posts_df.empty:
-                # Filters
-                col1, col2, col3 = st.columns(3)
+                # Search and filters section
+                st.subheader("🔍 Search & Filters")
+                
+                # Search bar
+                search_query = st.text_input(
+                    "🔍 Search posts...",
+                    value=st.session_state.search_query,
+                    placeholder="Search by content, author, or title..."
+                )
+                st.session_state.search_query = search_query
+                
+                # Advanced filters
+                col1, col2, col3, col4 = st.columns(4)
                 
                 with col1:
                     platform_filter = st.selectbox(
-                        "Platform", 
+                        "🌐 Platform", 
                         ['All'] + list(posts_df['platform'].unique()) if 'platform' in posts_df.columns else ['All']
                     )
                 
                 with col2:
                     category_filter = st.selectbox(
-                        "Category",
+                        "📂 Category",
                         ['All'] + list(posts_df['category'].dropna().unique()) if 'category' in posts_df.columns else ['All']
                     )
                 
                 with col3:
                     sort_by = st.selectbox(
-                        "Sort by",
-                        ["Recent", "Value Score", "Author"]
+                        "📊 Sort by",
+                        ["Recent", "Value Score", "Author", "Platform"]
+                    )
+                
+                with col4:
+                    st.session_state.posts_per_page = st.selectbox(
+                        "📄 Posts per page",
+                        [5, 10, 20, 50],
+                        index=1
                     )
                 
                 # Apply filters
                 filtered_df = posts_df.copy()
                 
+                # Search filter
+                if search_query:
+                    search_mask = (
+                        filtered_df['content'].str.contains(search_query, case=False, na=False) |
+                        filtered_df['author'].str.contains(search_query, case=False, na=False) |
+                        filtered_df['title'].str.contains(search_query, case=False, na=False)
+                    )
+                    filtered_df = filtered_df[search_mask]
+                
+                # Platform filter
                 if platform_filter != 'All' and 'platform' in filtered_df.columns:
                     filtered_df = filtered_df[filtered_df['platform'] == platform_filter]
                 
+                # Category filter
                 if category_filter != 'All' and 'category' in filtered_df.columns:
                     filtered_df = filtered_df[filtered_df['category'] == category_filter]
                 
@@ -741,34 +782,117 @@ with tab2:
                     filtered_df = filtered_df.sort_values('value_score', ascending=False, na_last=True)
                 elif sort_by == "Author" and 'author' in filtered_df.columns:
                     filtered_df = filtered_df.sort_values('author')
+                elif sort_by == "Platform" and 'platform' in filtered_df.columns:
+                    filtered_df = filtered_df.sort_values('platform')
                 
-                # Display posts
-                st.write(f"📊 Showing {len(filtered_df)} posts")
+                # Pagination
+                total_posts = len(filtered_df)
+                total_pages = (total_posts + st.session_state.posts_per_page - 1) // st.session_state.posts_per_page
                 
-                for idx, post in filtered_df.head(20).iterrows():
+                # Pagination controls
+                col1, col2, col3 = st.columns([1, 2, 1])
+                
+                with col1:
+                    if st.button("⬅️ Previous") and st.session_state.current_page > 0:
+                        st.session_state.current_page -= 1
+                        st.rerun()
+                
+                with col2:
+                    st.write(f"📄 Page {st.session_state.current_page + 1} of {total_pages} ({total_posts} total posts)")
+                
+                with col3:
+                    if st.button("➡️ Next") and st.session_state.current_page < total_pages - 1:
+                        st.session_state.current_page += 1
+                        st.rerun()
+                
+                # Reset pagination when filters change
+                if st.button("🔄 Reset to Page 1"):
+                    st.session_state.current_page = 0
+                    st.rerun()
+                
+                # Calculate current page data
+                start_idx = st.session_state.current_page * st.session_state.posts_per_page
+                end_idx = min(start_idx + st.session_state.posts_per_page, total_posts)
+                current_posts = filtered_df.iloc[start_idx:end_idx]
+                
+                # Display posts with better layout
+                st.subheader(f"📝 Posts ({start_idx + 1}-{end_idx} of {total_posts})")
+                
+                for idx, post in current_posts.iterrows():
                     platform_emoji = {"twitter": "🐦", "reddit": "🤖", "threads": "🧵"}.get(post.get('platform', ''), "📝")
                     score = post.get('value_score', 'N/A')
-                    score_display = f"⭐{score}/10" if score != 'N/A' else "⭐N/A"
+                    score_display = f"⭐{score}/10" if score != 'N/A' and score is not None else "⭐N/A"
                     
-                    with st.container():
-                        st.markdown(f"""
-                        **{platform_emoji} {post.get('author', 'Unknown')}** {score_display}
+                    # Create expandable post card
+                    with st.expander(f"{platform_emoji} {post.get('author', 'Unknown')} - {post.get('title', 'No title')[:50]}... {score_display}", expanded=False):
+                        col1, col2 = st.columns([3, 1])
                         
-                        {post.get('content', 'No content available')[:300]}...
+                        with col1:
+                            st.markdown(f"**{post.get('title', 'No title')}**")
+                            st.markdown(f"*by {post.get('author', 'Unknown')} on {post.get('platform', 'Unknown')}*")
+                            
+                            # Content with better formatting
+                            content = post.get('content', 'No content available')
+                            if len(content) > 500:
+                                st.markdown(f"{content[:500]}...")
+                                with st.expander("Show full content"):
+                                    st.markdown(content)
+                            else:
+                                st.markdown(content)
+                            
+                            # Metadata
+                            col_meta1, col_meta2, col_meta3 = st.columns(3)
+                            with col_meta1:
+                                st.markdown(f"**Category:** {post.get('category', 'Uncategorized')}")
+                            with col_meta2:
+                                st.markdown(f"**Score:** {score_display}")
+                            with col_meta3:
+                                if 'created_timestamp' in post and post['created_timestamp']:
+                                    try:
+                                        created_date = pd.to_datetime(post['created_timestamp']).strftime('%Y-%m-%d')
+                                        st.markdown(f"**Date:** {created_date}")
+                                    except:
+                                        st.markdown("**Date:** Unknown")
                         
-                        *Category: {post.get('category', 'Uncategorized')} | Platform: {post.get('platform', 'Unknown')}*
-                        """)
-                        
-                        if post.get('url'):
-                            st.markdown(f"🔗 [View Original]({post.get('url')})")
-                        
-                        st.divider()
+                        with col2:
+                            if post.get('url'):
+                                st.markdown(f"[🔗 View Original]({post.get('url')})")
+                            
+                            # AI analysis summary if available
+                            if post.get('ai_summary') or post.get('summary'):
+                                summary = post.get('ai_summary') or post.get('summary')
+                                if summary and len(summary) > 100:
+                                    with st.expander("🤖 AI Summary"):
+                                        st.markdown(summary[:200] + "..." if len(summary) > 200 else summary)
+                
+                # Quick stats
+                st.subheader("📊 Quick Stats")
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    st.metric("Total Posts", total_posts)
+                with col2:
+                    analyzed = len(filtered_df.dropna(subset=['category'])) if 'category' in filtered_df.columns else 0
+                    st.metric("AI Analyzed", analyzed, f"{analyzed/total_posts*100:.1f}%" if total_posts > 0 else "0%")
+                with col3:
+                    avg_score = filtered_df['value_score'].mean() if 'value_score' in filtered_df.columns else 0
+                    st.metric("Avg Score", f"{avg_score:.1f}/10" if avg_score > 0 else "N/A")
+                with col4:
+                    platforms = filtered_df['platform'].nunique() if 'platform' in filtered_df.columns else 0
+                    st.metric("Platforms", platforms)
                 
             else:
                 st.info("📭 No posts found. Start collecting from the sidebar!")
+                st.markdown("""
+                **Getting Started:**
+                1. Use the sidebar collection buttons to gather bookmarks
+                2. Wait for AI analysis to complete
+                3. Browse your intelligent content here!
+                """)
                 
         except Exception as e:
             st.error(f"❌ Could not load posts: {e}")
+            st.error("💡 Try refreshing the page or checking your database connection")
 
 with tab3:
     st.header("⚙️ Configuration")
