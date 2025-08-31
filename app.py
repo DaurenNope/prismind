@@ -108,6 +108,32 @@ class SimpleSupabaseManager:
         except Exception as e:
             st.error(f"Error fetching posts: {e}")
             return []
+    
+    def add_post(self, post_data):
+        try:
+            # Prepare the data for Supabase
+            data = {
+                'post_id': post_data.get('post_id'),
+                'platform': post_data.get('platform'),
+                'title': post_data.get('title'),
+                'content': post_data.get('content'),
+                'url': post_data.get('url'),
+                'author': post_data.get('author'),
+                'score': post_data.get('score', 0),
+                'ai_analysis': post_data.get('ai_analysis'),
+                'category': post_data.get('category'),
+                'value_score': post_data.get('value_score', 0)
+            }
+            
+            # Remove None values
+            data = {k: v for k, v in data.items() if v is not None}
+            
+            # Insert into Supabase
+            response = self.client.table(self.table_name).insert(data).execute()
+            return True
+        except Exception as e:
+            st.error(f"Error adding post to Supabase: {e}")
+            return False
 
 class SQLiteDatabaseManager:
     """Local SQLite database manager"""
