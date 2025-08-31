@@ -121,8 +121,26 @@ class SimpleSupabaseManager:
     def add_post(self, post_data):
         try:
             # Prepare the data for Supabase
-            # Use auto-increment id and store post_id separately
-            data = {
+            # Generate a unique ID from the post_id or use a hash
+            post_id = post_data.get('post_id', '')
+            if post_id and str(post_id).isdigit():
+                # Use the post_id as the database id if it's a reasonable size
+                try:
+                    db_id = int(post_id)
+                    if db_id <= 2147483647:  # Max integer value
+                        data = {'id': db_id}
+                    else:
+                        # If too large, use a hash of the post_id
+                        data = {'id': hash(str(post_id)) % 2147483647}
+                except (ValueError, OverflowError):
+                    data = {'id': hash(str(post_id)) % 2147483647}
+            else:
+                # Use hash of URL or content as ID
+                unique_string = post_data.get('url', '') or post_data.get('content', '') or str(post_data)
+                data = {'id': hash(unique_string) % 2147483647}
+            
+            # Add the rest of the data
+            data.update({
                 'platform': post_data.get('platform'),
                 'title': post_data.get('title'),
                 'content': post_data.get('content'),
@@ -133,12 +151,12 @@ class SimpleSupabaseManager:
                 'summary': post_data.get('ai_analysis'),  # Map ai_analysis to summary
                 'smart_tags': post_data.get('smart_tags', '[]'),
                 'ai_summary': post_data.get('ai_analysis')  # Also store in ai_summary field
-            }
+            })
             
             # Remove None values
             data = {k: v for k, v in data.items() if v is not None}
             
-            # Insert into Supabase (let id auto-increment)
+            # Insert into Supabase
             response = self.client.table(self.table_name).insert(data).execute()
             return True
         except Exception as e:
