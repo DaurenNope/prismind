@@ -870,6 +870,13 @@ with tab2:
                 
                 # Create a table-friendly DataFrame
                 table_data = []
+                
+                # Debug: Show available columns for first post
+                if len(current_posts) > 0:
+                    first_post = current_posts.iloc[0]
+                    st.write(f"🔍 **Debug - Available fields:** {list(first_post.index)}")
+                    st.write(f"🔍 **Sample AI fields:** ai_summary={first_post.get('ai_summary')}, summary={first_post.get('summary')}, ai_analysis={first_post.get('ai_analysis')}")
+                
                 for idx, post in current_posts.iterrows():
                     try:
                         # Get all possible date fields
@@ -903,12 +910,19 @@ with tab2:
                         content = str(post.get('content', '')) if post.get('content') is not None else ''
                         content_preview = content[:100] + "..." if len(content) > 100 else content
                         
-                        # Get AI summary
-                        ai_summary = post.get('ai_summary') or post.get('summary')
+                        # Get AI summary - check multiple possible field names
+                        ai_summary_fields = ['ai_summary', 'summary', 'ai_analysis', 'analysis', 'smart_tags']
                         summary_preview = ""
-                        if ai_summary and ai_summary is not None:
-                            summary_text = str(ai_summary)
-                            summary_preview = summary_text[:80] + "..." if len(summary_text) > 80 else summary_text
+                        
+                        for field in ai_summary_fields:
+                            if field in post and post[field] is not None:
+                                try:
+                                    summary_text = str(post[field])
+                                    if summary_text and summary_text.strip() and summary_text != 'None':
+                                        summary_preview = summary_text[:80] + "..." if len(summary_text) > 80 else summary_text
+                                        break
+                                except:
+                                    continue
                         
                         table_data.append({
                             'Platform': f"{platform_emoji} {platform.title()}",
@@ -939,7 +953,7 @@ with tab2:
                     # Display table with better formatting
                     st.dataframe(
                         df_table[['Platform', 'Author', 'Title', 'Content', 'Category', 'Score', 'Date', 'AI Summary', 'Link']],
-                        use_container_width=True,
+                        width='stretch',
                         hide_index=True,
                         column_config={
                             "Platform": st.column_config.TextColumn("Platform", width="medium"),
