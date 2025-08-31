@@ -175,7 +175,9 @@ async def collect_twitter_bookmarks(db_manager, existing_ids):
         )
         
         print("🔍 Extracting Twitter SAVED posts (bookmarks only)...")
-        saved_posts = await extractor.get_saved_posts()
+        # Get limit from environment variable or use default
+        twitter_limit = int(os.getenv('TWITTER_LIMIT', '200'))
+        saved_posts = await extractor.get_saved_posts(limit=twitter_limit)
         
         if saved_posts:
             print(f"🔍 Found {len(saved_posts)} Twitter posts")
@@ -244,7 +246,9 @@ def collect_reddit_bookmarks(db_manager, existing_ids):
         )
         
         print("🔍 Extracting Reddit saved posts...")
-        saved_posts = extractor.get_saved_posts()
+        # Get limit from environment variable or use default
+        reddit_limit = int(os.getenv('REDDIT_LIMIT', '100'))
+        saved_posts = extractor.get_saved_posts(limit=reddit_limit)
         
         if saved_posts:
             new_posts = []
@@ -302,7 +306,9 @@ async def collect_threads_bookmarks(db_manager, existing_ids):
             return 0
         
         print("🔍 Extracting Threads saved posts...")
-        saved_posts = await extractor.get_saved_posts()
+        # Get limit from environment variable or use default
+        threads_limit = int(os.getenv('THREADS_LIMIT', '100'))
+        saved_posts = await extractor.get_saved_posts(limit=threads_limit)
         
         if saved_posts:
             new_posts = []
