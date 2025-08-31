@@ -22,10 +22,10 @@ PrisMind is a powerful personal intelligence engine that transforms your social 
 
 ```
 prismind/
-├── scripts/
-│   ├── dashboard.py              # Streamlit dashboard
-│   └── database_manager.py       # Database operations
-├── core/
+├── app.py                        # Main application entry point
+├── automation_scheduler.py       # Automated collection scheduler
+├── collect_multi_platform.py     # Multi-platform collection orchestrator
+├── core/                         # Core functionality
 │   ├── analysis/                 # AI analysis modules
 │   │   ├── intelligent_content_analyzer.py  # Primary AI analysis
 │   │   ├── mistral_analyzer.py             # Mistral AI integration
@@ -38,15 +38,28 @@ prismind/
 │   └── learning/                 # Learning and feedback
 │       ├── feedback_system.py              # User feedback system
 │       └── smart_organizer.py              # Intelligent organization
-├── tests/                        # Comprehensive test suite
-│   ├── current_functionality/    # Core functionality tests
-│   └── test_core_workflow.py    # Workflow integration tests
+├── scripts/                      # Application scripts and utilities
+│   ├── dashboard.py              # Streamlit dashboard
+│   ├── database_manager.py       # Database operations
+│   ├── utilities/                # Utility scripts
+│   └── [other scripts]           # Various utility scripts
 ├── config/                       # Configuration files
-├── data/                         # Database and data files
-├── output/                       # Generated reports and data
-├── redundant/                    # Legacy and debug files
+│   ├── requirements.txt          # Python dependencies
+│   ├── streamlit_secrets*.toml   # Streamlit configuration
+│   └── [deployment configs]      # Railway, Render, Vercel configs
+├── deploy/                       # Deployment guides and scripts
+│   ├── deploy.py                 # Deployment automation
+│   ├── DEPLOYMENT_GUIDE.md       # Main deployment guide
+│   └── [other deployment docs]   # Various deployment options
+├── docs/                         # Documentation
+│   ├── BACKEND_ARCHITECTURE.md   # Architecture documentation
+│   ├── DESIGN.md                  # Design principles
+│   ├── EVOLUTION_PLAN.md         # Future roadmap
+│   └── [other docs]              # Various documentation files
+├── tests/                        # Comprehensive test suite
 ├── dev/                          # Development utilities
-└── docs/                         # Documentation and examples
+├── sql/                          # SQL scripts and schemas
+└── templates/                    # Templates and examples
 ```
 
 ## 🛠️ Installation
@@ -69,7 +82,7 @@ python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # Install dependencies
-pip install -r requirements.txt
+pip install -r config/requirements.txt
 
 # Install Playwright browsers
 playwright install
@@ -117,13 +130,16 @@ This starts the dashboard automatically.
 ### Option 2: Manual Launch
 ```bash
 # Start dashboard
-streamlit run scripts/dashboard.py --server.port 8521
+streamlit run app.py --server.port 8521
 ```
 
 ### Option 3: Data Collection
 ```bash
 # Collect bookmarks from all platforms
 python collect_multi_platform.py
+
+# Or use the automation scheduler
+python automation_scheduler.py
 ```
 
 ## 📊 Usage
@@ -152,22 +168,33 @@ python collect_multi_platform.py
 
 ```
 prismind/
-├── scripts/                      # Core application scripts
-│   ├── dashboard.py              # Streamlit dashboard
-│   └── database_manager.py       # Database operations
+├── app.py                        # Main application entry point
+├── automation_scheduler.py       # Automated collection scheduler
+├── collect_multi_platform.py     # Multi-platform collection orchestrator
 ├── core/                         # Core functionality
 │   ├── analysis/                 # AI analysis modules
 │   ├── extraction/               # Platform extractors
 │   └── learning/                 # Learning systems
-├── tests/                        # Comprehensive test suite
-│   ├── current_functionality/    # Core functionality tests
-│   └── test_core_workflow.py    # Integration tests
-├── config/                       # Configuration and cookies
-├── data/                         # Database files
-├── output/                       # Generated data and reports
-├── redundant/                    # Legacy and debug files
-├── dev/                          # Development utilities
+├── scripts/                      # Application scripts and utilities
+│   ├── dashboard.py              # Streamlit dashboard
+│   ├── database_manager.py       # Database operations
+│   └── utilities/                # Utility scripts
+├── config/                       # Configuration files
+│   ├── requirements.txt          # Python dependencies
+│   ├── streamlit_secrets*.toml   # Streamlit configuration
+│   └── [deployment configs]      # Railway, Render, Vercel configs
+├── deploy/                       # Deployment guides and scripts
+│   ├── deploy.py                 # Deployment automation
+│   ├── DEPLOYMENT_GUIDE.md       # Main deployment guide
+│   └── [other deployment docs]   # Various deployment options
 ├── docs/                         # Documentation
+│   ├── BACKEND_ARCHITECTURE.md   # Architecture documentation
+│   ├── DESIGN.md                  # Design principles
+│   ├── EVOLUTION_PLAN.md         # Future roadmap
+│   └── [other docs]              # Various documentation files
+├── tests/                        # Comprehensive test suite
+├── dev/                          # Development utilities
+├── sql/                          # SQL scripts and schemas
 └── templates/                    # Templates and examples
 ```
 
@@ -252,9 +279,10 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 For issues and questions:
 1. Check the documentation in `/docs`
-2. Review existing issues on GitHub
-3. Create a new issue with detailed information
-4. Include test cases for bug reports
+2. Review deployment guides in `/deploy`
+3. Review existing issues on GitHub
+4. Create a new issue with detailed information
+5. Include test cases for bug reports
 
 ## 🚀 Roadmap
 
