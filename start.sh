@@ -22,4 +22,4 @@ PORT=$(find_available_port)
 echo "🚀 Launching dashboard at http://localhost:$PORT..."
 
 # Start the dashboard
-cd scripts && streamlit run dashboard.py --server.port $PORT 
+streamlit run app.py --server.port $PORT 
