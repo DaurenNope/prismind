@@ -53,9 +53,15 @@ def analyze_and_store_post(db_manager, post_dict):
         elif not isinstance(saved_at, datetime):
             saved_at = None
         
+        # Ensure post_id exists with fallback
+        post_id = post_dict.get('post_id') or post_dict.get('id') or post_dict.get('url', '').split('/')[-1]
+        if not post_id:
+            print(f"⚠️ Skipping post without ID in analysis: {post_dict.get('title', 'Unknown')}")
+            return
+            
         post = SocialPost(
             platform=post_dict['platform'],
-            post_id=post_dict['post_id'],
+            post_id=post_id,
             author=post_dict.get('author', ''),
             author_handle=post_dict.get('author_handle', post_dict.get('author', '')),
             content=post_dict.get('content', ''),
@@ -95,6 +101,7 @@ def analyze_and_store_post(db_manager, post_dict):
         
         # Add analysis results to post_dict
         post_dict.update({
+            'post_id': post_id,  # Ensure post_id is set correctly
             'category': analysis_result.get('category', 'uncertain'),
             # Optionally reduce or disable value scoring for ranking only
             'value_score': analysis_result.get('intelligent_value_score', analysis_result.get('value_score', None)) if os.getenv('USE_VALUE_SCORER', '0') == '1' else None,
