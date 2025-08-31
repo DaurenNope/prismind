@@ -89,6 +89,10 @@ class SimpleSupabaseManager:
             elif not include_deleted and 'deleted' not in df.columns:
                 # If no deleted column exists, return all posts (assume none are deleted)
                 pass
+            
+            # Map 'id' column to 'post_id' for consistency with the rest of the app
+            if not df.empty and 'id' in df.columns:
+                df = df.rename(columns={'id': 'post_id'})
                 
             return df
         except Exception as e:
@@ -103,6 +107,10 @@ class SimpleSupabaseManager:
             # Filter deleted posts if the column exists
             if 'deleted' in df.columns:
                 df = df[df['deleted'] == False]
+            
+            # Map 'id' column to 'post_id' for consistency with the rest of the app
+            if not df.empty and 'id' in df.columns:
+                df = df.rename(columns={'id': 'post_id'})
                 
             return df.to_dict('records')
         except Exception as e:
@@ -111,18 +119,18 @@ class SimpleSupabaseManager:
     
     def add_post(self, post_data):
         try:
-            # Prepare the data for Supabase
+            # Prepare the data for Supabase - use 'id' instead of 'post_id'
             data = {
-                'post_id': post_data.get('post_id'),
+                'id': post_data.get('post_id'),  # Map post_id to id
                 'platform': post_data.get('platform'),
                 'title': post_data.get('title'),
                 'content': post_data.get('content'),
                 'url': post_data.get('url'),
                 'author': post_data.get('author'),
-                'score': post_data.get('score', 0),
-                'ai_analysis': post_data.get('ai_analysis'),
+                'value_score': post_data.get('value_score', 0),
                 'category': post_data.get('category'),
-                'value_score': post_data.get('value_score', 0)
+                'summary': post_data.get('ai_analysis'),  # Map ai_analysis to summary
+                'smart_tags': post_data.get('smart_tags', '[]')
             }
             
             # Remove None values
