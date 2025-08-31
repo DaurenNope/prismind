@@ -531,6 +531,58 @@ with st.sidebar:
     
     st.divider()
     
+    # Scraping statistics
+    st.subheader("📈 Scraping Statistics")
+    
+    try:
+        from scrape_state_manager import state_manager
+        stats = state_manager.get_scraping_stats()
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.metric("Total Posts Tracked", stats['total_posts'])
+            for platform, count in stats['posts_by_platform'].items():
+                st.metric(f"{platform.title()} Posts", count)
+        
+        with col2:
+            for platform_stat in stats['platform_stats']:
+                if platform_stat['last_scraped_at']:
+                    last_scraped = platform_stat['last_scraped_at'][:19]  # Remove microseconds
+                    st.metric(
+                        f"{platform_stat['platform'].title()} Last Scrape", 
+                        last_scraped,
+                        delta=f"{platform_stat['total_posts_scraped']} posts"
+                    )
+        
+        # Reset options
+        st.subheader("🔄 Reset Options")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if st.button("Reset Twitter State"):
+                state_manager.reset_platform_state('twitter')
+                st.success("✅ Twitter scraping state reset!")
+                st.rerun()
+        
+        with col2:
+            if st.button("Reset Reddit State"):
+                state_manager.reset_platform_state('reddit')
+                st.success("✅ Reddit scraping state reset!")
+                st.rerun()
+        
+        with col3:
+            if st.button("Reset All States"):
+                state_manager.reset_platform_state('twitter')
+                state_manager.reset_platform_state('reddit')
+                st.success("✅ All scraping states reset!")
+                st.rerun()
+                
+    except Exception as e:
+        st.error(f"❌ Could not load scraping stats: {e}")
+    
+    st.divider()
+    
     # Collection statistics
     st.subheader("📈 Session Stats")
     if st.session_state.last_collection:

@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import sqlite3
 import json
+from scrape_state_manager import state_manager
 
 # Load environment variables
 load_dotenv()
@@ -33,7 +34,11 @@ class BackgroundCollector:
         # Start collection loop
         while self.running:
             try:
-                print(f"\n🔄 Starting collection run at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                            print(f"\n🔄 Starting collection run at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                
+                # Show current stats
+                stats = state_manager.get_scraping_stats()
+                print(f"📊 Current stats: {stats['total_posts']} total posts tracked")
                 
                 # Run collection
                 self.run_collection()

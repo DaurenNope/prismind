@@ -25,6 +25,7 @@ from scripts.database_manager import DatabaseManager
 from core.analysis.intelligent_content_analyzer import IntelligentContentAnalyzer
 from core.analysis.local_media_analyzer import LocalMediaAnalyzer
 from scripts.supabase_manager import SupabaseManager
+from scrape_state_manager import state_manager
 
 def analyze_and_store_post(db_manager, post_dict):
     """Analyze post with AI and store with analysis results"""
@@ -152,6 +153,16 @@ async def collect_twitter_bookmarks(db_manager, existing_ids, existing_urls=None
     print("\n🐦 TWITTER COLLECTION")
     print("-" * 30)
     
+    # Get last scrape info
+    last_scrape = state_manager.get_last_scrape_info('twitter')
+    if last_scrape:
+        print(f"📅 Last scraped: {last_scrape['last_scraped_at']}")
+        print(f"📊 Total posts scraped: {last_scrape['total_posts_scraped']}")
+        if last_scrape['last_post_id']:
+            print(f"🔗 Last post ID: {last_scrape['last_post_id']}")
+    else:
+        print("🆕 First time scraping Twitter")
+    
     # Get Twitter credentials
     twitter_username = os.getenv('TWITTER_USERNAME')
     if not twitter_username:
@@ -207,8 +218,33 @@ async def collect_twitter_bookmarks(db_manager, existing_ids, existing_urls=None
                         existing_urls.add(post_dict.get('url'))
             
             # Add new posts to database with AI analysis
+            last_post_id = None
+            last_post_url = None
+            
             for post_dict in new_posts:
                 analyze_and_store_post(db_manager, post_dict)
+                
+                # Mark as scraped in state manager
+                post_id = post_dict.get('post_id')
+                if post_id:
+                    state_manager.mark_post_scraped(
+                        post_id=post_id,
+                        platform='twitter',
+                        url=post_dict.get('url'),
+                        title=post_dict.get('title'),
+                        author=post_dict.get('author')
+                    )
+                    last_post_id = post_id
+                    last_post_url = post_dict.get('url')
+            
+            # Update scrape state
+            state_manager.update_scrape_state(
+                platform='twitter',
+                last_post_id=last_post_id,
+                last_post_url=last_post_url,
+                posts_scraped=len(new_posts),
+                success=True
+            )
             
             print(f"✅ Twitter: {len(new_posts)} new bookmarks added")
             return len(new_posts)
@@ -218,6 +254,12 @@ async def collect_twitter_bookmarks(db_manager, existing_ids, existing_urls=None
             
     except Exception as e:
         print(f"❌ Twitter collection error: {e}")
+        # Update scrape state with failure
+        state_manager.update_scrape_state(
+            platform='twitter',
+            posts_scraped=0,
+            success=False
+        )
         return 0
     finally:
         try:
@@ -229,6 +271,16 @@ def collect_reddit_bookmarks(db_manager, existing_ids, existing_urls=None):
     """Collect Reddit saved posts"""
     print("\n🤖 REDDIT COLLECTION")
     print("-" * 30)
+    
+    # Get last scrape info
+    last_scrape = state_manager.get_last_scrape_info('reddit')
+    if last_scrape:
+        print(f"📅 Last scraped: {last_scrape['last_scraped_at']}")
+        print(f"📊 Total posts scraped: {last_scrape['total_posts_scraped']}")
+        if last_scrape['last_post_id']:
+            print(f"🔗 Last post ID: {last_scrape['last_post_id']}")
+    else:
+        print("🆕 First time scraping Reddit")
     
     # Check for Reddit credentials
     reddit_client_id = os.getenv('REDDIT_CLIENT_ID')
@@ -287,8 +339,33 @@ def collect_reddit_bookmarks(db_manager, existing_ids, existing_urls=None):
                         existing_urls.add(post_dict.get('url'))
             
             # Add new posts to database with AI analysis
+            last_post_id = None
+            last_post_url = None
+            
             for post_dict in new_posts:
                 analyze_and_store_post(db_manager, post_dict)
+                
+                # Mark as scraped in state manager
+                post_id = post_dict.get('post_id')
+                if post_id:
+                    state_manager.mark_post_scraped(
+                        post_id=post_id,
+                        platform='reddit',
+                        url=post_dict.get('url'),
+                        title=post_dict.get('title'),
+                        author=post_dict.get('author')
+                    )
+                    last_post_id = post_id
+                    last_post_url = post_dict.get('url')
+            
+            # Update scrape state
+            state_manager.update_scrape_state(
+                platform='reddit',
+                last_post_id=last_post_id,
+                last_post_url=last_post_url,
+                posts_scraped=len(new_posts),
+                success=True
+            )
             
             print(f"✅ Reddit: {len(new_posts)} new bookmarks added")
             return len(new_posts)
@@ -298,6 +375,12 @@ def collect_reddit_bookmarks(db_manager, existing_ids, existing_urls=None):
             
     except Exception as e:
         print(f"❌ Reddit collection error: {e}")
+        # Update scrape state with failure
+        state_manager.update_scrape_state(
+            platform='reddit',
+            posts_scraped=0,
+            success=False
+        )
         return 0
 
 async def collect_threads_bookmarks(db_manager, existing_ids):
@@ -357,6 +440,14 @@ async def main():
     print("\n" + "=" * 60)
     print("🎉 MULTI-PLATFORM collection completed!")
     print(f"📊 Total new bookmarks collected: {total_new}")
+    
+    # Show scraping stats
+    stats = state_manager.get_scraping_stats()
+    print(f"\n📈 SCRAPING STATISTICS:")
+    print(f"📊 Total posts tracked: {stats['total_posts']}")
+    for platform_stat in stats['platform_stats']:
+        print(f"   {platform_stat['platform']}: {platform_stat['total_posts_scraped']} posts")
+    
     if total_new > 0:
         print("💡 Tip: Use the dashboard's AI enhancement to analyze new content")
     else:
