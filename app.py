@@ -852,23 +852,46 @@ with tab2:
                         st.metric("⭐ Avg Score", f"{avg_score:.1f}/10" if avg_score > 0 else "N/A")
                     
                     with col4:
-                        top_category = filtered_df['category'].mode().iloc[0] if 'category' in filtered_df.columns and len(filtered_df) > 0 else "N/A"
-                        st.metric("🏆 Top Category", top_category[:15] + "..." if len(str(top_category)) > 15 else top_category)
+                        try:
+                            if 'category' in filtered_df.columns and len(filtered_df) > 0:
+                                category_mode = filtered_df['category'].mode()
+                                if len(category_mode) > 0:
+                                    top_category = category_mode.iloc[0]
+                                    display_category = top_category[:15] + "..." if len(str(top_category)) > 15 else top_category
+                                else:
+                                    display_category = "N/A"
+                            else:
+                                display_category = "N/A"
+                            st.metric("🏆 Top Category", display_category)
+                        except Exception as e:
+                            st.metric("🏆 Top Category", "N/A")
                     
                     st.divider()
                 
                 for idx, post in current_posts.iterrows():
                     try:
-                        platform_emoji = {"twitter": "🐦", "reddit": "🤖", "threads": "🧵"}.get(post.get('platform', ''), "📝")
-                        score = post.get('value_score', 'N/A')
-                        score_display = f"⭐{score}/10" if score != 'N/A' and score is not None else "⭐N/A"
+                        # Safely get post data with defaults
+                        platform = str(post.get('platform', '')) if post.get('platform') is not None else ''
+                        platform_emoji = {"twitter": "🐦", "reddit": "🤖", "threads": "🧵"}.get(platform, "📝")
                         
-                        # Create a more informative title
-                        author = post.get('author', 'Unknown')
-                        title = post.get('title', 'No title')
-                        content_preview = post.get('content', 'No content')[:30] + "..." if len(post.get('content', '')) > 30 else post.get('content', 'No content')
+                        score = post.get('value_score')
+                        if score is not None and score != 'N/A':
+                            try:
+                                score_float = float(score)
+                                score_display = f"⭐{score_float:.1f}/10"
+                            except (ValueError, TypeError):
+                                score_display = "⭐N/A"
+                        else:
+                            score_display = "⭐N/A"
                         
-                        expander_title = f"{platform_emoji} {author} - {title[:40]}... {score_display}"
+                        # Safely get text fields
+                        author = str(post.get('author', 'Unknown')) if post.get('author') is not None else 'Unknown'
+                        title = str(post.get('title', 'No title')) if post.get('title') is not None else 'No title'
+                        content = str(post.get('content', 'No content')) if post.get('content') is not None else 'No content'
+                        
+                        # Create expander title safely
+                        title_preview = title[:40] + "..." if len(title) > 40 else title
+                        expander_title = f"{platform_emoji} {author} - {title_preview} {score_display}"
                         
                         # Create expandable post card
                         with st.expander(expander_title, expanded=False):
@@ -876,41 +899,60 @@ with tab2:
                             
                             with col1:
                                 st.markdown(f"**{title}**")
-                                st.markdown(f"*by {author} on {post.get('platform', 'Unknown')}*")
+                                st.markdown(f"*by {author} on {platform}*")
                                 
                                 # Content with better formatting
-                                content = post.get('content', 'No content available')
-                                if len(content) > 500:
+                                if content and len(content) > 500:
                                     st.markdown(f"{content[:500]}...")
                                     with st.expander("Show full content"):
                                         st.markdown(content)
-                                else:
+                                elif content:
                                     st.markdown(content)
+                                else:
+                                    st.markdown("*No content available*")
                                 
                                 # Metadata
                                 col_meta1, col_meta2, col_meta3 = st.columns(3)
                                 with col_meta1:
-                                    st.markdown(f"**Category:** {post.get('category', 'Uncategorized')}")
+                                    category = str(post.get('category', 'Uncategorized')) if post.get('category') is not None else 'Uncategorized'
+                                    st.markdown(f"**Category:** {category}")
                                 with col_meta2:
                                     st.markdown(f"**Score:** {score_display}")
                                 with col_meta3:
-                                    if 'created_timestamp' in post and post['created_timestamp']:
-                                        try:
-                                            created_date = pd.to_datetime(post['created_timestamp']).strftime('%Y-%m-%d')
+                                    try:
+                                        created_timestamp = post.get('created_timestamp')
+                                        if created_timestamp and created_timestamp is not None:
+                                            created_date = pd.to_datetime(created_timestamp).strftime('%Y-%m-%d')
                                             st.markdown(f"**Date:** {created_date}")
-                                        except:
+                                        else:
                                             st.markdown("**Date:** Unknown")
+                                    except Exception:
+                                        st.markdown("**Date:** Unknown")
                             
                             with col2:
-                                if post.get('url'):
-                                    st.markdown(f"[🔗 View Original]({post.get('url')})")
+                                # URL link
+                                url = post.get('url')
+                                if url and url is not None:
+                                    st.markdown(f"[🔗 View Original]({url})")
                                 
                                 # AI analysis summary if available
-                                if post.get('ai_summary') or post.get('summary'):
-                                    summary = post.get('ai_summary') or post.get('summary')
-                                    if summary and len(summary) > 100:
+                                try:
+                                    ai_summary = post.get('ai_summary')
+                                    summary = post.get('summary')
+                                    
+                                    if ai_summary and ai_summary is not None:
+                                        summary_text = str(ai_summary)
+                                    elif summary and summary is not None:
+                                        summary_text = str(summary)
+                                    else:
+                                        summary_text = None
+                                    
+                                    if summary_text and len(summary_text) > 100:
                                         with st.expander("🤖 AI Summary"):
-                                            st.markdown(summary[:200] + "..." if len(summary) > 200 else summary)
+                                            display_summary = summary_text[:200] + "..." if len(summary_text) > 200 else summary_text
+                                            st.markdown(display_summary)
+                                except Exception:
+                                    pass  # Silently skip if there's an error with summary
                     except Exception as e:
                         st.error(f"❌ Error displaying post {idx}: {e}")
                         continue
@@ -922,14 +964,35 @@ with tab2:
                 with col1:
                     st.metric("Total Posts", total_posts)
                 with col2:
-                    analyzed = len(filtered_df.dropna(subset=['category'])) if 'category' in filtered_df.columns else 0
-                    st.metric("AI Analyzed", analyzed, f"{analyzed/total_posts*100:.1f}%" if total_posts > 0 else "0%")
+                    try:
+                        if 'category' in filtered_df.columns:
+                            analyzed = len(filtered_df.dropna(subset=['category']))
+                        else:
+                            analyzed = 0
+                        percentage = f"{analyzed/total_posts*100:.1f}%" if total_posts > 0 else "0%"
+                        st.metric("AI Analyzed", analyzed, percentage)
+                    except Exception:
+                        st.metric("AI Analyzed", 0, "0%")
                 with col3:
-                    avg_score = filtered_df['value_score'].mean() if 'value_score' in filtered_df.columns else 0
-                    st.metric("Avg Score", f"{avg_score:.1f}/10" if avg_score > 0 else "N/A")
+                    try:
+                        if 'value_score' in filtered_df.columns:
+                            avg_score = filtered_df['value_score'].mean()
+                            if pd.isna(avg_score) or avg_score is None:
+                                avg_score = 0
+                        else:
+                            avg_score = 0
+                        st.metric("Avg Score", f"{avg_score:.1f}/10" if avg_score > 0 else "N/A")
+                    except Exception:
+                        st.metric("Avg Score", "N/A")
                 with col4:
-                    platforms = filtered_df['platform'].nunique() if 'platform' in filtered_df.columns else 0
-                    st.metric("Platforms", platforms)
+                    try:
+                        if 'platform' in filtered_df.columns:
+                            platforms = filtered_df['platform'].nunique()
+                        else:
+                            platforms = 0
+                        st.metric("Platforms", platforms)
+                    except Exception:
+                        st.metric("Platforms", 0)
                 
             else:
                 st.info("📭 No posts found. Start collecting from the sidebar!")
