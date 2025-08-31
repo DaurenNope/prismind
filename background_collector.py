@@ -59,6 +59,7 @@ class BackgroundCollector:
             
             # Get existing posts to avoid duplicates
             existing_ids = self.get_existing_post_ids()
+            existing_urls = self.get_existing_urls()
             
             # Run collections with limits
             total_new_posts = 0
@@ -66,7 +67,7 @@ class BackgroundCollector:
             # Twitter collection
             try:
                 print("🐦 Collecting Twitter posts...")
-                twitter_count = asyncio.run(collect_twitter_bookmarks_with_limit(existing_ids))
+                twitter_count = asyncio.run(collect_twitter_bookmarks_with_limit(existing_ids, existing_urls))
                 total_new_posts += twitter_count
                 print(f"✅ Twitter: {twitter_count} new posts")
             except Exception as e:
@@ -75,7 +76,7 @@ class BackgroundCollector:
             # Reddit collection
             try:
                 print("🤖 Collecting Reddit posts...")
-                reddit_count = collect_reddit_bookmarks_with_limit(existing_ids)
+                reddit_count = collect_reddit_bookmarks_with_limit(existing_ids, existing_urls)
                 total_new_posts += reddit_count
                 print(f"✅ Reddit: {reddit_count} new posts")
             except Exception as e:
@@ -93,14 +94,55 @@ class BackgroundCollector:
     def get_existing_post_ids(self):
         """Get existing post IDs from database"""
         try:
+            # Try Supabase first
+            from scripts.supabase_manager import SupabaseManager
+            supabase = SupabaseManager()
+            existing_posts = supabase.get_all_posts()
+            if not existing_posts.empty:
+                existing_ids = set(existing_posts['post_id'].tolist()) if 'post_id' in existing_posts.columns else set()
+                print(f"📊 Found {len(existing_ids)} existing posts in Supabase")
+                return existing_ids
+        except Exception as e:
+            print(f"⚠️ Could not get existing posts from Supabase: {e}")
+        
+        # Fallback to SQLite
+        try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             cursor.execute("SELECT post_id FROM posts WHERE post_id IS NOT NULL")
             existing_ids = {row[0] for row in cursor.fetchall()}
             conn.close()
+            print(f"📊 Found {len(existing_ids)} existing posts in SQLite")
             return existing_ids
         except Exception as e:
-            print(f"⚠️ Could not get existing posts: {e}")
+            print(f"⚠️ Could not get existing posts from SQLite: {e}")
+            return set()
+    
+    def get_existing_urls(self):
+        """Get existing URLs from database"""
+        try:
+            # Try Supabase first
+            from scripts.supabase_manager import SupabaseManager
+            supabase = SupabaseManager()
+            existing_posts = supabase.get_all_posts()
+            if not existing_posts.empty and 'url' in existing_posts.columns:
+                existing_urls = set(existing_posts['url'].dropna().tolist())
+                print(f"🔗 Found {len(existing_urls)} existing URLs in Supabase")
+                return existing_urls
+        except Exception as e:
+            print(f"⚠️ Could not get existing URLs from Supabase: {e}")
+        
+        # Fallback to SQLite
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT url FROM posts WHERE url IS NOT NULL")
+            existing_urls = {row[0] for row in cursor.fetchall()}
+            conn.close()
+            print(f"🔗 Found {len(existing_urls)} existing URLs in SQLite")
+            return existing_urls
+        except Exception as e:
+            print(f"⚠️ Could not get existing URLs from SQLite: {e}")
             return set()
     
     def stop(self):
@@ -108,7 +150,7 @@ class BackgroundCollector:
         self.running = False
         print("🛑 Background collection stopped")
 
-async def collect_twitter_bookmarks_with_limit(existing_ids):
+async def collect_twitter_bookmarks_with_limit(existing_ids, existing_urls=None):
     """Collect Twitter bookmarks with limit"""
     from collect_multi_platform import collect_twitter_bookmarks
     
@@ -116,9 +158,9 @@ async def collect_twitter_bookmarks_with_limit(existing_ids):
     original_limit = os.getenv('TWITTER_LIMIT', '200')
     os.environ['TWITTER_LIMIT'] = str(min(int(original_limit), 50))  # Max 50 for background
     
-    return await collect_twitter_bookmarks(None, existing_ids)
+    return await collect_twitter_bookmarks(None, existing_ids, existing_urls)
 
-def collect_reddit_bookmarks_with_limit(existing_ids):
+def collect_reddit_bookmarks_with_limit(existing_ids, existing_urls=None):
     """Collect Reddit bookmarks with limit"""
     from collect_multi_platform import collect_reddit_bookmarks
     
@@ -126,7 +168,7 @@ def collect_reddit_bookmarks_with_limit(existing_ids):
     original_limit = os.getenv('REDDIT_LIMIT', '100')
     os.environ['REDDIT_LIMIT'] = str(min(int(original_limit), 25))  # Max 25 for background
     
-    return collect_reddit_bookmarks(None, existing_ids)
+    return collect_reddit_bookmarks(None, existing_ids, existing_urls)
 
 async def collect_threads_bookmarks_with_limit(existing_ids):
     """Collect Threads bookmarks with limit"""

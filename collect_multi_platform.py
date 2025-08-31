@@ -147,7 +147,7 @@ def analyze_and_store_post(db_manager, post_dict):
         # Store without AI analysis as fallback
         db_manager.add_post(post_dict)
 
-async def collect_twitter_bookmarks(db_manager, existing_ids):
+async def collect_twitter_bookmarks(db_manager, existing_ids, existing_urls=None):
     """Collect Twitter bookmarks"""
     print("\n🐦 TWITTER COLLECTION")
     print("-" * 30)
@@ -190,11 +190,21 @@ async def collect_twitter_bookmarks(db_manager, existing_ids):
                     print(f"   ⚠️ Skipping post without ID: {post_dict.get('title', 'Unknown')}")
                     continue
                     
-                print(f"   📝 Checking post: {post_id} - {'NEW' if post_id not in existing_ids else 'EXISTS'}")
+                # Check for duplicates by both post_id and URL
+                is_duplicate = False
+                if post_id in existing_ids:
+                    print(f"   ⚠️ Post ID {post_id} already exists, skipping...")
+                    is_duplicate = True
                 
-                if post_id not in existing_ids:
+                if not is_duplicate and existing_urls and post_dict.get('url') in existing_urls:
+                    print(f"   ⚠️ URL {post_dict.get('url')} already exists, skipping...")
+                    is_duplicate = True
+                
+                if not is_duplicate:
                     new_posts.append(post_dict)
                     existing_ids.add(post_id)
+                    if post_dict.get('url'):
+                        existing_urls.add(post_dict.get('url'))
             
             # Add new posts to database with AI analysis
             for post_dict in new_posts:
@@ -215,7 +225,7 @@ async def collect_twitter_bookmarks(db_manager, existing_ids):
         except:
             pass
 
-def collect_reddit_bookmarks(db_manager, existing_ids):
+def collect_reddit_bookmarks(db_manager, existing_ids, existing_urls=None):
     """Collect Reddit saved posts"""
     print("\n🤖 REDDIT COLLECTION")
     print("-" * 30)
@@ -260,9 +270,21 @@ def collect_reddit_bookmarks(db_manager, existing_ids):
                     print(f"   ⚠️ Skipping post without ID: {post_dict.get('title', 'Unknown')}")
                     continue
                     
-                if post_id not in existing_ids:
+                # Check for duplicates by both post_id and URL
+                is_duplicate = False
+                if post_id in existing_ids:
+                    print(f"   ⚠️ Post ID {post_id} already exists, skipping...")
+                    is_duplicate = True
+                
+                if not is_duplicate and existing_urls and post_dict.get('url') in existing_urls:
+                    print(f"   ⚠️ URL {post_dict.get('url')} already exists, skipping...")
+                    is_duplicate = True
+                
+                if not is_duplicate:
                     new_posts.append(post_dict)
                     existing_ids.add(post_id)
+                    if post_dict.get('url'):
+                        existing_urls.add(post_dict.get('url'))
             
             # Add new posts to database with AI analysis
             for post_dict in new_posts:
@@ -303,19 +325,25 @@ async def main():
     existing_posts = db_manager.get_all_posts(include_deleted=False)
     existing_ids = set(existing_posts['post_id'].tolist()) if not existing_posts.empty else set()
     
+    # Also get URLs for additional duplicate checking
+    existing_urls = set()
+    if not existing_posts.empty and 'url' in existing_posts.columns:
+        existing_urls = set(existing_posts['url'].dropna().tolist())
+    
     print(f"📊 Database contains {len(existing_ids)} existing posts")
     print(f"🔍 Existing post IDs: {list(existing_ids)[:5]}...")  # Show first 5 IDs
+    print(f"🔗 Existing URLs: {len(existing_urls)} unique URLs")
     
     total_new = 0
     
     # Collect from all platforms
     try:
         # Twitter
-        twitter_count = await collect_twitter_bookmarks(db_manager, existing_ids)
+        twitter_count = await collect_twitter_bookmarks(db_manager, existing_ids, existing_urls)
         total_new += twitter_count
         
         # Reddit  
-        reddit_count = collect_reddit_bookmarks(db_manager, existing_ids)
+        reddit_count = collect_reddit_bookmarks(db_manager, existing_ids, existing_urls)
         total_new += reddit_count
         
         # Threads (disabled due to authentication issues)

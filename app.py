@@ -124,24 +124,46 @@ class SimpleSupabaseManager:
     
     def add_post(self, post_data):
         try:
-            # Prepare the data for Supabase
-            # Generate a unique ID from the post_id or use a hash
+            # First, check if this post already exists
             post_id = post_data.get('post_id', '')
-            if post_id and str(post_id).isdigit():
-                # Use the post_id as the database id if it's a reasonable size
+            url = post_data.get('url', '')
+            
+            if post_id:
+                # Check by post_id first
                 try:
-                    db_id = int(post_id)
-                    if db_id <= 2147483647:  # Max integer value
-                        data = {'id': db_id}
-                    else:
-                        # If too large, use a hash of the post_id
-                        data = {'id': hash(str(post_id)) % 2147483647}
-                except (ValueError, OverflowError):
-                    data = {'id': hash(str(post_id)) % 2147483647}
-            else:
-                # Use hash of URL or content as ID
-                unique_string = post_data.get('url', '') or post_data.get('content', '') or str(post_data)
-                data = {'id': hash(unique_string) % 2147483647}
+                    existing = self.client.table(self.table_name).select('id').eq('id', post_id).execute()
+                    if existing.data:
+                        print(f"⚠️ Post {post_id} already exists, skipping...")
+                        return True  # Return True since it's already there
+                except:
+                    pass
+            
+            if url:
+                # Also check by URL as backup
+                try:
+                    existing = self.client.table(self.table_name).select('id').eq('url', url).execute()
+                    if existing.data:
+                        print(f"⚠️ Post with URL {url} already exists, skipping...")
+                        return True
+                except:
+                    pass
+            
+            # Generate a unique ID
+            import hashlib
+            import time
+            
+            # Create a unique identifier
+            unique_string = f"{post_id}_{url}_{post_data.get('content', '')[:100]}"
+            # Use SHA256 hash and take first 8 characters as hex, convert to int
+            hash_object = hashlib.sha256(unique_string.encode())
+            hash_hex = hash_object.hexdigest()[:8]
+            db_id = int(hash_hex, 16) % 2147483647  # Ensure it fits in INTEGER range
+            
+            # Add timestamp to make it more unique
+            timestamp = int(time.time() * 1000) % 1000000  # Last 6 digits of timestamp
+            db_id = (db_id + timestamp) % 2147483647
+            
+            data = {'id': db_id}
             
             # Add the rest of the data
             data.update({
