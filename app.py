@@ -289,7 +289,10 @@ async def run_twitter_collection():
         # Get existing posts to avoid duplicates
         if hasattr(db_manager, 'get_all_posts'):
             existing_posts = db_manager.get_all_posts(include_deleted=False)
-            existing_ids = set(existing_posts['post_id'].tolist()) if not existing_posts.empty else set()
+            if not existing_posts.empty and 'post_id' in existing_posts.columns:
+                existing_ids = set(existing_posts['post_id'].tolist())
+            else:
+                existing_ids = set()
         else:
             existing_ids = set()
         
@@ -310,7 +313,10 @@ def run_reddit_collection():
         # Get existing posts to avoid duplicates  
         if hasattr(db_manager, 'get_all_posts'):
             existing_posts = db_manager.get_all_posts(include_deleted=False)
-            existing_ids = set(existing_posts['post_id'].tolist()) if not existing_posts.empty else set()
+            if not existing_posts.empty and 'post_id' in existing_posts.columns:
+                existing_ids = set(existing_posts['post_id'].tolist())
+            else:
+                existing_ids = set()
         else:
             existing_ids = set()
         
@@ -331,7 +337,10 @@ async def run_threads_collection():
         # Get existing posts to avoid duplicates
         if hasattr(db_manager, 'get_all_posts'):
             existing_posts = db_manager.get_all_posts(include_deleted=False)
-            existing_ids = set(existing_posts['post_id'].tolist()) if not existing_posts.empty else set()
+            if not existing_posts.empty and 'post_id' in existing_posts.columns:
+                existing_ids = set(existing_posts['post_id'].tolist())
+            else:
+                existing_ids = set()
         else:
             existing_ids = set()
         
