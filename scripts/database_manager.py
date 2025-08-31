@@ -3,7 +3,7 @@ import json
 import pandas as pd
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional, Union
 import streamlit as st
 
 class DatabaseManager:
@@ -206,7 +206,7 @@ class DatabaseManager:
             conn.commit()
             return int(cursor.lastrowid)
 
-    def get_posts(self, limit: int | None = None) -> List[Dict[str, Any]]:
+    def get_posts(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         """Return non-deleted posts as list of dicts, optionally limited."""
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
@@ -218,13 +218,13 @@ class DatabaseManager:
                 rows = conn.execute(sql).fetchall()
             return [self._row_to_dict(r) for r in rows]
 
-    def get_post_by_id(self, row_id: int) -> Dict[str, Any] | None:
+    def get_post_by_id(self, row_id: int) -> Optional[Dict[str, Any]]:
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute("SELECT * FROM posts WHERE id = ?", (row_id,)).fetchone()
             return self._row_to_dict(row) if row else None
 
-    def update_post(self, identifier: int | str, updates: Dict[str, Any]) -> bool:
+    def update_post(self, identifier: Union[int, str], updates: Dict[str, Any]) -> bool:
         """Update fields for a post by internal numeric id or external post_id.
 
         Returns True when an update statement is executed (even if no rows changed).

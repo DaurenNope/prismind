@@ -492,7 +492,7 @@ class ThreadsExtractor(SocialExtractorBase):
         # This will be updated later if needed
         raise NotImplementedError("URL-based scraping not supported in this version.")
 
-    def _parse_thread_from_ld_json(self, data: dict) -> SocialPost | None:
+    def _parse_thread_from_ld_json(self, data: dict) -> Optional[SocialPost]:
         """
         Parses the JSON-LD data from a script tag to extract post details.
         """

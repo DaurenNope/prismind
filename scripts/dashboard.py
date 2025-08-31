@@ -13,6 +13,7 @@ from datetime import datetime
 import ast
 import sys
 import os
+from typing import Optional, List, Tuple
 
 # Add the project root to the path so we can import scripts
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -39,7 +40,7 @@ def get_post_key(post) -> str:
     url_val = str(p.get('url') or '')
     return f"{platform}|{post_id or url_val}"
 
-def _extract_urls(text: str | None) -> list[str]:
+def _extract_urls(text: Optional[str]) -> List[str]:
     if not text:
         return []
     return re.findall(r"https?://\S+", text)
@@ -55,7 +56,7 @@ def _humanize_url(url: str) -> str:
     except Exception:
         return url
 
-def _display_text_and_links(text: str | None, max_length: int = 200) -> tuple[str, list[str]]:
+def _display_text_and_links(text: Optional[str], max_length: int = 200) -> Tuple[str, List[str]]:
     urls = _extract_urls(text)
     clean = re.sub(r"https?://\S+", "", text or "").strip()
     clean = " ".join(clean.split())
@@ -356,7 +357,7 @@ def get_comments_for_post(post_id):
     except Exception as e:
         return []
 
-def create_streamlit_card(post, is_review: bool = False, unique_key: str | None = None, widget_suffix: str = ""):
+def create_streamlit_card(post, is_review: bool = False, unique_key: Optional[str] = None, widget_suffix: str = ""):
     """Create a beautiful, modern card with platform-specific styling.
 
     unique_key ensures Streamlit widget keys are stable and unique per card.

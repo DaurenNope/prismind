@@ -43,6 +43,9 @@ google-generativeai>=0.3.0
 # Local LLMs via Ollama (optional)
 ollama>=0.4.0
 
+# OCR for media analysis
+pytesseract>=0.3.10
+
 # Type hints
 typing_extensions>=4.0.0
 

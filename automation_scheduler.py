@@ -31,7 +31,7 @@ sys.path.insert(0, str(project_root))
 
 from collect_multi_platform import collect_twitter_bookmarks, collect_reddit_bookmarks, collect_threads_bookmarks
 from scripts.database_manager import DatabaseManager
-from supabase_manager import SupabaseManager
+from scripts.supabase_manager import SupabaseManager
 
 
 @dataclass

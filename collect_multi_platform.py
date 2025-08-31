@@ -24,7 +24,7 @@ from core.extraction.threads_extractor import ThreadsExtractor
 from scripts.database_manager import DatabaseManager
 from core.analysis.intelligent_content_analyzer import IntelligentContentAnalyzer
 from core.analysis.local_media_analyzer import LocalMediaAnalyzer
-from supabase_manager import SupabaseManager
+from scripts.supabase_manager import SupabaseManager
 
 def analyze_and_store_post(db_manager, post_dict):
     """Analyze post with AI and store with analysis results"""
