@@ -871,11 +871,19 @@ with tab2:
                 # Create a table-friendly DataFrame
                 table_data = []
                 
-                # Debug: Show available columns for first post
+                # Show AI analysis status
                 if len(current_posts) > 0:
-                    first_post = current_posts.iloc[0]
-                    st.write(f"🔍 **Debug - Available fields:** {list(first_post.index)}")
-                    st.write(f"🔍 **Sample AI fields:** ai_summary={first_post.get('ai_summary')}, summary={first_post.get('summary')}, ai_analysis={first_post.get('ai_analysis')}")
+                    ai_analyzed_count = 0
+                    for _, post in current_posts.iterrows():
+                        if post.get('ai_summary') and str(post.get('ai_summary')).strip() and str(post.get('ai_summary')) != 'None':
+                            ai_analyzed_count += 1
+                    
+                    st.info(f"🤖 **AI Analysis Status:** {ai_analyzed_count}/{len(current_posts)} posts have AI summaries")
+                    
+                    # Add re-analysis option for posts without AI summaries
+                    if ai_analyzed_count < len(current_posts):
+                        if st.button("🤖 Re-analyze Posts Without AI Summary"):
+                            st.info("🔄 This will trigger AI analysis for posts without summaries. Use the collection buttons in the sidebar to re-analyze.")
                 
                 for idx, post in current_posts.iterrows():
                     try:
@@ -910,19 +918,35 @@ with tab2:
                         content = str(post.get('content', '')) if post.get('content') is not None else ''
                         content_preview = content[:100] + "..." if len(content) > 100 else content
                         
-                        # Get AI summary - check multiple possible field names
-                        ai_summary_fields = ['ai_summary', 'summary', 'ai_analysis', 'analysis', 'smart_tags']
+                        # Get AI summary - prioritize ai_summary field from IntelligentContentAnalyzer
                         summary_preview = ""
                         
-                        for field in ai_summary_fields:
-                            if field in post and post[field] is not None:
-                                try:
-                                    summary_text = str(post[field])
-                                    if summary_text and summary_text.strip() and summary_text != 'None':
-                                        summary_preview = summary_text[:80] + "..." if len(summary_text) > 80 else summary_text
-                                        break
-                                except:
-                                    continue
+                        # First try the main AI summary field
+                        if 'ai_summary' in post and post['ai_summary'] is not None:
+                            summary_text = str(post['ai_summary'])
+                            if summary_text and summary_text.strip() and summary_text != 'None':
+                                summary_preview = summary_text[:100] + "..." if len(summary_text) > 100 else summary_text
+                        
+                        # Fallback to other fields if ai_summary is empty
+                        if not summary_preview:
+                            fallback_fields = ['summary', 'ai_analysis', 'analysis', 'smart_tags', 'key_concepts']
+                            for field in fallback_fields:
+                                if field in post and post[field] is not None:
+                                    try:
+                                        summary_text = str(post[field])
+                                        if summary_text and summary_text.strip() and summary_text != 'None':
+                                            summary_preview = summary_text[:100] + "..." if len(summary_text) > 100 else summary_text
+                                            break
+                                    except:
+                                        continue
+                        
+                        # If still no summary, create a basic one from content
+                        if not summary_preview:
+                            content = str(post.get('content', '')) if post.get('content') is not None else ''
+                            if content and len(content) > 50:
+                                summary_preview = f"📝 Content preview: {content[:80]}..."
+                            else:
+                                summary_preview = "🤖 AI analysis pending..."
                         
                         table_data.append({
                             'Platform': f"{platform_emoji} {platform.title()}",
