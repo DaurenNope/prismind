@@ -175,8 +175,12 @@ async def collect_twitter_bookmarks(db_manager, existing_ids):
             new_posts = []
             for post in saved_posts:
                 post_dict = post.__dict__ if hasattr(post, '__dict__') else post
-                post_id = post_dict.get('post_id')
+                post_id = post_dict.get('post_id') or post_dict.get('id') or post_dict.get('url', '').split('/')[-1]
                 
+                if not post_id:
+                    print(f"   ⚠️ Skipping post without ID: {post_dict.get('title', 'Unknown')}")
+                    continue
+                    
                 print(f"   📝 Checking post: {post_id} - {'NEW' if post_id not in existing_ids else 'EXISTS'}")
                 
                 if post_id not in existing_ids:
@@ -239,8 +243,12 @@ def collect_reddit_bookmarks(db_manager, existing_ids):
             new_posts = []
             for post in saved_posts:
                 post_dict = post.__dict__ if hasattr(post, '__dict__') else post
-                post_id = post_dict.get('post_id')
+                post_id = post_dict.get('post_id') or post_dict.get('id') or post_dict.get('url', '').split('/')[-1]
                 
+                if not post_id:
+                    print(f"   ⚠️ Skipping post without ID: {post_dict.get('title', 'Unknown')}")
+                    continue
+                    
                 if post_id not in existing_ids:
                     new_posts.append(post_dict)
                     existing_ids.add(post_id)
@@ -293,8 +301,12 @@ async def collect_threads_bookmarks(db_manager, existing_ids):
             new_posts = []
             for post in saved_posts:
                 post_dict = post.__dict__ if hasattr(post, '__dict__') else post
-                post_id = post_dict.get('post_id')
+                post_id = post_dict.get('post_id') or post_dict.get('id') or post_dict.get('url', '').split('/')[-1]
                 
+                if not post_id:
+                    print(f"   ⚠️ Skipping post without ID: {post_dict.get('title', 'Unknown')}")
+                    continue
+                    
                 if post_id not in existing_ids:
                     new_posts.append(post_dict)
                     existing_ids.add(post_id)
