@@ -79,11 +79,18 @@ class SimpleSupabaseManager:
     
     def get_all_posts(self, include_deleted=False):
         try:
-            if include_deleted:
-                response = self.client.table(self.table_name).select('*').execute()
-            else:
-                response = self.client.table(self.table_name).select('*').eq('deleted', False).execute()
-            return pd.DataFrame(response.data)
+            # Try to get all posts first, then filter in Python if needed
+            response = self.client.table(self.table_name).select('*').execute()
+            df = pd.DataFrame(response.data)
+            
+            # If we need to filter deleted posts, check if the column exists
+            if not include_deleted and 'deleted' in df.columns:
+                df = df[df['deleted'] == False]
+            elif not include_deleted and 'deleted' not in df.columns:
+                # If no deleted column exists, return all posts (assume none are deleted)
+                pass
+                
+            return df
         except Exception as e:
             st.error(f"Error fetching posts: {e}")
             return pd.DataFrame()
@@ -91,7 +98,13 @@ class SimpleSupabaseManager:
     def get_posts(self, limit=100):
         try:
             response = self.client.table(self.table_name).select('*').limit(limit).execute()
-            return response.data
+            df = pd.DataFrame(response.data)
+            
+            # Filter deleted posts if the column exists
+            if 'deleted' in df.columns:
+                df = df[df['deleted'] == False]
+                
+            return df.to_dict('records')
         except Exception as e:
             st.error(f"Error fetching posts: {e}")
             return []
