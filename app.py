@@ -23,6 +23,10 @@ import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
 import warnings
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Suppress warnings for cleaner output
 warnings.filterwarnings('ignore')
@@ -73,9 +77,12 @@ class SimpleSupabaseManager:
         self.client = client
         self.table_name = 'posts'
     
-    def get_all_posts(self):
+    def get_all_posts(self, include_deleted=False):
         try:
-            response = self.client.table(self.table_name).select('*').execute()
+            if include_deleted:
+                response = self.client.table(self.table_name).select('*').execute()
+            else:
+                response = self.client.table(self.table_name).select('*').eq('deleted', False).execute()
             return pd.DataFrame(response.data)
         except Exception as e:
             st.error(f"Error fetching posts: {e}")
@@ -89,13 +96,104 @@ class SimpleSupabaseManager:
             st.error(f"Error fetching posts: {e}")
             return []
 
+class SQLiteDatabaseManager:
+    """Local SQLite database manager"""
+    def __init__(self):
+        self.db_path = "prismind.db"
+        self.init_database()
+    
+    def init_database(self):
+        """Initialize the database with required tables"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # Create posts table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS posts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                post_id TEXT UNIQUE,
+                platform TEXT,
+                title TEXT,
+                content TEXT,
+                url TEXT,
+                author TEXT,
+                score REAL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                ai_analysis TEXT,
+                category TEXT,
+                value_score REAL,
+                deleted BOOLEAN DEFAULT FALSE
+            )
+        ''')
+        
+        conn.commit()
+        conn.close()
+    
+    def get_all_posts(self, include_deleted=False):
+        try:
+            conn = sqlite3.connect(self.db_path)
+            if include_deleted:
+                query = "SELECT * FROM posts ORDER BY created_at DESC"
+            else:
+                query = "SELECT * FROM posts WHERE deleted = FALSE ORDER BY created_at DESC"
+            
+            df = pd.read_sql_query(query, conn)
+            conn.close()
+            return df
+        except Exception as e:
+            st.error(f"Error fetching posts: {e}")
+            return pd.DataFrame()
+    
+    def get_posts(self, limit=100):
+        try:
+            conn = sqlite3.connect(self.db_path)
+            query = f"SELECT * FROM posts WHERE deleted = FALSE ORDER BY created_at DESC LIMIT {limit}"
+            df = pd.read_sql_query(query, conn)
+            conn.close()
+            return df.to_dict('records')
+        except Exception as e:
+            st.error(f"Error fetching posts: {e}")
+            return []
+    
+    def add_post(self, post_data):
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                INSERT OR REPLACE INTO posts 
+                (post_id, platform, title, content, url, author, score, ai_analysis, category, value_score)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                post_data.get('post_id'),
+                post_data.get('platform'),
+                post_data.get('title'),
+                post_data.get('content'),
+                post_data.get('url'),
+                post_data.get('author'),
+                post_data.get('score', 0),
+                post_data.get('ai_analysis'),
+                post_data.get('category'),
+                post_data.get('value_score', 0)
+            ))
+            
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            st.error(f"Error adding post: {e}")
+
 class InMemoryDatabaseManager:
     """Simple in-memory storage for demo purposes"""
     def __init__(self):
         self.posts = []
     
-    def get_all_posts(self):
-        return pd.DataFrame(self.posts)
+    def get_all_posts(self, include_deleted=False):
+        if include_deleted:
+            return pd.DataFrame(self.posts)
+        else:
+            # Filter out deleted posts
+            active_posts = [post for post in self.posts if not post.get('deleted', False)]
+            return pd.DataFrame(active_posts)
     
     def get_posts(self, limit=100):
         return self.posts[:limit]
@@ -115,17 +213,28 @@ def get_database_manager():
                 url = os.getenv('SUPABASE_URL')
                 key = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
                 if url and key:
-                    client = create_client(url, key)
-                    return SimpleSupabaseManager(client)
+                    # Test the connection first
+                    import requests
+                    try:
+                        response = requests.get(url, timeout=5)
+                        if response.status_code == 200:
+                            client = create_client(url, key)
+                            return SimpleSupabaseManager(client)
+                        else:
+                            st.warning("⚠️ Supabase project not accessible, using local database")
+                            return SQLiteDatabaseManager()
+                    except Exception:
+                        st.warning("⚠️ Supabase connection failed, using local database")
+                        return SQLiteDatabaseManager()
             except ImportError:
                 st.error("❌ Supabase library not available. Install with: pip install supabase")
-                return None
+                return SQLiteDatabaseManager()
         else:
-            # Fallback to basic in-memory storage for cloud deployment
-            return InMemoryDatabaseManager()
+            # Use local SQLite database
+            return SQLiteDatabaseManager()
     except Exception as e:
         st.error(f"❌ Database connection failed: {e}")
-        return InMemoryDatabaseManager()
+        return SQLiteDatabaseManager()
 
 # Collection functions
 async def run_twitter_collection():
