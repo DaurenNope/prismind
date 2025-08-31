@@ -216,15 +216,17 @@ def get_database_manager():
                     # Test the connection first
                     import requests
                     try:
-                        response = requests.get(url, timeout=5)
-                        if response.status_code == 200:
+                        # Test with a more specific endpoint
+                        test_url = f"{url}/rest/v1/"
+                        response = requests.get(test_url, headers={"apikey": key}, timeout=10)
+                        if response.status_code in [200, 401]:  # 401 means auth works but no table access
                             client = create_client(url, key)
                             return SimpleSupabaseManager(client)
                         else:
                             st.warning("⚠️ Supabase project not accessible, using local database")
                             return SQLiteDatabaseManager()
-                    except Exception:
-                        st.warning("⚠️ Supabase connection failed, using local database")
+                    except Exception as e:
+                        st.warning(f"⚠️ Supabase connection failed: {e}, using local database")
                         return SQLiteDatabaseManager()
             except ImportError:
                 st.error("❌ Supabase library not available. Install with: pip install supabase")
