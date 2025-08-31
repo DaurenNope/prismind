@@ -832,8 +832,8 @@ with tab2:
                     st.error(f"❌ Pagination error: {e}")
                     current_posts = filtered_df.head(st.session_state.posts_per_page)
                 
-                # Display posts with better layout
-                st.subheader(f"📝 Posts ({start_idx + 1}-{end_idx} of {total_posts})")
+                # Create a super useful table view
+                st.subheader(f"📊 Intelligent Table View ({start_idx + 1}-{end_idx} of {total_posts})")
                 
                 # Quick overview of current results
                 if total_posts > 0:
@@ -868,94 +868,151 @@ with tab2:
                     
                     st.divider()
                 
+                # Create a table-friendly DataFrame
+                table_data = []
                 for idx, post in current_posts.iterrows():
                     try:
-                        # Safely get post data with defaults
+                        # Get all possible date fields
+                        date_fields = ['created_timestamp', 'created_at', 'saved_at', 'timestamp']
+                        post_date = "Unknown"
+                        
+                        for date_field in date_fields:
+                            if date_field in post and post[date_field] is not None:
+                                try:
+                                    post_date = pd.to_datetime(post[date_field]).strftime('%Y-%m-%d')
+                                    break
+                                except:
+                                    continue
+                        
+                        # Get platform emoji
                         platform = str(post.get('platform', '')) if post.get('platform') is not None else ''
                         platform_emoji = {"twitter": "🐦", "reddit": "🤖", "threads": "🧵"}.get(platform, "📝")
                         
+                        # Get score
                         score = post.get('value_score')
                         if score is not None and score != 'N/A':
                             try:
                                 score_float = float(score)
-                                score_display = f"⭐{score_float:.1f}/10"
+                                score_display = f"{score_float:.1f}/10"
                             except (ValueError, TypeError):
-                                score_display = "⭐N/A"
+                                score_display = "N/A"
                         else:
-                            score_display = "⭐N/A"
+                            score_display = "N/A"
                         
-                        # Safely get text fields
-                        author = str(post.get('author', 'Unknown')) if post.get('author') is not None else 'Unknown'
-                        title = str(post.get('title', 'No title')) if post.get('title') is not None else 'No title'
-                        content = str(post.get('content', 'No content')) if post.get('content') is not None else 'No content'
+                        # Get content preview
+                        content = str(post.get('content', '')) if post.get('content') is not None else ''
+                        content_preview = content[:100] + "..." if len(content) > 100 else content
                         
-                        # Create expander title safely
-                        title_preview = title[:40] + "..." if len(title) > 40 else title
-                        expander_title = f"{platform_emoji} {author} - {title_preview} {score_display}"
+                        # Get AI summary
+                        ai_summary = post.get('ai_summary') or post.get('summary')
+                        summary_preview = ""
+                        if ai_summary and ai_summary is not None:
+                            summary_text = str(ai_summary)
+                            summary_preview = summary_text[:80] + "..." if len(summary_text) > 80 else summary_text
                         
-                        # Create expandable post card
-                        with st.expander(expander_title, expanded=False):
-                            col1, col2 = st.columns([3, 1])
-                            
-                            with col1:
-                                st.markdown(f"**{title}**")
-                                st.markdown(f"*by {author} on {platform}*")
-                                
-                                # Content with better formatting
-                                if content and len(content) > 500:
-                                    st.markdown(f"{content[:500]}...")
-                                    with st.expander("Show full content"):
-                                        st.markdown(content)
-                                elif content:
-                                    st.markdown(content)
-                                else:
-                                    st.markdown("*No content available*")
-                                
-                                # Metadata
-                                col_meta1, col_meta2, col_meta3 = st.columns(3)
-                                with col_meta1:
-                                    category = str(post.get('category', 'Uncategorized')) if post.get('category') is not None else 'Uncategorized'
-                                    st.markdown(f"**Category:** {category}")
-                                with col_meta2:
-                                    st.markdown(f"**Score:** {score_display}")
-                                with col_meta3:
-                                    try:
-                                        created_timestamp = post.get('created_timestamp')
-                                        if created_timestamp and created_timestamp is not None:
-                                            created_date = pd.to_datetime(created_timestamp).strftime('%Y-%m-%d')
-                                            st.markdown(f"**Date:** {created_date}")
-                                        else:
-                                            st.markdown("**Date:** Unknown")
-                                    except Exception:
-                                        st.markdown("**Date:** Unknown")
-                            
-                            with col2:
-                                # URL link
-                                url = post.get('url')
-                                if url and url is not None:
-                                    st.markdown(f"[🔗 View Original]({url})")
-                                
-                                # AI analysis summary if available
-                                try:
-                                    ai_summary = post.get('ai_summary')
-                                    summary = post.get('summary')
-                                    
-                                    if ai_summary and ai_summary is not None:
-                                        summary_text = str(ai_summary)
-                                    elif summary and summary is not None:
-                                        summary_text = str(summary)
-                                    else:
-                                        summary_text = None
-                                    
-                                    if summary_text and len(summary_text) > 100:
-                                        with st.expander("🤖 AI Summary"):
-                                            display_summary = summary_text[:200] + "..." if len(summary_text) > 200 else summary_text
-                                            st.markdown(display_summary)
-                                except Exception:
-                                    pass  # Silently skip if there's an error with summary
+                        table_data.append({
+                            'Platform': f"{platform_emoji} {platform.title()}",
+                            'Author': str(post.get('author', 'Unknown')) if post.get('author') is not None else 'Unknown',
+                            'Title': str(post.get('title', 'No title')) if post.get('title') is not None else 'No title',
+                            'Content': content_preview,
+                            'Category': str(post.get('category', 'Uncategorized')) if post.get('category') is not None else 'Uncategorized',
+                            'Score': score_display,
+                            'Date': post_date,
+                            'AI Summary': summary_preview,
+                            'URL': post.get('url', '') if post.get('url') is not None else ''
+                        })
                     except Exception as e:
-                        st.error(f"❌ Error displaying post {idx}: {e}")
                         continue
+                
+                # Display as interactive table
+                if table_data:
+                    df_table = pd.DataFrame(table_data)
+                    
+                    # Add clickable URLs
+                    def make_clickable(url):
+                        if url and url != '':
+                            return f'<a href="{url}" target="_blank">🔗 View</a>'
+                        return ''
+                    
+                    df_table['Link'] = df_table['URL'].apply(make_clickable)
+                    
+                    # Display table with better formatting
+                    st.dataframe(
+                        df_table[['Platform', 'Author', 'Title', 'Content', 'Category', 'Score', 'Date', 'AI Summary', 'Link']],
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "Platform": st.column_config.TextColumn("Platform", width="medium"),
+                            "Author": st.column_config.TextColumn("Author", width="medium"),
+                            "Title": st.column_config.TextColumn("Title", width="large"),
+                            "Content": st.column_config.TextColumn("Content", width="large"),
+                            "Category": st.column_config.TextColumn("Category", width="medium"),
+                            "Score": st.column_config.TextColumn("Score", width="small"),
+                            "Date": st.column_config.TextColumn("Date", width="small"),
+                            "AI Summary": st.column_config.TextColumn("AI Summary", width="large"),
+                            "Link": st.column_config.LinkColumn("Link", width="small")
+                        }
+                    )
+                    
+                    # Add export options
+                    st.subheader("📤 Export Options")
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        csv = df_table.to_csv(index=False)
+                        st.download_button(
+                            label="📥 Download CSV",
+                            data=csv,
+                            file_name=f"prismind_posts_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                            mime="text/csv"
+                        )
+                    
+                    with col2:
+                        # Create a simple JSON export
+                        json_data = df_table.to_dict('records')
+                        st.download_button(
+                            label="📥 Download JSON",
+                            data=json.dumps(json_data, indent=2),
+                            file_name=f"prismind_posts_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                            mime="application/json"
+                        )
+                    
+                    with col3:
+                        if st.button("🔄 Refresh Table"):
+                            st.rerun()
+                    
+                    # Add insights section
+                    st.subheader("💡 Quick Insights")
+                    
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        # Top categories
+                        if 'Category' in df_table.columns:
+                            category_counts = df_table['Category'].value_counts()
+                            st.write("**🏆 Top Categories:**")
+                            for category, count in category_counts.head(5).items():
+                                st.write(f"  • {category}: {count} posts")
+                    
+                    with col2:
+                        # Top authors
+                        if 'Author' in df_table.columns:
+                            author_counts = df_table['Author'].value_counts()
+                            st.write("**👥 Top Authors:**")
+                            for author, count in author_counts.head(5).items():
+                                st.write(f"  • {author}: {count} posts")
+                    
+                    # High-value content
+                    st.write("**⭐ High-Value Content (Score ≥ 8):**")
+                    high_value = df_table[df_table['Score'].str.contains('8|9|10', na=False)]
+                    if not high_value.empty:
+                        for _, row in high_value.head(3).iterrows():
+                            st.write(f"  • **{row['Title']}** by {row['Author']} ({row['Score']})")
+                    else:
+                        st.write("  • No high-value content found in current view")
+                
+                else:
+                    st.info("📭 No posts found matching your criteria.")
                 
                 # Quick stats
                 st.subheader("📊 Quick Stats")
