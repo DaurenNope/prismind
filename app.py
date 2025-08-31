@@ -715,7 +715,11 @@ with tab2:
             
             posts_df = load_posts_data()
             
-            if not posts_df.empty:
+            # Ensure posts_df is a valid DataFrame
+            if posts_df is None:
+                posts_df = pd.DataFrame()
+            
+            if not posts_df.empty and len(posts_df) > 0:
                 # Search and filters section
                 st.subheader("🔍 Search & Filters")
                 
@@ -760,12 +764,20 @@ with tab2:
                 
                 # Search filter
                 if search_query:
-                    search_mask = (
-                        filtered_df['content'].str.contains(search_query, case=False, na=False) |
-                        filtered_df['author'].str.contains(search_query, case=False, na=False) |
-                        filtered_df['title'].str.contains(search_query, case=False, na=False)
-                    )
-                    filtered_df = filtered_df[search_mask]
+                    try:
+                        search_mask = (
+                            filtered_df['content'].str.contains(search_query, case=False, na=False) |
+                            filtered_df['author'].str.contains(search_query, case=False, na=False) |
+                            filtered_df['title'].str.contains(search_query, case=False, na=False)
+                        )
+                        filtered_df = filtered_df[search_mask]
+                    except Exception as e:
+                        st.warning(f"⚠️ Search error: {e}")
+                        # Fallback to simple search
+                        search_mask = filtered_df.apply(
+                            lambda row: search_query.lower() in str(row).lower(), axis=1
+                        )
+                        filtered_df = filtered_df[search_mask]
                 
                 # Platform filter
                 if platform_filter != 'All' and 'platform' in filtered_df.columns:
@@ -813,57 +825,95 @@ with tab2:
                 # Calculate current page data
                 start_idx = st.session_state.current_page * st.session_state.posts_per_page
                 end_idx = min(start_idx + st.session_state.posts_per_page, total_posts)
-                current_posts = filtered_df.iloc[start_idx:end_idx]
+                
+                try:
+                    current_posts = filtered_df.iloc[start_idx:end_idx]
+                except Exception as e:
+                    st.error(f"❌ Pagination error: {e}")
+                    current_posts = filtered_df.head(st.session_state.posts_per_page)
                 
                 # Display posts with better layout
                 st.subheader(f"📝 Posts ({start_idx + 1}-{end_idx} of {total_posts})")
                 
-                for idx, post in current_posts.iterrows():
-                    platform_emoji = {"twitter": "🐦", "reddit": "🤖", "threads": "🧵"}.get(post.get('platform', ''), "📝")
-                    score = post.get('value_score', 'N/A')
-                    score_display = f"⭐{score}/10" if score != 'N/A' and score is not None else "⭐N/A"
+                # Quick overview of current results
+                if total_posts > 0:
+                    col1, col2, col3, col4 = st.columns(4)
                     
-                    # Create expandable post card
-                    with st.expander(f"{platform_emoji} {post.get('author', 'Unknown')} - {post.get('title', 'No title')[:50]}... {score_display}", expanded=False):
-                        col1, col2 = st.columns([3, 1])
+                    with col1:
+                        platforms_in_view = filtered_df['platform'].nunique() if 'platform' in filtered_df.columns else 0
+                        st.metric("🌐 Platforms", platforms_in_view)
+                    
+                    with col2:
+                        categories_in_view = filtered_df['category'].nunique() if 'category' in filtered_df.columns else 0
+                        st.metric("📂 Categories", categories_in_view)
+                    
+                    with col3:
+                        avg_score = filtered_df['value_score'].mean() if 'value_score' in filtered_df.columns else 0
+                        st.metric("⭐ Avg Score", f"{avg_score:.1f}/10" if avg_score > 0 else "N/A")
+                    
+                    with col4:
+                        top_category = filtered_df['category'].mode().iloc[0] if 'category' in filtered_df.columns and len(filtered_df) > 0 else "N/A"
+                        st.metric("🏆 Top Category", top_category[:15] + "..." if len(str(top_category)) > 15 else top_category)
+                    
+                    st.divider()
+                
+                for idx, post in current_posts.iterrows():
+                    try:
+                        platform_emoji = {"twitter": "🐦", "reddit": "🤖", "threads": "🧵"}.get(post.get('platform', ''), "📝")
+                        score = post.get('value_score', 'N/A')
+                        score_display = f"⭐{score}/10" if score != 'N/A' and score is not None else "⭐N/A"
                         
-                        with col1:
-                            st.markdown(f"**{post.get('title', 'No title')}**")
-                            st.markdown(f"*by {post.get('author', 'Unknown')} on {post.get('platform', 'Unknown')}*")
+                        # Create a more informative title
+                        author = post.get('author', 'Unknown')
+                        title = post.get('title', 'No title')
+                        content_preview = post.get('content', 'No content')[:30] + "..." if len(post.get('content', '')) > 30 else post.get('content', 'No content')
+                        
+                        expander_title = f"{platform_emoji} {author} - {title[:40]}... {score_display}"
+                        
+                        # Create expandable post card
+                        with st.expander(expander_title, expanded=False):
+                            col1, col2 = st.columns([3, 1])
                             
-                            # Content with better formatting
-                            content = post.get('content', 'No content available')
-                            if len(content) > 500:
-                                st.markdown(f"{content[:500]}...")
-                                with st.expander("Show full content"):
+                            with col1:
+                                st.markdown(f"**{title}**")
+                                st.markdown(f"*by {author} on {post.get('platform', 'Unknown')}*")
+                                
+                                # Content with better formatting
+                                content = post.get('content', 'No content available')
+                                if len(content) > 500:
+                                    st.markdown(f"{content[:500]}...")
+                                    with st.expander("Show full content"):
+                                        st.markdown(content)
+                                else:
                                     st.markdown(content)
-                            else:
-                                st.markdown(content)
+                                
+                                # Metadata
+                                col_meta1, col_meta2, col_meta3 = st.columns(3)
+                                with col_meta1:
+                                    st.markdown(f"**Category:** {post.get('category', 'Uncategorized')}")
+                                with col_meta2:
+                                    st.markdown(f"**Score:** {score_display}")
+                                with col_meta3:
+                                    if 'created_timestamp' in post and post['created_timestamp']:
+                                        try:
+                                            created_date = pd.to_datetime(post['created_timestamp']).strftime('%Y-%m-%d')
+                                            st.markdown(f"**Date:** {created_date}")
+                                        except:
+                                            st.markdown("**Date:** Unknown")
                             
-                            # Metadata
-                            col_meta1, col_meta2, col_meta3 = st.columns(3)
-                            with col_meta1:
-                                st.markdown(f"**Category:** {post.get('category', 'Uncategorized')}")
-                            with col_meta2:
-                                st.markdown(f"**Score:** {score_display}")
-                            with col_meta3:
-                                if 'created_timestamp' in post and post['created_timestamp']:
-                                    try:
-                                        created_date = pd.to_datetime(post['created_timestamp']).strftime('%Y-%m-%d')
-                                        st.markdown(f"**Date:** {created_date}")
-                                    except:
-                                        st.markdown("**Date:** Unknown")
-                        
-                        with col2:
-                            if post.get('url'):
-                                st.markdown(f"[🔗 View Original]({post.get('url')})")
-                            
-                            # AI analysis summary if available
-                            if post.get('ai_summary') or post.get('summary'):
-                                summary = post.get('ai_summary') or post.get('summary')
-                                if summary and len(summary) > 100:
-                                    with st.expander("🤖 AI Summary"):
-                                        st.markdown(summary[:200] + "..." if len(summary) > 200 else summary)
+                            with col2:
+                                if post.get('url'):
+                                    st.markdown(f"[🔗 View Original]({post.get('url')})")
+                                
+                                # AI analysis summary if available
+                                if post.get('ai_summary') or post.get('summary'):
+                                    summary = post.get('ai_summary') or post.get('summary')
+                                    if summary and len(summary) > 100:
+                                        with st.expander("🤖 AI Summary"):
+                                            st.markdown(summary[:200] + "..." if len(summary) > 200 else summary)
+                    except Exception as e:
+                        st.error(f"❌ Error displaying post {idx}: {e}")
+                        continue
                 
                 # Quick stats
                 st.subheader("📊 Quick Stats")
@@ -883,11 +933,36 @@ with tab2:
                 
             else:
                 st.info("📭 No posts found. Start collecting from the sidebar!")
+                
+                # Helpful tips section
+                st.subheader("💡 Tips for Better Browsing")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("""
+                    **🔍 Search Tips:**
+                    - Search by author name
+                    - Search by content keywords
+                    - Search by post title
+                    - Use quotes for exact phrases
+                    """)
+                
+                with col2:
+                    st.markdown("""
+                    **📊 Filter Tips:**
+                    - Filter by platform (Twitter, Reddit)
+                    - Filter by AI category
+                    - Sort by value score to find best content
+                    - Use pagination to browse large collections
+                    """)
+                
                 st.markdown("""
-                **Getting Started:**
+                **🚀 Getting Started:**
                 1. Use the sidebar collection buttons to gather bookmarks
                 2. Wait for AI analysis to complete
                 3. Browse your intelligent content here!
+                4. Use search and filters to find specific content
                 """)
                 
         except Exception as e:
