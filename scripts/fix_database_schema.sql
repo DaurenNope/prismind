@@ -1,7 +1,11 @@
--- Create the posts table in Supabase
+-- Fix database schema to handle large Twitter post IDs
 -- Run this in your Supabase SQL editor
 
-CREATE TABLE IF NOT EXISTS public.posts (
+-- First, drop the existing table and recreate it with BIGINT
+DROP TABLE IF EXISTS public.posts CASCADE;
+
+-- Recreate the posts table with BIGINT for id
+CREATE TABLE public.posts (
     id BIGINT PRIMARY KEY,
     title TEXT,
     content TEXT,
@@ -48,4 +52,4 @@ VALUES (
     'This is a test AI summary.',
     'test',
     'test'
-) ON CONFLICT (id) DO NOTHING; 
+) ON CONFLICT (id) DO NOTHING;

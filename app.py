@@ -90,7 +90,8 @@ class SimpleSupabaseManager:
                 # If no deleted column exists, return all posts (assume none are deleted)
                 pass
             
-            # Map 'id' column to 'post_id' for consistency with the rest of the app
+            # Since we're not using id as post_id anymore, we need to handle this differently
+            # For now, we'll use the id as post_id for the app's internal use
             if not df.empty and 'id' in df.columns:
                 df = df.rename(columns={'id': 'post_id'})
                 
@@ -119,9 +120,9 @@ class SimpleSupabaseManager:
     
     def add_post(self, post_data):
         try:
-            # Prepare the data for Supabase - use 'id' instead of 'post_id'
+            # Prepare the data for Supabase
+            # Use auto-increment id and store post_id separately
             data = {
-                'id': post_data.get('post_id'),  # Map post_id to id
                 'platform': post_data.get('platform'),
                 'title': post_data.get('title'),
                 'content': post_data.get('content'),
@@ -130,13 +131,14 @@ class SimpleSupabaseManager:
                 'value_score': post_data.get('value_score', 0),
                 'category': post_data.get('category'),
                 'summary': post_data.get('ai_analysis'),  # Map ai_analysis to summary
-                'smart_tags': post_data.get('smart_tags', '[]')
+                'smart_tags': post_data.get('smart_tags', '[]'),
+                'ai_summary': post_data.get('ai_analysis')  # Also store in ai_summary field
             }
             
             # Remove None values
             data = {k: v for k, v in data.items() if v is not None}
             
-            # Insert into Supabase
+            # Insert into Supabase (let id auto-increment)
             response = self.client.table(self.table_name).insert(data).execute()
             return True
         except Exception as e:
