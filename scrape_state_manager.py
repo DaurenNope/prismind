@@ -15,7 +15,11 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class ScrapeStateManager:
-    def __init__(self, db_path="scrape_state.db"):
+    def __init__(self, db_path=None):
+        if db_path is None:
+            var_dir = Path("var")
+            var_dir.mkdir(exist_ok=True)
+            db_path = str(var_dir / "scrape_state.db")
         self.db_path = db_path
         self.init_database()
     
