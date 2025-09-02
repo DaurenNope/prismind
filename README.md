@@ -24,8 +24,9 @@ PrisMind is a powerful personal intelligence engine that transforms your social 
 prismind/
 ├── app.py                        # Streamlit dashboard (single-file app)
 ├── collect_multi_platform.py     # Multi-platform collection orchestrator
-├── services/                     # Lightweight services layer
+├── services/                     # Application services (canonical imports)
 │   ├── aps_scheduler_runner.py   # APScheduler runner for periodic collection
+│   ├── database.py               # DatabaseManager canonical module
 │   ├── analyzer.py               # Analyzer protocol
 │   ├── collector.py              # Collector protocol
 │   ├── notifier.py               # Notifier protocol
@@ -47,8 +48,8 @@ prismind/
 │   └── learning/                 # Learning and feedback
 │       ├── feedback_system.py              # User feedback system
 │       └── smart_organizer.py              # Intelligent organization
-├── scripts/                      # Runtime helpers
-│   └── database_manager.py       # Database operations
+├── scripts/                      # Legacy helpers (kept for compatibility)
+│   └── database_manager.py       # Compatibility shim → services.database
 ├── config/                       # Configuration files (cookies, secrets templates)
 │   └── streamlit_secrets*.toml   # Streamlit configuration
 ├── tests/                        # Comprehensive test suite
