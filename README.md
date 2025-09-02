@@ -22,9 +22,18 @@ PrisMind is a powerful personal intelligence engine that transforms your social 
 
 ```
 prismind/
-├── app.py                        # Main application entry point
-├── automation_scheduler.py       # Automated collection scheduler
+├── app.py                        # Streamlit dashboard (single-file app)
 ├── collect_multi_platform.py     # Multi-platform collection orchestrator
+├── services/                     # Lightweight services layer
+│   ├── aps_scheduler_runner.py   # APScheduler runner for periodic collection
+│   ├── analyzer.py               # Analyzer protocol
+│   ├── collector.py              # Collector protocol
+│   ├── notifier.py               # Notifier protocol
+│   ├── preferences.py            # User preferences dataclass
+│   └── scheduler.py              # Scheduler protocol
+├── integrations/                 # Thin wrappers for external systems
+│   ├── supabase_wrapper.py       # Minimal Supabase helper
+│   └── webhook_wrapper.py        # Simple webhook client
 ├── core/                         # Core functionality
 │   ├── analysis/                 # AI analysis modules
 │   │   ├── intelligent_content_analyzer.py  # Primary AI analysis
@@ -38,24 +47,10 @@ prismind/
 │   └── learning/                 # Learning and feedback
 │       ├── feedback_system.py              # User feedback system
 │       └── smart_organizer.py              # Intelligent organization
-├── scripts/                      # Application scripts and utilities
-│   ├── dashboard.py              # Streamlit dashboard
-│   ├── database_manager.py       # Database operations
-│   ├── utilities/                # Utility scripts
-│   └── [other scripts]           # Various utility scripts
-├── config/                       # Configuration files
-│   ├── requirements.txt          # Python dependencies
-│   ├── streamlit_secrets*.toml   # Streamlit configuration
-│   └── [deployment configs]      # Railway, Render, Vercel configs
-├── deploy/                       # Deployment guides and scripts
-│   ├── deploy.py                 # Deployment automation
-│   ├── DEPLOYMENT_GUIDE.md       # Main deployment guide
-│   └── [other deployment docs]   # Various deployment options
-├── docs/                         # Documentation
-│   ├── BACKEND_ARCHITECTURE.md   # Architecture documentation
-│   ├── DESIGN.md                  # Design principles
-│   ├── EVOLUTION_PLAN.md         # Future roadmap
-│   └── [other docs]              # Various documentation files
+├── scripts/                      # Runtime helpers
+│   └── database_manager.py       # Database operations
+├── config/                       # Configuration files (cookies, secrets templates)
+│   └── streamlit_secrets*.toml   # Streamlit configuration
 ├── tests/                        # Comprehensive test suite
 ├── dev/                          # Development utilities
 ├── sql/                          # SQL scripts and schemas
@@ -138,8 +133,8 @@ streamlit run app.py --server.port 8521
 # Collect bookmarks from all platforms
 python collect_multi_platform.py
 
-# Or use the automation scheduler
-python automation_scheduler.py
+# Or run the lightweight APScheduler runner (recommended)
+python services/aps_scheduler_runner.py
 ```
 
 ## 📊 Usage

@@ -245,33 +245,38 @@ class IntelligentContentAnalyzer:
 
     def _analyze_with_ollama(self, prompt: str, sentiment_scores: Dict, service: Dict) -> Dict[str, Any]:
         """Analyze content using local Ollama (Qwen)"""
-        url = f"{service['url']}/api/chat"
+        url = f"{service['url']}/api/generate"
         payload = {
             "model": service['model'],
-            "messages": [
-                {
-                    "role": "system",
-                    "content": "You are an expert content analyst. Respond with JSON only matching the requested schema."
-                },
-                {"role": "user", "content": prompt},
-            ],
+            "prompt": f"Analyze this content and respond with ONLY valid JSON:\n\n{prompt}",
             "stream": False,
-            "format": "json",
-            "options": {"temperature": 0.1}
+            "options": {
+                "temperature": 0.1,
+                "num_predict": 800  # Increased for longer responses
+            }
         }
 
         resp = requests.post(url, json=payload, timeout=60)
         if resp.status_code != 200:
             raise Exception(f"Ollama API error: {resp.status_code}")
+        
         data = resp.json()
-        content = data.get('message', {}).get('content', '').strip()
+        content = data.get('response', '').strip()
+        
+        # Check if content is empty
+        if not content:
+            raise Exception("Ollama returned empty response")
+        
         # Clean JSON fences if any
         if content.startswith('```json'):
             content = content[7:-3]
         elif content.startswith('```'):
             content = content[3:-3]
 
-        analysis = json.loads(content)
+        try:
+            analysis = json.loads(content)
+        except json.JSONDecodeError as e:
+            raise Exception(f"Ollama returned invalid JSON: {content[:100]}...")
         analysis['sentiment_scores'] = sentiment_scores
         analysis['ai_service'] = f"ollama:{service['model']}"
         return analysis

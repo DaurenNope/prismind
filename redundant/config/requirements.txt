@@ -45,6 +45,7 @@ ollama>=0.4.0
 
 # OCR for media analysis
 pytesseract>=0.3.10
+python-telegram-bot>=20.0
 
 # Type hints
 typing_extensions>=4.0.0
