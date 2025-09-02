@@ -100,6 +100,10 @@ class IntelligentContentAnalyzer:
         """
         
         print(f"🔍 Analyzing {post.platform} post: {post.post_id}")
+
+        # Deterministic mode for testing and reproducibility
+        if os.getenv('DETERMINISTIC_ANALYSIS', '0') == '1':
+            return self._deterministic_analysis(post, include_comments=include_comments, include_media=include_media)
         
         analysis = {
             'post_id': post.post_id,
@@ -135,6 +139,61 @@ class IntelligentContentAnalyzer:
         analysis['learning_recommendations'] = learning_recs
         
         print(f"✅ Analysis complete - Value Score: {value_score}/10")
+        return analysis
+
+    def _deterministic_analysis(self, post: SocialPost, include_comments: bool, include_media: bool) -> Dict[str, Any]:
+        """Produce stable, reproducible analysis without external AI calls.
+
+        Uses simple rules and content hashing to generate consistent outputs for tests.
+        """
+        import hashlib
+
+        content = post.content or ""
+        content_hash = hashlib.sha256(content.encode('utf-8')).hexdigest()
+        category_pool = ["Technology", "AI", "Business", "Learning", "General"]
+        category = category_pool[int(content_hash[:2], 16) % len(category_pool)]
+
+        sentiment_scores = self.sentiment_analyzer.polarity_scores(content)
+
+        analysis = {
+            'post_id': post.post_id,
+            'platform': post.platform,
+            'analyzed_at': datetime.now().isoformat(),
+            'analysis_version': 'deterministic-1.0',
+            'category': category,
+            'subcategory': post.platform.title(),
+            'content_type': post.post_type,
+            'topics': post.hashtags[:3] if post.hashtags else ['general'],
+            'key_concepts': [],
+            'summary': content[:200] + '...' if len(content) > 200 else content,
+            'why_valuable': 'User bookmarked this content',
+            'sentiment': 'Positive' if sentiment_scores['compound'] > 0.2 else ('Negative' if sentiment_scores['compound'] < -0.2 else 'Neutral'),
+            'complexity_level': 'Unknown',
+            'time_to_consume': 'Unknown',
+            'actionable_items': [],
+            'learning_value': 'Reproducible deterministic analysis',
+            'practical_applications': [],
+            'related_skills': [],
+            'follow_up_research': [],
+            'quality_indicators': [],
+            'tags': post.hashtags[:5] if post.hashtags else [],
+            'confidence_score': 1.0,
+            'sentiment_scores': sentiment_scores,
+            'ai_service': 'deterministic'
+        }
+
+        value_score = self._calculate_intelligent_value_score(analysis, post)
+        analysis['intelligent_value_score'] = value_score
+        if include_comments and post.platform == 'reddit':
+            analysis['comment_insights'] = []
+        if include_media and post.media_urls:
+            analysis['media_insights'] = {
+                'total_media': len(post.media_urls),
+                'analyzed_media': 0,
+                'insights': []
+            }
+        analysis['actionable_insights'] = self._generate_actionable_insights(analysis, post)
+        analysis['learning_recommendations'] = self._generate_learning_recommendations(analysis, post)
         return analysis
     
     def _analyze_core_content(self, post: SocialPost) -> Dict[str, Any]:
