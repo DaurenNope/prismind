@@ -1,3 +1,10 @@
+"""Compatibility shim.
+
+Prefer importing from services.database going forward:
+
+from services.database import DatabaseManager, get_db_manager
+"""
+
 import sqlite3
 import json
 import pandas as pd

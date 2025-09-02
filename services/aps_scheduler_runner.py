@@ -16,7 +16,7 @@ from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
 
 # Local imports
-from scripts.database_manager import DatabaseManager
+from services.database import DatabaseManager
 from collect_multi_platform import (
     collect_twitter_bookmarks,
     collect_reddit_bookmarks,

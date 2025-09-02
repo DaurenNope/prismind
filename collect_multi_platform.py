@@ -21,7 +21,7 @@ sys.path.insert(0, str(project_root))
 from core.extraction.twitter_extractor_playwright import TwitterExtractorPlaywright
 from core.extraction.reddit_extractor import RedditExtractor
 from core.extraction.threads_extractor import ThreadsExtractor
-from scripts.database_manager import DatabaseManager
+from services.database import DatabaseManager
 from core.analysis.intelligent_content_analyzer import IntelligentContentAnalyzer
 from core.analysis.local_media_analyzer import LocalMediaAnalyzer
 from scripts.supabase_manager import SupabaseManager
