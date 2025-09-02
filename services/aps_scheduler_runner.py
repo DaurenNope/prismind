@@ -21,6 +21,7 @@ from collect_multi_platform import (
     collect_twitter_bookmarks,
     collect_reddit_bookmarks,
 )
+from services.notifier_webhook import WebhookNotifier
 
 
 def _bool_env(name: str, default: str = "1") -> bool:
@@ -43,6 +44,16 @@ def run_collection_job() -> None:
         total += collect_reddit_bookmarks(db, existing_ids, existing_urls)
 
     print(f"[{datetime.now().isoformat()}] Collection cycle complete. New items: {total}")
+
+    notifier = WebhookNotifier()
+    if notifier.enabled():
+        notifier.notify({
+            "event": "collection_complete",
+            "timestamp": datetime.now().isoformat(),
+            "counts": {
+                "total_new": total,
+            },
+        })
 
 
 def main() -> None:

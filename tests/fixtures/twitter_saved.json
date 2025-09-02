@@ -1,0 +1,13 @@
+[
+  {
+    "platform": "twitter",
+    "post_id": "tw_1",
+    "author": "alice",
+    "content": "Great thread about AI.",
+    "created_at": "2024-01-01T12:00:00Z",
+    "url": "https://twitter.com/x/status/1",
+    "hashtags": ["ai"],
+    "mentions": ["bob"],
+    "media_urls": []
+  }
+]
