@@ -1,8 +1,9 @@
-import os
 import json
+import os
+from typing import Any, Dict, List
+
 import requests
 from loguru import logger
-from typing import Dict, Any, List
 
 
 class MistralAnalyzer:

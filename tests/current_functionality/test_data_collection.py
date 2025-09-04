@@ -4,14 +4,13 @@ Comprehensive tests for current data collection functionality
 Tests Twitter, Reddit, and Threads extraction workflows
 """
 
-import pytest
-import tempfile
 import os
 import sys
+import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
-import pandas as pd
-import json
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
@@ -68,10 +67,10 @@ class TestDataCollectionWorkflow:
             
             try:
                 # Import collection functions
-                from collect_multi_platform import collect_twitter_bookmarks
-                
                 # Test Twitter collection (async function)
                 import asyncio
+
+                from collect_multi_platform import collect_twitter_bookmarks
                 result = asyncio.run(collect_twitter_bookmarks(mock_db, set()))
                 assert result is not None
                 
@@ -161,10 +160,10 @@ class TestDataCollectionWorkflow:
             
             try:
                 # Import collection functions
-                from collect_multi_platform import collect_threads_bookmarks
-                
                 # Test Threads collection (async function)
                 import asyncio
+
+                from collect_multi_platform import collect_threads_bookmarks
                 result = asyncio.run(collect_threads_bookmarks(mock_db, set()))
                 assert result is not None
                 
@@ -248,10 +247,10 @@ class TestDataCollectionWorkflow:
             
             try:
                 # Import collection functions
-                from collect_multi_platform import main
-                
                 # Test multi-platform collection (async function)
                 import asyncio
+
+                from collect_multi_platform import main
                 result = asyncio.run(main())
                 # The main function returns None on completion, which is expected
                 assert result is None or result is not None
@@ -312,10 +311,10 @@ class TestDataCollectionWorkflow:
             
             try:
                 # Import collection functions
-                from collect_multi_platform import collect_twitter_bookmarks
-                
                 # Test error handling (async function)
                 import asyncio
+
+                from collect_multi_platform import collect_twitter_bookmarks
                 result = asyncio.run(collect_twitter_bookmarks(mock_db, set()))
                 # Should handle error gracefully
                 assert result is not None or result is None
@@ -365,8 +364,9 @@ class TestDataCollectionWorkflow:
     def test_social_post_structure(self):
         """Test SocialPost data structure"""
         try:
-            from core.extraction.social_extractor_base import SocialPost
             from datetime import datetime
+
+            from core.extraction.social_extractor_base import SocialPost
             
             # Test SocialPost creation
             post = SocialPost(
@@ -437,11 +437,12 @@ class TestDataCollectionWorkflow:
             
             try:
                 # Import collection functions
-                from collect_multi_platform import collect_twitter_bookmarks
-                
+                import asyncio
+
                 # Test performance with large dataset (async function)
                 import time
-                import asyncio
+
+                from collect_multi_platform import collect_twitter_bookmarks
                 start_time = time.time()
                 
                 result = asyncio.run(collect_twitter_bookmarks(mock_db, set()))

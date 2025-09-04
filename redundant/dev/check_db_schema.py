@@ -18,7 +18,7 @@ def check_schema():
     cursor.execute("SELECT * FROM posts LIMIT 1")
     sample = cursor.fetchone()
     if sample:
-        print(f"\n📝 Sample post data:")
+        print("\n📝 Sample post data:")
         for i, col in enumerate(columns):
             print(f"  {col[1]}: {sample[i]}")
     

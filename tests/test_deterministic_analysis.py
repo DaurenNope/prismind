@@ -1,6 +1,5 @@
-import os
-from core.extraction.social_extractor_base import SocialPost
 from core.analysis.intelligent_content_analyzer import IntelligentContentAnalyzer
+from core.extraction.social_extractor_base import SocialPost
 
 
 def test_deterministic_mode_produces_stable_output(monkeypatch):

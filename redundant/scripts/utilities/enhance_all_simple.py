@@ -7,7 +7,6 @@ Enhanced version that works with existing database structure
 import sys
 from pathlib import Path
 import json
-from datetime import datetime
 
 # Add project root to path
 project_root = Path(__file__).parent
@@ -76,11 +75,11 @@ def enhance_all_bookmarks_simple():
             )
             
             if is_well_enhanced:
-                print(f"   ✅ Already well-enhanced, skipping...")
+                print("   ✅ Already well-enhanced, skipping...")
                 skipped_count += 1
                 continue
             
-            print(f"   🧠 Running AI analysis...")
+            print("   🧠 Running AI analysis...")
             
             # Create a simple post object for the summarizer
             post_data = {
@@ -96,10 +95,10 @@ def enhance_all_bookmarks_simple():
             # Generate summary and analysis
             try:
                 summary_result = thread_summarizer.generate_summary_from_dict(post_data)
-                print(f"      ✅ Summary generation complete")
+                print("      ✅ Summary generation complete")
                 signal.alarm(0)  # Cancel timeout
             except TimeoutError:
-                print(f"      ⏰ AI analysis timed out, skipping...")
+                print("      ⏰ AI analysis timed out, skipping...")
                 summary_result = {}
                 error_count += 1
                 continue
@@ -176,7 +175,7 @@ def enhance_all_bookmarks_simple():
                 db_manager.update_post_smart_fields(post_id, smart_title, smart_tags)
                 
                 enhanced_count += 1
-                print(f"   ✅ Enhanced successfully!")
+                print("   ✅ Enhanced successfully!")
                 print(f"      📝 Smart Title: {smart_title[:80] if smart_title else 'N/A'}...")
                 print(f"      🏷️ Tags: {json.loads(smart_tags)[:3] if smart_tags else []}")
                 print(f"      ⭐ Value Score: {value_score}/10")
@@ -189,7 +188,7 @@ def enhance_all_bookmarks_simple():
             print(f"   ❌ Error processing post {post_id}: {e}")
             continue
     
-    print(f"\n🎉 AI Enhancement Complete!")
+    print("\n🎉 AI Enhancement Complete!")
     print(f"   📊 Total Posts: {total_posts}")
     print(f"   ✅ Enhanced: {enhanced_count}")
     print(f"   ⏭️ Skipped (already good): {skipped_count}")
@@ -199,7 +198,7 @@ def enhance_all_bookmarks_simple():
     else:
         print("   🧠 AI Enhanced Ratio: 0/0 (0.0%)")
     
-    print(f"\n🔄 Refresh your dashboard to see the improvements!")
+    print("\n🔄 Refresh your dashboard to see the improvements!")
 
 if __name__ == "__main__":
     enhance_all_bookmarks_simple()

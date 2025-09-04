@@ -4,15 +4,15 @@ Comprehensive tests for current dashboard functionality
 Tests every feature and workflow to ensure nothing breaks during refactor
 """
 
-import pytest
-import tempfile
 import os
-import sys
-from pathlib import Path
-from unittest.mock import patch, MagicMock
-import pandas as pd
 import sqlite3
-import json
+import sys
+import tempfile
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pandas as pd
+import pytest
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
@@ -439,10 +439,10 @@ class TestDashboardWorkflow:
         
         try:
             # Import dashboard functions
-            from scripts.dashboard import get_posts_from_category
-            
             # Test performance with large dataset
             import time
+
+            from scripts.dashboard import get_posts_from_category
             start_time = time.time()
             
             posts = get_posts_from_category('programming')

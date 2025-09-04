@@ -4,18 +4,37 @@ Local Media Analyzer for Social Posts
 Uses OCR + Local AI to analyze images and enhance post value
 """
 
-import requests
-import os
-from pathlib import Path
-from PIL import Image
-import pytesseract
-import json
-import re
 import logging
+import os
+import re
+from pathlib import Path
 from typing import Dict, List, Optional
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
+
+# Optional imports for media analysis
+TESSERACT_AVAILABLE = False
+REQUESTS_AVAILABLE = False
+PIL_AVAILABLE = False
+
+try:
+    import pytesseract
+    TESSERACT_AVAILABLE = True
+except ImportError:
+    logging.warning("pytesseract not available - OCR features disabled")
+
+try:
+    import requests
+    REQUESTS_AVAILABLE = True
+except ImportError:
+    logging.warning("requests not available - media download disabled")
+
+try:
+    from PIL import Image
+    PIL_AVAILABLE = True
+except ImportError:
+    logging.warning("PIL not available - image processing disabled")
 
 class LocalMediaAnalyzer:
     """Analyzes media content using local OCR + AI"""
@@ -26,6 +45,11 @@ class LocalMediaAnalyzer:
         
     def analyze_post_media(self, post: Dict) -> Dict:
         """Analyze all media in a post and enhance its value score"""
+        # If no media analysis libraries available, return post unchanged
+        if not (TESSERACT_AVAILABLE and REQUESTS_AVAILABLE and PIL_AVAILABLE):
+            logging.info("Media analysis libraries not available - skipping media analysis")
+            return post
+            
         media_urls = post.get('media_urls', [])
         if not media_urls:
             return post

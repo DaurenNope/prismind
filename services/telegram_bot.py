@@ -6,11 +6,9 @@ Sends news digests and allows on-demand content requests
 
 import os
 import sys
-import asyncio
 import logging
-import re
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import List, Dict, Any
 from dotenv import load_dotenv
 
 # Load environment variables

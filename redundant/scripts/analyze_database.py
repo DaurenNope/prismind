@@ -4,7 +4,6 @@ Database Analyzer - See what we have
 """
 
 import sqlite3
-import pandas as pd
 
 def analyze_database():
     conn = sqlite3.connect('data/prismind.db')

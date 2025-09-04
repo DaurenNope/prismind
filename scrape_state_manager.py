@@ -4,11 +4,10 @@ Scrape State Manager
 Tracks scraping progress and save points to avoid rescraping the same content
 """
 
-import os
-import json
 import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
+
 from dotenv import load_dotenv
 
 # Load environment variables

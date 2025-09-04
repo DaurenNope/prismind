@@ -1,7 +1,4 @@
-import os
-import json
 import types
-import pytest
 
 from services.notifier_webhook import WebhookNotifier
 
@@ -22,7 +19,20 @@ def test_webhook_notifier_enabled_success(monkeypatch):
     # Patch urllib inside module
     import services.notifier_webhook as mod
 
-    mod.urllib.request.urlopen = fake_urlopen  # type: ignore
+    class _Resp:
+        def __init__(self):
+            self.status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):  # noqa: D401, ANN001, ANN201
+            return False
+
+    def ctx_urlopen(req, timeout=10):  # noqa: D401, ANN001, ANN201
+        return _Resp()
+
+    mod.urllib.request.urlopen = ctx_urlopen  # type: ignore
 
     notifier = WebhookNotifier()
     assert notifier.enabled() is True

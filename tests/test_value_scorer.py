@@ -3,16 +3,17 @@
 Test suite for ValueScorer
 """
 
-import os
 import sys
-import pytest
-from pathlib import Path
 from datetime import datetime, timedelta
+from pathlib import Path
+
+import pytest
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.analysis.value_scorer import ValueScorer
+
 
 class TestValueScorer:
     """Test suite for ValueScorer class"""

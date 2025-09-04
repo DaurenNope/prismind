@@ -10,17 +10,19 @@ Environment variables:
 
 from __future__ import annotations
 
-import os
 import asyncio
+import os
 from datetime import datetime
+
 from apscheduler.schedulers.background import BackgroundScheduler
+
+from collect_multi_platform import (
+    collect_reddit_bookmarks,
+    collect_twitter_bookmarks,
+)
 
 # Local imports
 from services.database import DatabaseManager
-from collect_multi_platform import (
-    collect_twitter_bookmarks,
-    collect_reddit_bookmarks,
-)
 from services.notifier_webhook import WebhookNotifier
 
 

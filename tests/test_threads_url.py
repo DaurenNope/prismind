@@ -4,7 +4,9 @@ Simple test to see where Threads login redirects
 """
 
 import asyncio
+
 from playwright.async_api import async_playwright
+
 
 async def test_threads_url():
     playwright = await async_playwright().start()

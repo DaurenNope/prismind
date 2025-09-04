@@ -9,7 +9,6 @@ import warnings
 import re
 from urllib.parse import urlparse
 import sqlite3
-from datetime import datetime
 import ast
 import sys
 import os
@@ -252,7 +251,7 @@ def get_manual_review_posts():
         df = pd.read_sql_query(query, conn)
         conn.close()
         return df
-    except Exception as e:
+    except Exception:
         conn.close()
         return pd.DataFrame()
 
@@ -271,7 +270,7 @@ def get_posts_from_category(category: str, limit: int = 50):
         """, conn)
         conn.close()
         return df
-    except Exception as e:
+    except Exception:
         # Fallback to unified posts table using AI 'category'
         try:
             df = pd.read_sql_query(
@@ -328,7 +327,7 @@ def move_post_to_category(post_id: str, target_category: str):
             conn.commit()
             conn.close()
             return True
-    except Exception as e:
+    except Exception:
         conn.close()
         return False
 
@@ -354,7 +353,7 @@ def get_comments_for_post(post_id):
                 comments_data = json.load(f)
                 return comments_data.get('comments', [])[:5]  # Return top 5 comments
         return []
-    except Exception as e:
+    except Exception:
         return []
 
 def create_streamlit_card(post, is_review: bool = False, unique_key: Optional[str] = None, widget_suffix: str = ""):

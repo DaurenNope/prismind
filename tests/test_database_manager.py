@@ -3,18 +3,17 @@
 Test suite for DatabaseManager
 """
 
-import os
-import sys
-import pytest
 import sqlite3
+import sys
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
-import pandas as pd
+
+import pytest
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from scripts.database_manager import DatabaseManager
+
 
 class TestDatabaseManager:
     """Test suite for DatabaseManager class"""

@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 
+import json
 import sqlite3
 import subprocess
-import json
 
+
+import os
+import pytest
+
+@pytest.mark.skipif(os.getenv("RUN_INTEGRATION", "0") != "1", reason="Integration test (Ollama)")
 def test_ai_analysis():
     """Test AI analysis on a real post from the database"""
     

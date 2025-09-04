@@ -1,4 +1,5 @@
-from typing import Callable, Any
+from typing import Any, Callable
+
 
 class WebhookClient:
     def __init__(self, sender: Callable[[str, dict], Any]):

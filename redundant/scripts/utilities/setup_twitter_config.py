@@ -3,7 +3,6 @@
 Setup Twitter Configuration - One-time setup for Twitter credentials
 """
 
-import os
 from pathlib import Path
 
 def main():
@@ -51,7 +50,7 @@ def main():
     with open(env_file, 'w') as f:
         f.write('\n'.join(lines))
     
-    print(f"✅ Configuration saved!")
+    print("✅ Configuration saved!")
     print(f"   📧 Username: {username}")
     print(f"   📁 Config dir: {config_dir}")
     print(f"   🔧 Environment: {env_file}")

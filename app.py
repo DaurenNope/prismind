@@ -12,17 +12,17 @@ Single-file Streamlit app with complete automation:
 Deploy to Streamlit Cloud for FREE automation!
 """
 
-import streamlit as st
-import pandas as pd
 import asyncio
-import os
-import sys
 import json
-import time
+import os
 import sqlite3
-from datetime import datetime, timedelta
-from pathlib import Path
+import sys
 import warnings
+from datetime import datetime
+from pathlib import Path
+
+import pandas as pd
+import streamlit as st
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -863,7 +863,7 @@ with tab2:
                             else:
                                 display_category = "N/A"
                             st.metric("🏆 Top Category", display_category)
-                        except Exception as e:
+                        except Exception:
                             st.metric("🏆 Top Category", "N/A")
                     
                     st.divider()
@@ -959,7 +959,7 @@ with tab2:
                             'AI Summary': summary_preview,
                             'URL': post.get('url', '') if post.get('url') is not None else ''
                         })
-                    except Exception as e:
+                    except Exception:
                         continue
                 
                 # Display as interactive table
@@ -1162,7 +1162,7 @@ THREADS_USERNAME = "your_threads_username"
                     st.success(f"✅ Database connected! Found {len(posts_df)} posts.")
                 elif hasattr(db_manager, 'get_posts'):
                     posts = db_manager.get_posts(limit=1)
-                    st.success(f"✅ Database connected!")
+                    st.success("✅ Database connected!")
                 else:
                     st.success("✅ Database manager loaded successfully!")
             except Exception as e:

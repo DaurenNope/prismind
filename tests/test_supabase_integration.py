@@ -3,10 +3,10 @@
 Integration tests for SupabaseManager with the real Supabase database
 """
 
-import os
 import sys
-import pytest
 from pathlib import Path
+
+import pytest
 from dotenv import load_dotenv
 
 # Add project root to path

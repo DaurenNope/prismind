@@ -1,12 +1,15 @@
-import google.generativeai as genai
-from typing import Dict, List
 import json
-import time
-import sys
 import os
+import sys
+import time
+from typing import Dict, List
+
+import google.generativeai as genai
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'extraction'))
 from social_extractor_base import SocialPost
+
 
 class SocialContentAnalyzer:
     def __init__(self, api_key: str = None):
@@ -112,7 +115,7 @@ class SocialContentAnalyzer:
                 analysis['post_url'] = post.url
                 analysis['engagement_metrics'] = post.engagement
                 
-                print(f"✅ Gemini analysis completed successfully")
+                print("✅ Gemini analysis completed successfully")
                 return analysis
                 
             except json.JSONDecodeError as e:

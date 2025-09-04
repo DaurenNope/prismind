@@ -13,9 +13,7 @@ Just run: python deploy.py
 """
 
 import os
-import json
 import webbrowser
-from pathlib import Path
 import subprocess
 
 def print_banner():

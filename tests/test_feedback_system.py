@@ -3,18 +3,17 @@
 Test suite for FeedbackSystem
 """
 
-import os
-import sys
-import pytest
 import sqlite3
+import sys
 from pathlib import Path
-from datetime import datetime
-from unittest.mock import Mock, patch, MagicMock
+
+import pytest
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.learning.feedback_system import FeedbackSystem
+
 
 class TestFeedbackSystem:
     """Test suite for FeedbackSystem class"""

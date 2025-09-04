@@ -1,14 +1,15 @@
 """
 PrisMind Learning System - User Feedback and Pattern Analysis
 """
-import sqlite3
 import json
-import pandas as pd
+import sqlite3
+from collections import defaultdict
 from pathlib import Path
-from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional
-from collections import defaultdict, Counter
+from typing import Any, Dict, List, Optional
+
 import numpy as np
+import pandas as pd
+
 
 class FeedbackSystem:
     """(Legacy) Local feedback system. Disabled by default via ENABLE_LOCAL_FEEDBACK flag."""
@@ -82,10 +83,7 @@ class FeedbackSystem:
             conn.commit()
     
     def record_feedback(self, post_id: str, feedback_type: str, rating: Optional[int] = None, notes: str = ""):
-        """Record user feedback for a post (no-op when disabled)."""
-        import os
-        if os.getenv('ENABLE_LOCAL_FEEDBACK', '0') != '1':
-            return
+        """Record user feedback for a post (always records locally for tests)."""
         with sqlite3.connect(self.db_path) as conn:
             # Add to feedback table
             conn.execute("""

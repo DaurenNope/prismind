@@ -4,12 +4,11 @@ Tests for files that might be moved to redundant folder
 Ensures functionality is preserved before moving
 """
 
-import pytest
-import tempfile
-import os
 import sys
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
@@ -88,9 +87,10 @@ class TestRedundantFiles:
         mock_db_manager.return_value = mock_db
         
         # Mock Supabase manager
-        with patch('multi_table_manager.MultiTableManager') as mock_supabase:
-            mock_supabase_instance = MagicMock()
-            mock_supabase.return_value = mock_supabase_instance
+        with patch.dict('sys.modules', {'multi_table_manager': __import__('types')}) as _:
+            # Ensure SupabaseManager can be instantiated without real network
+            with patch('scripts.supabase_manager.create_client') as mock_client:
+                mock_client.return_value = MagicMock()
             
             try:
                 from analyze_and_categorize_bookmarks import BookmarkAnalyzer

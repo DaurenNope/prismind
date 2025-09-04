@@ -4,22 +4,25 @@ Test script for the Playwright Threads extractor.
 Run with: python -m tests.test_threads_extractor
 """
 
-import os
-import pytest
-from pathlib import Path
-from datetime import datetime, timezone
-from unittest.mock import MagicMock, patch
 import logging
+import os
+from datetime import datetime, timezone
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 # Skip all Threads tests for now due to IP ban / disabled Threads collection
 pytestmark = pytest.mark.skip(reason="Threads temporarily disabled (IP ban)")
 
 # Add src to path
 import sys
+
 sys.path.append(str(Path(__file__).parent.parent / "src"))
 
-from core.extraction.threads_extractor import ThreadsExtractor
 from core.extraction.social_extractor_base import SocialPost
+from core.extraction.threads_extractor import ThreadsExtractor
+
 
 @pytest.fixture
 def threads_extractor():

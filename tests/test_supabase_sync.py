@@ -1,5 +1,3 @@
-import os
-import json
 
 
 def test_supabase_sync_smoke(monkeypatch):

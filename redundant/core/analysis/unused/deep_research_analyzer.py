@@ -2,8 +2,7 @@ import os
 import requests
 import time
 from loguru import logger
-from typing import Dict, Any, List, Optional
-import json
+from typing import Dict, List, Optional
 
 
 class DeepResearchAnalyzer:
@@ -253,7 +252,7 @@ High-Value Content Analyzed: {len(high_value_posts)} posts
                 
                 # Also include the research queries that were used
                 if research.get('research_queries'):
-                    report += f"**📋 Research Queries:**\n"
+                    report += "**📋 Research Queries:**\n"
                     for j, query in enumerate(research['research_queries'], 1):
                         report += f"{j}. {query}\n"
                     report += "\n"

@@ -3,7 +3,6 @@
 Clean duplicate posts from database
 """
 
-import sys
 from scripts.supabase_manager import SupabaseManager
 
 def clean_duplicates():
@@ -80,7 +79,7 @@ def clean_duplicates():
         except Exception as e:
             print(f"❌ Error removing ID {post.get('id')}: {e}")
     
-    print(f"\n🎉 Cleanup complete!")
+    print("\n🎉 Cleanup complete!")
     print(f"✅ Removed {removed_count} duplicate posts")
     print(f"📊 Database now has {len(all_posts) - removed_count} unique posts")
 

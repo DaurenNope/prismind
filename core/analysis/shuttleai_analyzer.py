@@ -1,15 +1,17 @@
-import requests
 import json
-import time
-from typing import List, Dict, Any
-from dataclasses import asdict
-import sys
-from pathlib import Path
-import openai
 import os
+import sys
+import time
+from pathlib import Path
+from typing import Any, Dict, List
+
+import openai
+import requests
 from loguru import logger
+
 sys.path.append(str(Path(__file__).parent.parent))
 from core.extraction.social_extractor_base import SocialPost
+
 
 class ShuttleAIAnalyzer:
     """AI content analyzer using ShuttleAI API as primary, with CometAPI and Gemini fallbacks"""
@@ -381,7 +383,6 @@ SENTIMENT: [sentiment]"""
     
     def analyze_batch(self, posts: list) -> list:
         """Analyze a batch of posts, compatible with main application"""
-        from typing import List, Dict
         analyzed_posts = []
         
         for i, post in enumerate(posts):

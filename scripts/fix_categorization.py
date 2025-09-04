@@ -3,11 +3,10 @@
 Fix categorization system by integrating AI analysis
 """
 
-from scripts.database_manager import DatabaseManager
 from core.analysis.intelligent_content_analyzer import IntelligentContentAnalyzer
 from core.extraction.social_extractor_base import SocialPost
-import pandas as pd
-import asyncio
+from scripts.database_manager import DatabaseManager
+
 
 def analyze_uncategorized_posts():
     """Analyze all uncategorized posts with AI"""
@@ -112,13 +111,13 @@ def analyze_uncategorized_posts():
             print(f"❌ Error analyzing post {post_data['post_id']}: {e}")
             continue
     
-    print(f"\n🎉 Analysis complete!")
+    print("\n🎉 Analysis complete!")
     print(f"✅ Successfully analyzed: {analyzed_count}/{len(uncategorized)} posts")
     
     # Show new category distribution
     updated_posts = db.get_all_posts()
     categorized = updated_posts[updated_posts['category'].notna() & (updated_posts['category'] != '')]
-    print(f"\n📊 New category distribution:")
+    print("\n📊 New category distribution:")
     category_counts = categorized['category'].value_counts()
     for category, count in category_counts.items():
         print(f"   {category}: {count} posts")

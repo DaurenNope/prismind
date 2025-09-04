@@ -1,0 +1,34 @@
+[tool.ruff]
+target-version = "py39"
+line-length = 100
+
+# Skip legacy/experimental paths from linting for now
+extend-exclude = [
+  "redundant/**",
+  "services/collector_runner_backup.py",
+  "services/collector_runner_clean.py",
+  "services/telegram_bot.py",
+  "services/supabase_webhook.py",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+ignore = [
+  "E501",  # line length
+  "E402",  # import position (legacy files)
+  "E712",  # direct True/False comparison (legacy dataframes)
+  "E722",  # bare excepts (legacy/compat shims)
+  "F403",  # import * in shims
+  "F401",  # unused imports (tests, legacy)
+  "F811",  # redefinition (legacy files)
+  "F821",  # undefined names in legacy tests
+  "F841",  # unused variables (tests, examples)
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests often import/mutate sys.path and use unused mocks/vars
+"tests/**" = ["E402", "F401", "F841", "F821", "E722"]
+# Current functionality tests are legacy; relax more
+"tests/current_functionality/**" = ["E402", "F401", "F841", "F821", "E722"]
+
+

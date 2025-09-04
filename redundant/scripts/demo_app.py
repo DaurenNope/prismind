@@ -9,7 +9,6 @@ with mock data and AI analysis demonstration.
 
 import streamlit as st
 import pandas as pd
-import json
 import os
 from datetime import datetime, timedelta
 import time

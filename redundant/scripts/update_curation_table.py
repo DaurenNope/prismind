@@ -7,8 +7,7 @@ import sqlite3
 import pandas as pd
 from pathlib import Path
 from multi_table_manager import MultiTableManager
-import hashlib
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any
 
 class CurationTableUpdater:
     def __init__(self):

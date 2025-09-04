@@ -1,13 +1,14 @@
 import asyncio
-from playwright.async_api import async_playwright, Page, Browser
-from datetime import datetime, timezone
-from typing import List, Dict, Optional
 import json
 import re
-import time
-import os
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Dict, List, Optional
+
+from playwright.async_api import Browser, Page, async_playwright
+
 from .social_extractor_base import SocialExtractorBase, SocialPost
+
 
 class TwitterExtractorPlaywright(SocialExtractorBase):
     """Extract saved tweets and bookmarks from Twitter using Playwright"""
@@ -153,7 +154,7 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
                 await self.page.click(login_button_selector)
 
                 # Step 5: Verify login success
-                home_timeline_selector = '[data-testid="primaryColumn"]', '[data-testid="SideNav_NewTweet_Button"]'
+                home_timeline_selector = '[data-testid="primaryColumn"]'
                 await self.page.wait_for_selector(home_timeline_selector, timeout=15000)
                 
                 self.is_authenticated = True
@@ -282,7 +283,7 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
                     last_tweet_count = current_tweet_count
                 
                 # Scroll down to load more tweets
-                print(f"📜 Scrolling to load more content...")
+                print("📜 Scrolling to load more content...")
                 await self.page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
                 await self.page.wait_for_timeout(3000)  # Increased wait time
                 
@@ -391,7 +392,7 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
             # For now, skip thread extraction to avoid DOM issues
             # We'll focus on getting the main tweets working first
             if has_thread_indicator:
-                print(f"🧵 Thread detected but skipping extraction to avoid DOM issues")
+                print("🧵 Thread detected but skipping extraction to avoid DOM issues")
                 main_tweet.post_type = 'thread'
             
             return main_tweet
@@ -461,7 +462,7 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
                     # Look for the specific tweet on the profile
                     tweet_links = await self.page.query_selector_all(f'a[href*="/status/{tweet_id}"]')
                     if tweet_links:
-                        print(f"🎯 Found tweet link on profile, clicking...")
+                        print("🎯 Found tweet link on profile, clicking...")
                         await tweet_links[0].click()
                         await self.page.wait_for_timeout(3000)
                         
@@ -635,7 +636,7 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
                 if show_more_button:
                     await show_more_button.click()
                     await self.page.wait_for_timeout(500) # Wait for text to expand
-            except Exception as e:
+            except Exception:
                 pass # Ignore if not found or error clicking
 
             # Main tweet content

@@ -3,17 +3,18 @@
 Test suite for SocialContentAnalyzer
 """
 
-import os
 import sys
-import pytest
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
+
+import pytest
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.analysis.social_content_analyzer import SocialContentAnalyzer
 from core.extraction.social_extractor_base import SocialPost
+
 
 class TestSocialContentAnalyzer:
     """Test suite for SocialContentAnalyzer class"""

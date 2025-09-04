@@ -1,4 +1,3 @@
-import types
 from services.aps_scheduler_runner import run_collection_job
 
 
@@ -12,7 +11,10 @@ def test_scheduler_job_monkeypatch(monkeypatch):
     monkeypatch.setattr("services.aps_scheduler_runner.DatabaseManager", lambda: FakeDB(), raising=True)
 
     # Patch collectors to no-op
-    monkeypatch.setattr("services.aps_scheduler_runner.collect_twitter_bookmarks", lambda db, ids, urls: 0, raising=True)
+    async def fake_tw(db, ids, urls):  # noqa: D401, ANN001, ANN201
+        return 0
+
+    monkeypatch.setattr("services.aps_scheduler_runner.collect_twitter_bookmarks", fake_tw, raising=True)
     monkeypatch.setattr("services.aps_scheduler_runner.collect_reddit_bookmarks", lambda db, ids, urls: 0, raising=True)
 
     # Patch notifier

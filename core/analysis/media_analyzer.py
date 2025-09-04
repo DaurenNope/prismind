@@ -3,15 +3,16 @@ Intelligent Media Analysis for PrisMind
 Analyzes images and videos from social media posts to extract insights
 """
 
-import os
+import io
 import json
-import base64
-import requests
-from typing import List, Dict, Any, Optional
+import os
 from datetime import datetime
 from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+import requests
 from PIL import Image
-import io
+
 
 class MediaAnalyzer:
     """Analyzes media content from social media posts"""

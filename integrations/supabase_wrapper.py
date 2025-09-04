@@ -1,4 +1,5 @@
-from typing import Any, Optional
+from typing import Any
+
 
 class SupabaseWrapper:
     def __init__(self, client: Any):

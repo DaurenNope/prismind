@@ -3,12 +3,11 @@
 Multi-Platform Bookmark Collection - Extract from Twitter, Reddit, and Threads
 """
 
-import asyncio
+import sys
 import json
 import os
-import sys
+import asyncio
 from pathlib import Path
-
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -18,27 +17,20 @@ load_dotenv()
 project_root = Path(__file__).parent.absolute()
 sys.path.insert(0, str(project_root))
 
-from core.analysis.intelligent_content_analyzer import IntelligentContentAnalyzer
-# Optional local media analyzer (OCR); safe to skip if deps unavailable in CI
-try:
-    from core.analysis.local_media_analyzer import LocalMediaAnalyzer
-    _LOCAL_MEDIA_AVAILABLE = True
-except Exception:
-    _LOCAL_MEDIA_AVAILABLE = False
-from core.extraction.reddit_extractor import RedditExtractor
 from core.extraction.twitter_extractor_playwright import TwitterExtractorPlaywright
-from scrape_state_manager import state_manager
-from scripts.supabase_manager import SupabaseManager
+from core.extraction.reddit_extractor import RedditExtractor
 from services.database import DatabaseManager
-
+from core.analysis.intelligent_content_analyzer import IntelligentContentAnalyzer
+from core.analysis.local_media_analyzer import LocalMediaAnalyzer
+from scripts.supabase_manager import SupabaseManager
+from scrape_state_manager import state_manager
 
 def analyze_and_store_post(db_manager, post_dict):
     """Analyze post with AI and store with analysis results"""
     try:
         # Convert dict to SocialPost for AI analysis
-        from datetime import datetime
-
         from core.extraction.social_extractor_base import SocialPost
+        from datetime import datetime
         
         # Parse created_at
         created_at = post_dict.get('created_at', '')
@@ -90,7 +82,7 @@ def analyze_and_store_post(db_manager, post_dict):
         analysis_result = analyzer.analyze_bookmark(post)
 
         # Integrate media analysis (optional)
-        if _LOCAL_MEDIA_AVAILABLE and post.media_urls:
+        if post.media_urls:
             try:
                 media_analyzer = LocalMediaAnalyzer()
                 media_enhanced = media_analyzer.analyze_post_media({
@@ -224,6 +216,24 @@ async def collect_twitter_bookmarks(db_manager, existing_ids, existing_urls=None
                 if not is_duplicate:
                     new_posts.append(post_dict)
                     existing_ids.add(post_id)
+                    if post_dict.get('url'):
+                        existing_urls.add(post_dict.get('url'))
+            
+                if not is_duplicate:
+                    new_posts.append(post_dict)
+                    existing_ids.add(post_id)
+                    if post_dict.get('url') and existing_urls:
+                        existing_urls.add(post_dict.get('url'))
+            
+                if not is_duplicate:
+                    new_posts.append(post_dict)
+                    existing_ids.add(post_id)
+                    if post_dict.get('url') and existing_urls:
+                        existing_urls.add(post_dict.get('url'))
+            
+                if not is_duplicate:
+                    new_posts.append(post_dict)
+                    existing_ids.add(post_id)
                     if post_dict.get('url') and existing_urls:
                         existing_urls.add(post_dict.get('url'))
             
@@ -344,6 +354,24 @@ def collect_reddit_bookmarks(db_manager, existing_ids, existing_urls=None):
                     print(f"   ⚠️ URL {post_dict.get('url')} already exists, skipping...")
                     is_duplicate = True
                 
+                if not is_duplicate:
+                    new_posts.append(post_dict)
+                    existing_ids.add(post_id)
+                    if post_dict.get('url'):
+                        existing_urls.add(post_dict.get('url'))
+            
+                if not is_duplicate:
+                    new_posts.append(post_dict)
+                    existing_ids.add(post_id)
+                    if post_dict.get('url') and existing_urls:
+                        existing_urls.add(post_dict.get('url'))
+            
+                if not is_duplicate:
+                    new_posts.append(post_dict)
+                    existing_ids.add(post_id)
+                    if post_dict.get('url') and existing_urls:
+                        existing_urls.add(post_dict.get('url'))
+            
                 if not is_duplicate:
                     new_posts.append(post_dict)
                     existing_ids.add(post_id)

@@ -12,17 +12,14 @@ It analyzes not just the original post, but also:
 Author: PrisMind AI System
 """
 
-import os
 import json
-import requests
-import time
-from typing import Dict, List, Any, Optional
+import os
 from datetime import datetime
-import base64
-from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 # AI imports
 import google.generativeai as genai
+import requests
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 # Core imports
@@ -334,7 +331,7 @@ class IntelligentContentAnalyzer:
 
         try:
             analysis = json.loads(content)
-        except json.JSONDecodeError as e:
+        except json.JSONDecodeError:
             raise Exception(f"Ollama returned invalid JSON: {content[:100]}...")
         analysis['sentiment_scores'] = sentiment_scores
         analysis['ai_service'] = f"ollama:{service['model']}"

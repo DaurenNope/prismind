@@ -1,12 +1,14 @@
 """
 Smart Content Organizer - Creates intelligent tables and views
 """
-import pandas as pd
 import json
-from typing import Dict, List, Any
-from collections import defaultdict, Counter
 import sqlite3
+from collections import Counter, defaultdict
 from pathlib import Path
+from typing import Dict, List
+
+import pandas as pd
+
 
 class SmartOrganizer:
     """Creates smart tables and organized views of content"""

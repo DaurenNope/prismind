@@ -4,23 +4,25 @@ Comprehensive tests for core PrisMind workflow
 Tests all critical functionality before any refactoring
 """
 
-import pytest
-import tempfile
 import os
 import sys
+import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
-import pandas as pd
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from scripts.database_manager import DatabaseManager
-from supabase_manager import SupabaseManager
+from datetime import datetime
+
 from core.analysis.intelligent_content_analyzer import IntelligentContentAnalyzer
 from core.extraction.social_extractor_base import SocialPost
-from datetime import datetime
+from scripts.database_manager import DatabaseManager
+from supabase_manager import SupabaseManager
+
 
 class TestCoreWorkflow:
     """Test the core PrisMind workflow"""

@@ -5,7 +5,6 @@ Converts AI-analyzed posts into readable news articles
 """
 
 import sys
-import os
 from datetime import datetime, timedelta
 from typing import List, Dict, Any
 from dotenv import load_dotenv

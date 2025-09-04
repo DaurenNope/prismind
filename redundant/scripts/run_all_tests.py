@@ -3,7 +3,6 @@
 Script to run all tests for the PrisMind project
 """
 
-import os
 import sys
 import subprocess
 from pathlib import Path

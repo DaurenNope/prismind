@@ -1,10 +1,10 @@
-import types
 import asyncio
+
 import pandas as pd
 
 from services.collector_runner import (
-    collect_twitter_bookmarks,
     collect_reddit_bookmarks,
+    collect_twitter_bookmarks,
 )
 
 
@@ -51,6 +51,9 @@ def test_collect_twitter_with_mocked_extractor(monkeypatch):
 
 
 def test_collect_reddit_with_mocked_extractor(monkeypatch):
+    # Set environment variable to allow tests without credentials
+    monkeypatch.setenv('ALLOW_REDDIT_TESTS_WITHOUT_CREDS', '1')
+    
     class FakeReddit:
         def __init__(self, *args, **kwargs):  # noqa: D401, ANN001, ANN002
             pass

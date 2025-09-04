@@ -4,11 +4,12 @@ Thread Summarizer
 Generate intelligent summaries and insights from social media threads
 """
 
-import os
 import json
+import os
 import re
-from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
+from typing import List
+
 from dotenv import load_dotenv
 
 # Import AI clients
@@ -24,8 +25,9 @@ except ImportError:
     genai = None
 
 try:
-    import requests
     import json as json_lib
+
+    import requests
 except ImportError:
     requests = None
 

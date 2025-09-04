@@ -36,6 +36,8 @@ jobs:
         playwright install chromium
         # Install system dependencies for Playwright
         playwright install-deps chromium
+        # Install tesseract for OCR (optional)
+        sudo apt-get update && sudo apt-get install -y tesseract-ocr || echo "⚠️ Tesseract install failed, continuing..."
     
     - name: 🔧 Setup Configuration
       run: |
@@ -84,6 +86,8 @@ jobs:
         USE_VALUE_SCORER: "1"
         OLLAMA_URL: ""  # Disable Ollama in cloud
         ENABLE_LOCAL_FEEDBACK: "0"
+        TWITTER_ENABLED: "0"  # Disable Twitter for now
+        REDDIT_ENABLED: "1"   # Enable Reddit collection
         
       run: |
         echo "🚀 Starting automated collection..."

@@ -29,7 +29,7 @@ def check_categorization():
     # Check category distribution
     if 'category' in df.columns:
         category_counts = df['category'].value_counts()
-        print(f"\n🏷️ Category distribution:")
+        print("\n🏷️ Category distribution:")
         for category, count in category_counts.items():
             print(f"   {category}: {count} posts")
         
@@ -47,7 +47,7 @@ def check_categorization():
         scored_posts = df[df['value_score'].notna()]
         unscored_posts = df[df['value_score'].isna()]
         
-        print(f"\n⭐ Value scoring:")
+        print("\n⭐ Value scoring:")
         print(f"   Scored posts: {len(scored_posts)}")
         print(f"   Unscored posts: {len(unscored_posts)}")
         
@@ -58,13 +58,13 @@ def check_categorization():
     # Check platform distribution
     if 'platform' in df.columns:
         platform_counts = df['platform'].value_counts()
-        print(f"\n📱 Platform distribution:")
+        print("\n📱 Platform distribution:")
         for platform, count in platform_counts.items():
             print(f"   {platform}: {count} posts")
     
     # Check content analysis
     analysis_fields = ['sentiment', 'concepts', 'tags', 'analysis_summary']
-    print(f"\n🧠 AI Analysis fields:")
+    print("\n🧠 AI Analysis fields:")
     for field in analysis_fields:
         if field in df.columns:
             filled = df[df[field].notna() & (df[field] != '')]
@@ -77,7 +77,7 @@ def check_categorization():
         df['created_at'] = pd.to_datetime(df['created_at'], errors='coerce')
         recent_posts = df[df['created_at'].notna()].sort_values('created_at', ascending=False)
         if len(recent_posts) > 0:
-            print(f"\n📅 Recent posts:")
+            print("\n📅 Recent posts:")
             for idx, post in recent_posts.head(3).iterrows():
                 print(f"   {post['created_at'].strftime('%Y-%m-%d %H:%M')} - {post.get('category', 'Unknown')} - {post.get('content', 'No content')[:50]}...")
 

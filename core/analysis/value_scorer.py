@@ -4,10 +4,9 @@ Analyzes content quality, relevance, and learning potential to assign intelligen
 """
 
 import re
-import json
-from typing import Dict, List, Any, Optional
-from datetime import datetime, timedelta
-import math
+from datetime import datetime
+from typing import Any, Dict, List
+
 
 class ValueScorer:
     """Sophisticated value scoring system for social media content"""

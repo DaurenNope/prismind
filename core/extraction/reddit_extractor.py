@@ -1,8 +1,11 @@
-import praw
 import time
 from datetime import datetime
-from typing import List, Dict
+from typing import Dict, List
+
+import praw
+
 from .social_extractor_base import SocialExtractorBase, SocialPost
+
 
 class RedditExtractor(SocialExtractorBase):
     """Extract saved posts and comments from Reddit"""
