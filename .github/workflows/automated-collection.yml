@@ -182,8 +182,7 @@ jobs:
             print('  Analysis coverage: 0%')
         "
 
-    - name: ✉️ Notify Telegram (new posts since run start)
-      if: ${{ env.STARTED_AT != '' }}
+    - name: ✉️ Telegram Heartbeat & Notifications
       env:
         SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
         SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -212,6 +211,11 @@ import requests
 
 client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
+# Always send heartbeat
+api = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+heartbeat_msg = "🤖 PrisMind collection completed"
+requests.post(api, json={"chat_id": TELEGRAM_CHAT_ID, "text": heartbeat_msg}, timeout=10)
+
 # Find posts created after STARTED_AT; try common timestamp columns
 candidate_cols = ["created_at", "scraped_at", "inserted_at", "updated_at"]
 use_col = None
@@ -224,7 +228,7 @@ for col in candidate_cols:
         continue
 
 if not use_col:
-    print("⚠️ No timestamp column found for range query; skipping Telegram notify.")
+    print("⚠️ No timestamp column found for range query; skipping new post notifications.")
     sys.exit(0)
 
 resp = client.table("posts").select("id,title,platform,author,url,summary,value_score,category,created_at").gt(use_col, STARTED_AT).order(use_col, desc=False).limit(10).execute()
@@ -253,7 +257,6 @@ def fmt(post):
         parts.append("\n" + url)
     return " ".join(parts)
 
-api = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
 sent = 0
 for row in rows:
     text = fmt(row)
