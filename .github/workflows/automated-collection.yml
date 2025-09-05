@@ -11,7 +11,7 @@ on:
       force_full_collection:
         description: 'Force full collection (ignore existing posts)'
         required: false
-        default: 'false'
+        default: false
         type: boolean
 
 jobs:
@@ -86,10 +86,14 @@ jobs:
         USE_VALUE_SCORER: "1"
         OLLAMA_URL: ""  # Disable Ollama in cloud
         ENABLE_LOCAL_FEEDBACK: "0"
-        TWITTER_ENABLED: "0"  # Disable Twitter for now
+        TWITTER_ENABLED: "1"  # Enable Twitter if cookies provided
         REDDIT_ENABLED: "1"   # Enable Reddit collection
         
       run: |
+        # Record start time for notifications later
+        STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+        echo "STARTED_AT=$STARTED_AT" >> "$GITHUB_ENV"
+        
         echo "🚀 Starting automated collection..."
         
         # Create cookie files from secrets if provided
@@ -111,36 +115,157 @@ jobs:
         
         echo "✅ Automated collection completed!"
     
-    - name: 📊 Collection Summary
+    - name: 📊 Collection Summary (Supabase)
+      env:
+        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+        SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       run: |
-        # Generate summary report
+        # Generate summary report from Supabase
         python -c "
-        import sqlite3
-        from datetime import datetime, timedelta
+        import os
+        from datetime import datetime, timedelta, timezone
         
-        conn = sqlite3.connect('data/prismind.db')
-        cursor = conn.cursor()
+        try:
+            from supabase import create_client
+        except Exception as e:
+            print('⚠️ supabase client import failed:', e)
+            raise
         
-        # Get stats from last 24 hours
-        yesterday = (datetime.now() - timedelta(days=1)).isoformat()
+        url = os.environ.get('SUPABASE_URL')
+        key = os.environ.get('SUPABASE_SERVICE_ROLE_KEY')
+        if not url or not key:
+            raise SystemExit('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY')
         
-        cursor.execute('SELECT COUNT(*) FROM posts WHERE created_timestamp > ?', (yesterday,))
-        new_posts = cursor.fetchone()[0]
+        client = create_client(url, key)
+        yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
         
-        cursor.execute('SELECT COUNT(*) FROM posts')
-        total_posts = cursor.fetchone()[0]
+        # Helper to safely extract count
+        def resp_count(resp):
+            try:
+                c = getattr(resp, 'count', None)
+                if c is not None:
+                    return c
+                data = getattr(resp, 'data', None)
+                return len(data) if data else 0
+            except Exception:
+                return 0
         
-        cursor.execute('SELECT COUNT(*) FROM posts WHERE category IS NOT NULL')
-        analyzed_posts = cursor.fetchone()[0]
+        # New posts in last 24h
+        r_new = client.table('posts').select('id', count='exact').gt('created_timestamp', yesterday).execute()
+        new_posts = resp_count(r_new)
         
-        print(f'📈 COLLECTION SUMMARY')
+        # Total posts
+        r_total = client.table('posts').select('id', count='exact').execute()
+        total_posts = resp_count(r_total)
+        
+        # Analyzed posts: category IS NOT NULL
+        analyzed_posts = 0
+        try:
+            # Attempt a robust IS NOT NULL filter
+            r_an = client.table('posts').select('id', count='exact').not_.is_('category', 'null').execute()
+            analyzed_posts = resp_count(r_an)
+        except Exception:
+            # Fallback: filter by neq None (may exclude nulls depending on backend)
+            try:
+                r_an = client.table('posts').select('id', count='exact').neq('category', None).execute()
+                analyzed_posts = resp_count(r_an)
+            except Exception:
+                analyzed_posts = 0
+        
+        print('📈 COLLECTION SUMMARY')
         print(f'  New posts (24h): {new_posts}')
         print(f'  Total posts: {total_posts}')
         print(f'  Analyzed posts: {analyzed_posts}')
-        print(f'  Analysis coverage: {(analyzed_posts/total_posts*100):.1f}%' if total_posts > 0 else '  Analysis coverage: 0%')
-        
-        conn.close()
+        if total_posts > 0:
+            print(f'  Analysis coverage: {(analyzed_posts/total_posts*100):.1f}%')
+        else:
+            print('  Analysis coverage: 0%')
         "
+
+    - name: ✉️ Notify Telegram (new posts since run start)
+      if: ${{ env.STARTED_AT != '' }}
+      env:
+        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+        SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        STARTED_AT: ${{ env.STARTED_AT }}
+      run: |
+        python - <<"PY"
+import os
+from datetime import datetime, timezone
+import json
+import sys
+
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+STARTED_AT = os.environ.get("STARTED_AT")
+
+if not (SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY and TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID):
+    print("⚠️ Missing envs for Telegram notification; skipping.")
+    sys.exit(0)
+
+from supabase import create_client
+import requests
+
+client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+
+# Find posts created after STARTED_AT; try common timestamp columns
+candidate_cols = ["created_at", "scraped_at", "inserted_at", "updated_at"]
+use_col = None
+for col in candidate_cols:
+    try:
+        client.table("posts").select("id").gt(col, STARTED_AT).limit(1).execute()
+        use_col = col
+        break
+    except Exception:
+        continue
+
+if not use_col:
+    print("⚠️ No timestamp column found for range query; skipping Telegram notify.")
+    sys.exit(0)
+
+resp = client.table("posts").select("id,title,platform,author,url,summary,value_score,category,created_at").gt(use_col, STARTED_AT).order(use_col, desc=False).limit(10).execute()
+rows = getattr(resp, "data", []) or []
+if not rows:
+    print("ℹ️ No new posts to notify.")
+    sys.exit(0)
+
+def fmt(post):
+    title = post.get("title") or post.get("summary") or "New post"
+    platform = post.get("platform") or post.get("source_platform") or ""
+    url = post.get("url") or ""
+    score = post.get("value_score")
+    cat = post.get("category")
+    parts = [f"🔥 {title}"]
+    meta = []
+    if platform:
+        meta.append(platform)
+    if cat:
+        meta.append(f"{cat}")
+    if score is not None:
+        meta.append(f"score {score}")
+    if meta:
+        parts.append("(" + ", ".join(meta) + ")")
+    if url:
+        parts.append("\n" + url)
+    return " ".join(parts)
+
+api = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+sent = 0
+for row in rows:
+    text = fmt(row)
+    data = {"chat_id": TELEGRAM_CHAT_ID, "text": text, "disable_web_page_preview": True}
+    r = requests.post(api, json=data, timeout=10)
+    if r.ok:
+        sent += 1
+    else:
+        print("Telegram send failed:", r.status_code, r.text)
+
+print(f"✅ Telegram notifications sent: {sent}")
+PY
     
     - name: 🚨 Failure Notification
       if: failure()
