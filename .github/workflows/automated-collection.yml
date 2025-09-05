@@ -17,7 +17,7 @@ on:
 jobs:
   automated-collection:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     
     steps:
     - name: 🔄 Checkout Repository
@@ -107,11 +107,44 @@ jobs:
           echo "✅ Threads cookies configured"
         fi
         
-        # Run collection with timeout protection
-        timeout 25m python collect_multi_platform.py || {
-          echo "⚠️ Collection timed out or failed - this is normal for long-running operations"
-          exit 0
-        }
+        # Run collection with timeout protection and better error handling
+        echo "🚀 Starting collection process..."
+        
+        # Try Reddit collection first (most reliable)
+        echo "📱 Collecting Reddit bookmarks..."
+        timeout 10m python -c "
+import os
+import sys
+sys.path.append('.')
+from services.collector_runner import collect_reddit_bookmarks
+from services.database import DatabaseManager
+
+try:
+    db_manager = DatabaseManager('data/prismind.db')
+    result = collect_reddit_bookmarks(db_manager, set(), set())
+    print(f'✅ Reddit collection: {len(result)} posts')
+except Exception as e:
+    print(f'⚠️ Reddit collection failed: {e}')
+" || echo "⚠️ Reddit collection timed out"
+        
+        # Try Twitter collection (may timeout)
+        echo "🐦 Collecting Twitter bookmarks..."
+        timeout 5m python -c "
+import os
+import sys
+sys.path.append('.')
+from services.collector_runner import collect_twitter_bookmarks
+from services.database import DatabaseManager
+
+try:
+    db_manager = DatabaseManager('data/prismind.db')
+    result = collect_twitter_bookmarks(db_manager, set(), set())
+    print(f'✅ Twitter collection: {len(result)} posts')
+except Exception as e:
+    print(f'⚠️ Twitter collection failed: {e}')
+" || echo "⚠️ Twitter collection timed out"
+        
+        echo "✅ Collection process completed"
         
         echo "✅ Automated collection completed!"
     
