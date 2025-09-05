@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import Dict, List
 
 import praw
+import prawcore
 
 from .social_extractor_base import SocialExtractorBase, SocialPost
 
@@ -37,10 +38,10 @@ class RedditExtractor(SocialExtractorBase):
             else:
                 print("❌ Reddit authentication failed: Could not retrieve user.")
                 return False
-        except praw.exceptions.InvalidCredentials:
-            print("❌ Reddit authentication failed: Invalid credentials. Please check your username, password, client ID, and client secret.")
+        except praw.exceptions.RedditAPIException as e:
+            print(f"❌ Reddit authentication failed: {e}")
             return False
-        except praw.exceptions.PrawcoreException as e:
+        except prawcore.exceptions.PrawcoreException as e:
             print(f"❌ Reddit API error during authentication: {e}")
             return False
         except Exception as e:

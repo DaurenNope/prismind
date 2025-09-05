@@ -122,7 +122,7 @@ from services.database import DatabaseManager
 try:
     db_manager = DatabaseManager('data/prismind.db')
     result = collect_reddit_bookmarks(db_manager, set(), set())
-    print(f'✅ Reddit collection: {len(result)} posts')
+    print(f'✅ Reddit collection: {result} posts')
 except Exception as e:
     print(f'⚠️ Reddit collection failed: {e}')
 " || echo "⚠️ Reddit collection timed out"
@@ -139,7 +139,7 @@ from services.database import DatabaseManager
 try:
     db_manager = DatabaseManager('data/prismind.db')
     result = collect_twitter_bookmarks(db_manager, set(), set())
-    print(f'✅ Twitter collection: {len(result)} posts')
+    print(f'✅ Twitter collection: {result} posts')
 except Exception as e:
     print(f'⚠️ Twitter collection failed: {e}')
 " || echo "⚠️ Twitter collection timed out"
