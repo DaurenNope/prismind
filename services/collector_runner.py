@@ -294,11 +294,11 @@ def collect_reddit_bookmarks(db_manager, existing_ids, existing_urls=None):
         print("🆕 First time scraping Reddit")
     
     try:
-        # Use the working Reddit extractor
-        from working_reddit_extractor import WorkingRedditExtractor
+        # Use the automatic Reddit collector
+        from automatic_reddit_collector import AutomaticRedditBookmarksCollector
         
-        extractor = WorkingRedditExtractor()
-        posts = extractor.get_reddit_posts_from_subreddits()
+        collector = AutomaticRedditBookmarksCollector()
+        posts = collector.collect_bookmarks()
         
         if not posts:
             print("📭 No Reddit posts found")
