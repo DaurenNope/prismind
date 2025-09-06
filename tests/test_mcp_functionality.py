@@ -4,6 +4,7 @@ Test Supabase functionality that the MCP server should provide
 """
 
 import os
+import pytest
 
 from dotenv import load_dotenv
 from supabase import Client, create_client
@@ -16,8 +17,7 @@ supabase_url = os.getenv('SUPABASE_URL')
 supabase_key = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
 
 if not supabase_url or not supabase_key:
-    print("❌ Missing Supabase credentials")
-    exit(1)
+    pytest.skip("Missing Supabase credentials", allow_module_level=True)
 
 try:
     # Create Supabase client
