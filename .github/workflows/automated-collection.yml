@@ -1,5 +1,4 @@
 name: 🤖 Automated PrisMind Collection
-
 on:
   schedule:
     # Run every 6 hours (4 times per day)
@@ -14,7 +13,6 @@ on:
         default: false
         type: boolean
   
-
   push:
     branches: [ main ]
 jobs:
@@ -121,7 +119,6 @@ import sys
 sys.path.append('.')
 from services.collector_runner import collect_reddit_bookmarks
 from services.database import DatabaseManager
-
 try:
     db_manager = DatabaseManager('data/prismind.db')
     result = collect_reddit_bookmarks(db_manager, set(), set())
@@ -138,7 +135,6 @@ import sys
 sys.path.append('.')
 from services.collector_runner import collect_twitter_bookmarks_sync
 from services.database import DatabaseManager
-
 try:
     db_manager = DatabaseManager('data/prismind.db')
     result = collect_twitter_bookmarks_sync(db_manager, set(), set())
@@ -217,7 +213,6 @@ except Exception as e:
         else:
             print('  Analysis coverage: 0%')
         "
-
     - name: ✉️ Telegram Heartbeat & Notifications
       env:
         SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -231,27 +226,21 @@ import os
 from datetime import datetime, timezone
 import json
 import sys
-
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 STARTED_AT = os.environ.get("STARTED_AT")
-
 if not (SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY and TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID):
     print("⚠️ Missing envs for Telegram notification; skipping.")
     sys.exit(0)
-
 from supabase import create_client
 import requests
-
 client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
-
 # Always send heartbeat
 api = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
 heartbeat_msg = "🤖 PrisMind collection completed"
 requests.post(api, json={"chat_id": TELEGRAM_CHAT_ID, "text": heartbeat_msg}, timeout=10)
-
 # Find posts created after STARTED_AT; try common timestamp columns
 candidate_cols = ["created_at", "scraped_at", "inserted_at", "updated_at"]
 use_col = None
@@ -262,17 +251,14 @@ for col in candidate_cols:
         break
     except Exception:
         continue
-
 if not use_col:
     print("⚠️ No timestamp column found for range query; skipping new post notifications.")
     sys.exit(0)
-
 resp = client.table("posts").select("id,title,platform,author,url,summary,value_score,category,created_at").gt(use_col, STARTED_AT).order(use_col, desc=False).limit(10).execute()
 rows = getattr(resp, "data", []) or []
 if not rows:
     print("ℹ️ No new posts to notify.")
     sys.exit(0)
-
 def fmt(post):
     title = post.get("title") or post.get("summary") or "New post"
     platform = post.get("platform") or post.get("source_platform") or ""
@@ -292,7 +278,6 @@ def fmt(post):
     if url:
         parts.append("\n" + url)
     return " ".join(parts)
-
 sent = 0
 for row in rows:
     text = fmt(row)
@@ -302,7 +287,6 @@ for row in rows:
         sent += 1
     else:
         print("Telegram send failed:", r.status_code, r.text)
-
 print(f"✅ Telegram notifications sent: {sent}")
 PY
     
@@ -312,7 +296,6 @@ PY
         echo "❌ Automated collection failed!"
         echo "Check the logs above for details."
         # In the future, we could send notifications to Slack/Discord/Email
-
   # Optional: Deploy dashboard after successful collection
   deploy-dashboard:
     needs: automated-collection
