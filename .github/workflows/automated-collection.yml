@@ -16,6 +16,8 @@ on:
   
   # Also trigger on push to main for testing
 
+  push:
+    branches: [ main ]
 jobs:
   automated-collection:
     runs-on: ubuntu-latest
