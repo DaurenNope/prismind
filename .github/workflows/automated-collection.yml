@@ -13,6 +13,10 @@ on:
         required: false
         default: false
         type: boolean
+  
+  # Also trigger on push to main for testing
+  push:
+    branches: [ main ]
 
 jobs:
   automated-collection:
@@ -133,12 +137,12 @@ except Exception as e:
 import os
 import sys
 sys.path.append('.')
-from services.collector_runner import collect_twitter_bookmarks
+from services.collector_runner import collect_twitter_bookmarks_sync
 from services.database import DatabaseManager
 
 try:
     db_manager = DatabaseManager('data/prismind.db')
-    result = collect_twitter_bookmarks(db_manager, set(), set())
+    result = collect_twitter_bookmarks_sync(db_manager, set(), set())
     print(f'✅ Twitter collection: {result} posts')
 except Exception as e:
     print(f'⚠️ Twitter collection failed: {e}')
