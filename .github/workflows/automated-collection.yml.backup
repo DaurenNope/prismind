@@ -1,0 +1,314 @@
+name: 🤖 Automated PrisMind Collection
+on:
+  schedule:
+    # Run every 6 hours (4 times per day)
+    - cron: '0 */6 * * *'
+  
+  # Allow manual triggering
+  workflow_dispatch:
+    inputs:
+      force_full_collection:
+        description: 'Force full collection (ignore existing posts)'
+        required: false
+        default: false
+        type: boolean
+  
+  push:
+    branches: [ main ]
+jobs:
+  automated-collection:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    
+    steps:
+    - name: 🔄 Checkout Repository
+      uses: actions/checkout@v4
+    
+    - name: 🐍 Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+    
+    - name: 📦 Install Dependencies
+      run: |
+        pip install -r requirements.txt
+        # Install Playwright browsers for web scraping
+        playwright install chromium
+        # Install system dependencies for Playwright
+        playwright install-deps chromium
+        # Install tesseract for OCR (optional)
+        sudo apt-get update && sudo apt-get install -y tesseract-ocr || echo "⚠️ Tesseract install failed, continuing..."
+    
+    - name: 🔧 Setup Configuration
+      run: |
+        # Create data directory
+        mkdir -p data
+        mkdir -p config
+        
+        # Create minimal SQLite database if needed
+        python -c "
+        import sqlite3
+        from pathlib import Path
+        from scripts.database_manager import DatabaseManager
+        
+        db_path = Path('data/prismind.db')
+        if not db_path.exists():
+            db = DatabaseManager(str(db_path))
+            print('✅ Local database initialized')
+        "
+    
+    - name: 🤖 Run Automated Collection
+      env:
+        # AI Services
+        MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        PERPLEXITY_API_KEY: ${{ secrets.PERPLEXITY_API_KEY }}
+        
+        # Cloud Database
+        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+        SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        SAVE_TO_SUPABASE: "1"
+        
+        # Reddit API
+        REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
+        REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
+        REDDIT_USERNAME: ${{ secrets.REDDIT_USERNAME }}
+        REDDIT_PASSWORD: ${{ secrets.REDDIT_PASSWORD }}
+        REDDIT_USER_AGENT: "PrisMind:1.0 (by /u/${{ secrets.REDDIT_USERNAME }})"
+        
+        # Twitter/X (using cookies)
+        TWITTER_USERNAME: ${{ secrets.TWITTER_USERNAME }}
+        
+        # Threads (using cookies)
+        THREADS_USERNAME: ${{ secrets.THREADS_USERNAME }}
+        
+        # Feature flags
+        USE_VALUE_SCORER: "1"
+        OLLAMA_URL: ""  # Disable Ollama in cloud
+        ENABLE_LOCAL_FEEDBACK: "0"
+        TWITTER_ENABLED: "1"  # Enable Twitter if cookies provided
+        REDDIT_ENABLED: "1"   # Enable Reddit collection
+        
+      run: |
+        # Record start time for notifications later
+        STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+        echo "STARTED_AT=$STARTED_AT" >> "$GITHUB_ENV"
+        
+        echo "🚀 Starting automated collection..."
+        
+        # Create cookie files from secrets if provided
+        if [ ! -z "${{ secrets.TWITTER_COOKIES }}" ]; then
+          echo '${{ secrets.TWITTER_COOKIES }}' > config/twitter_cookies_${{ secrets.TWITTER_USERNAME }}.json
+          echo "✅ Twitter cookies configured"
+        fi
+        
+        if [ ! -z "${{ secrets.THREADS_COOKIES }}" ]; then
+          echo '${{ secrets.THREADS_COOKIES }}' > config/threads_cookies_${{ secrets.THREADS_USERNAME }}.json
+          echo "✅ Threads cookies configured"
+        fi
+        
+        # Run collection with timeout protection and better error handling
+        echo "🚀 Starting collection process..."
+        
+        # Try Reddit collection first (most reliable)
+        echo "📱 Collecting Reddit bookmarks..."
+        timeout 10m python -c "
+import os
+import sys
+sys.path.append('.')
+from services.collector_runner import collect_reddit_bookmarks
+from services.database import DatabaseManager
+try:
+    db_manager = DatabaseManager('data/prismind.db')
+    result = collect_reddit_bookmarks(db_manager, set(), set())
+    print(f'✅ Reddit collection: {result} posts')
+except Exception as e:
+    print(f'⚠️ Reddit collection failed: {e}')
+" || echo "⚠️ Reddit collection timed out"
+        
+        # Try Twitter collection (may timeout)
+        echo "🐦 Collecting Twitter bookmarks..."
+        timeout 5m python -c "
+import os
+import sys
+sys.path.append('.')
+from services.collector_runner import collect_twitter_bookmarks_sync
+from services.database import DatabaseManager
+try:
+    db_manager = DatabaseManager('data/prismind.db')
+    result = collect_twitter_bookmarks_sync(db_manager, set(), set())
+    print(f'✅ Twitter collection: {result} posts')
+except Exception as e:
+    print(f'⚠️ Twitter collection failed: {e}')
+" || echo "⚠️ Twitter collection timed out"
+        
+        echo "✅ Collection process completed"
+        
+        echo "✅ Automated collection completed!"
+    
+    - name: 📊 Collection Summary (Supabase)
+      env:
+        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+        SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      run: |
+        # Generate summary report from Supabase
+        python -c "
+        import os
+        from datetime import datetime, timedelta, timezone
+        
+        try:
+            from supabase import create_client
+        except Exception as e:
+            print('⚠️ supabase client import failed:', e)
+            raise
+        
+        url = os.environ.get('SUPABASE_URL')
+        key = os.environ.get('SUPABASE_SERVICE_ROLE_KEY')
+        if not url or not key:
+            raise SystemExit('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY')
+        
+        client = create_client(url, key)
+        yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+        
+        # Helper to safely extract count
+        def resp_count(resp):
+            try:
+                c = getattr(resp, 'count', None)
+                if c is not None:
+                    return c
+                data = getattr(resp, 'data', None)
+                return len(data) if data else 0
+            except Exception:
+                return 0
+        
+        # New posts in last 24h
+        r_new = client.table('posts').select('id', count='exact').gt('created_timestamp', yesterday).execute()
+        new_posts = resp_count(r_new)
+        
+        # Total posts
+        r_total = client.table('posts').select('id', count='exact').execute()
+        total_posts = resp_count(r_total)
+        
+        # Analyzed posts: category IS NOT NULL
+        analyzed_posts = 0
+        try:
+            # Attempt a robust IS NOT NULL filter
+            r_an = client.table('posts').select('id', count='exact').not_.is_('category', 'null').execute()
+            analyzed_posts = resp_count(r_an)
+        except Exception:
+            # Fallback: filter by neq None (may exclude nulls depending on backend)
+            try:
+                r_an = client.table('posts').select('id', count='exact').neq('category', None).execute()
+                analyzed_posts = resp_count(r_an)
+            except Exception:
+                analyzed_posts = 0
+        
+        print('📈 COLLECTION SUMMARY')
+        print(f'  New posts (24h): {new_posts}')
+        print(f'  Total posts: {total_posts}')
+        print(f'  Analyzed posts: {analyzed_posts}')
+        if total_posts > 0:
+            print(f'  Analysis coverage: {(analyzed_posts/total_posts*100):.1f}%')
+        else:
+            print('  Analysis coverage: 0%')
+        "
+    - name: ✉️ Telegram Heartbeat & Notifications
+      env:
+        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+        SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        STARTED_AT: ${{ env.STARTED_AT }}
+      run: |
+        python - <<"PY"
+import os
+from datetime import datetime, timezone
+import json
+import sys
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+STARTED_AT = os.environ.get("STARTED_AT")
+if not (SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY and TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID):
+    print("⚠️ Missing envs for Telegram notification; skipping.")
+    sys.exit(0)
+from supabase import create_client
+import requests
+client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+# Always send heartbeat
+api = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+heartbeat_msg = "🤖 PrisMind collection completed"
+requests.post(api, json={"chat_id": TELEGRAM_CHAT_ID, "text": heartbeat_msg}, timeout=10)
+# Find posts created after STARTED_AT; try common timestamp columns
+candidate_cols = ["created_at", "scraped_at", "inserted_at", "updated_at"]
+use_col = None
+for col in candidate_cols:
+    try:
+        client.table("posts").select("id").gt(col, STARTED_AT).limit(1).execute()
+        use_col = col
+        break
+    except Exception:
+        continue
+if not use_col:
+    print("⚠️ No timestamp column found for range query; skipping new post notifications.")
+    sys.exit(0)
+resp = client.table("posts").select("id,title,platform,author,url,summary,value_score,category,created_at").gt(use_col, STARTED_AT).order(use_col, desc=False).limit(10).execute()
+rows = getattr(resp, "data", []) or []
+if not rows:
+    print("ℹ️ No new posts to notify.")
+    sys.exit(0)
+def fmt(post):
+    title = post.get("title") or post.get("summary") or "New post"
+    platform = post.get("platform") or post.get("source_platform") or ""
+    url = post.get("url") or ""
+    score = post.get("value_score")
+    cat = post.get("category")
+    parts = [f"🔥 {title}"]
+    meta = []
+    if platform:
+        meta.append(platform)
+    if cat:
+        meta.append(f"{cat}")
+    if score is not None:
+        meta.append(f"score {score}")
+    if meta:
+        parts.append("(" + ", ".join(meta) + ")")
+    if url:
+        parts.append("\n" + url)
+    return " ".join(parts)
+sent = 0
+for row in rows:
+    text = fmt(row)
+    data = {"chat_id": TELEGRAM_CHAT_ID, "text": text, "disable_web_page_preview": True}
+    r = requests.post(api, json=data, timeout=10)
+    if r.ok:
+        sent += 1
+    else:
+        print("Telegram send failed:", r.status_code, r.text)
+print(f"✅ Telegram notifications sent: {sent}")
+PY
+    
+    - name: 🚨 Failure Notification
+      if: failure()
+      run: |
+        echo "❌ Automated collection failed!"
+        echo "Check the logs above for details."
+        # In the future, we could send notifications to Slack/Discord/Email
+  # Optional: Deploy dashboard after successful collection
+  deploy-dashboard:
+    needs: automated-collection
+    runs-on: ubuntu-latest
+    if: success()
+    
+    steps:
+    - name: 🔄 Checkout Repository
+      uses: actions/checkout@v4
+    
+    - name: 🚀 Deploy to Railway
+      # This would deploy the dashboard to Railway
+      # Implementation depends on chosen platform
+      run: |
+        echo "🚀 Dashboard deployment would go here"
+        echo "Options: Railway, Render, Vercel, Google Cloud Run"

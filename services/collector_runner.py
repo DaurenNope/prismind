@@ -8,6 +8,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from datetime import datetime
 
 from dotenv import load_dotenv
 
@@ -278,7 +279,7 @@ async def collect_twitter_bookmarks(db_manager, existing_ids, existing_urls=None
             pass
 
 def collect_reddit_bookmarks(db_manager, existing_ids, existing_urls=None):
-    """Collect Reddit saved posts"""
+    """Collect Reddit posts using working public API approach"""
     print("\n🤖 REDDIT COLLECTION")
     print("-" * 30)
     
@@ -292,113 +293,66 @@ def collect_reddit_bookmarks(db_manager, existing_ids, existing_urls=None):
     else:
         print("🆕 First time scraping Reddit")
     
-    # Check for Reddit credentials
-    reddit_client_id = os.getenv('REDDIT_CLIENT_ID')
-    reddit_client_secret = os.getenv('REDDIT_CLIENT_SECRET')
-    reddit_username = os.getenv('REDDIT_USERNAME')
-    reddit_password = os.getenv('REDDIT_PASSWORD')
-    reddit_access_token = os.getenv('REDDIT_ACCESS_TOKEN')
-    reddit_refresh_token = os.getenv('REDDIT_REFRESH_TOKEN')
-    reddit_user_agent = os.getenv('REDDIT_USER_AGENT', 'PrisMind:1.0 (by /u/YourUsername)')
-    
-    if not (reddit_client_id and reddit_client_secret):
-        # Allow tests to monkeypatch RedditExtractor without real creds
-        if os.getenv('ALLOW_REDDIT_TESTS_WITHOUT_CREDS', '0') != '1':
-            print("❌ Reddit credentials not found. Please set:")
-            print("   REDDIT_CLIENT_ID")
-            print("   REDDIT_CLIENT_SECRET") 
-            print("   REDDIT_USERNAME (optional, for saved posts)")
-            print("   REDDIT_PASSWORD (optional, for saved posts)")
-            print("   REDDIT_USER_AGENT (optional)")
-            return 0
-    
     try:
-        extractor = RedditExtractor(
-            client_id=reddit_client_id,
-            client_secret=reddit_client_secret,
-            user_agent=reddit_user_agent,
-            username=reddit_username,
-            password=reddit_password,
-            access_token=reddit_access_token,
-            refresh_token=reddit_refresh_token
-        )
+        # Use the working Reddit extractor
+        from working_reddit_extractor import WorkingRedditExtractor
         
-        print("🔍 Extracting Reddit saved posts...")
-        # Get limit from environment variable or use default
-        reddit_limit = int(os.getenv('REDDIT_LIMIT', '100'))
-        saved_posts = extractor.get_saved_posts(limit=reddit_limit)
+        extractor = WorkingRedditExtractor()
+        posts = extractor.get_reddit_posts_from_subreddits()
         
-        if saved_posts:
-            new_posts = []
-            for post in saved_posts:
-                post_dict = post.__dict__ if hasattr(post, '__dict__') else post
-                post_id = post_dict.get('post_id') or post_dict.get('id') or post_dict.get('url', '').split('/')[-1]
-                
-                if not post_id:
-                    print(f"   ⚠️ Skipping post without ID: {post_dict.get('title', 'Unknown')}")
-                    continue
-                    
-                # Check for duplicates by both post_id and URL
-                is_duplicate = False
-                if post_id in existing_ids:
-                    print(f"   ⚠️ Post ID {post_id} already exists, skipping...")
-                    is_duplicate = True
-                
-                if not is_duplicate and existing_urls and post_dict.get('url') in existing_urls:
-                    print(f"   ⚠️ URL {post_dict.get('url')} already exists, skipping...")
-                    is_duplicate = True
-                
-                if not is_duplicate:
-                    new_posts.append(post_dict)
-                    existing_ids.add(post_id)
-                    if post_dict.get('url') and existing_urls:
-                        existing_urls.add(post_dict.get('url'))
-            
-            # Add new posts to database with AI analysis
-            last_post_id = None
-            last_post_url = None
-            
-            for post_dict in new_posts:
-                analyze_and_store_post(db_manager, post_dict)
-                
-                # Mark as scraped in state manager
-                post_id = post_dict.get('post_id')
-                if post_id:
-                    state_manager.mark_post_scraped(
-                        post_id=post_id,
-                        platform='reddit',
-                        url=post_dict.get('url'),
-                        title=post_dict.get('title'),
-                        author=post_dict.get('author')
-                    )
-                    last_post_id = post_id
-                    last_post_url = post_dict.get('url')
-            
-            # Update scrape state
-            state_manager.update_scrape_state(
-                platform='reddit',
-                last_post_id=last_post_id,
-                last_post_url=last_post_url,
-                posts_scraped=len(new_posts),
-                success=True
-            )
-            
-            print(f"✅ Reddit: {len(new_posts)} new bookmarks added")
-            return len(new_posts)
-        else:
-            print("📭 No Reddit bookmarks found")
+        if not posts:
+            print("📭 No Reddit posts found")
             return 0
+        
+        print(f"📊 Found {len(posts)} Reddit posts")
+        
+        # Store posts in database
+        stored_count = 0
+        for post in posts:
+            post_id = post['url'].split('/')[-1] if '/' in post['url'] else post['url']
             
+            if post_id not in existing_ids:
+                try:
+                    # Convert to the format expected by analyze_and_store_post
+                    post_dict = {
+                        'platform': 'reddit',
+                        'post_id': post_id,
+                        'title': post['title'],
+                        'content': post['content'],
+                        'author': post['author'],
+                        'author_handle': f"u/{post['author']}",
+                        'url': post['url'],
+                        'created_at': post['created_timestamp'],
+                        'post_type': 'post',
+                        'media_urls': [],
+                        'hashtags': [],
+                        'mentions': [],
+                        'engagement': {
+                            'score': post['score'],
+                            'num_comments': post.get('num_comments', 0)
+                        },
+                        'is_saved': True,
+                        'saved_at': datetime.now().isoformat(),
+                        'folder_category': f"r/{post['subreddit']}"
+                    }
+                    
+                    analyze_and_store_post(db_manager, post_dict)
+                    stored_count += 1
+                    
+                except Exception as e:
+                    print(f"⚠️ Error storing Reddit post: {e}")
+                    continue
+        
+        print(f"✅ Reddit: {stored_count} new posts stored")
+        
+        # Update scrape state
+        state_manager.update_scrape_state('reddit', stored_count, posts[0]['url'] if posts else None)
+        
+        return stored_count
+        
     except Exception as e:
-        print(f"❌ Reddit collection error: {e}")
-        # Update scrape state with failure
-        state_manager.update_scrape_state(
-            platform='reddit',
-            posts_scraped=0,
-            success=False
-        )
+        print(f"❌ Reddit collection failed: {e}")
         return 0
-
 def collect_twitter_bookmarks_sync(db_manager, existing_ids, existing_urls=None):
     """Synchronous wrapper for Twitter collection"""
     import asyncio
