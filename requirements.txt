@@ -12,3 +12,4 @@ vaderSentiment>=3.3.2
 
 
 praw>=7.7.0
+pytest>=7.0.0
