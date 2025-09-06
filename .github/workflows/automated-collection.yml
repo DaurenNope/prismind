@@ -89,7 +89,7 @@ print('🤖 AUTOMATED COLLECTION STARTED')
 print('=' * 50)
 
 try:
-    from services.collector_runner import collect_reddit_bookmarks, collect_twitter_bookmarks_sync
+    from services.collector_runner import collect_reddit_bookmarks, collect_twitter_bookmarks_synctter_bookmarks_sync
     from scripts.database_manager import DatabaseManager
     
     db_manager = DatabaseManager()
@@ -101,7 +101,7 @@ try:
     
     # Collect Twitter bookmarks
     print('🐦 Collecting Twitter bookmarks...')
-    twitter_result = collect_twitter_bookmarks_sync(db_manager, set(), set())
+    twitter_result = collect_twitter_bookmarks_synctter_bookmarks_sync(db_manager, set(), set())
     print(f'✅ Twitter collection: {twitter_result} posts')
     
     print('✅ Collection completed successfully!')
