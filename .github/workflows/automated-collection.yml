@@ -45,8 +45,37 @@ jobs:
         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
       run: |
-        echo "🤖 Starting collection..."
-        python simple_collection.py
+        echo "🤖 Starting REAL bookmark collection..."
+        python -c "
+        import os
+        import sys
+        sys.path.append('.')
+        
+        print('🤖 REAL BOOKMARK COLLECTION STARTED')
+        print('=' * 50)
+        
+        try:
+            from services.collector_runner import collect_reddit_bookmarks, collect_twitter_bookmarks_sync
+            from scripts.database_manager import DatabaseManager
+            
+            db_manager = DatabaseManager()
+            
+            print('🔴 Collecting Reddit bookmarks...')
+            reddit_result = collect_reddit_bookmarks(db_manager, set(), set())
+            print(f'✅ Reddit collection: {reddit_result} posts')
+            
+            print('🐦 Collecting Twitter bookmarks...')
+            twitter_result = collect_twitter_bookmarks_sync(db_manager, set(), set())
+            print(f'✅ Twitter collection: {twitter_result} posts')
+            
+            print('✅ Collection completed successfully!')
+            
+        except Exception as e:
+            print(f'❌ Collection failed: {e}')
+            import traceback
+            traceback.print_exc()
+            sys.exit(1)
+        "
     
     - name: 📱 Send Notification
       env:
