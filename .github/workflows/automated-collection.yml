@@ -2,17 +2,8 @@ name: 🤖 Automated PrisMind Collection
 
 on:
   schedule:
-    # Run every 6 hours (4 times per day)
     - cron: '0 */6 * * *'
-  
-  # Allow manual triggering
   workflow_dispatch:
-    inputs:
-      force_full_collection:
-        description: 'Force full collection (ignore existing posts)'
-        required: false
-        default: false
-        type: boolean
 
 jobs:
   automated-collection:
@@ -32,12 +23,10 @@ jobs:
     - name: 📦 Install Dependencies
       run: |
         pip install -r requirements.txt
-        # Install Playwright browsers for web scraping
         playwright install chromium
-        # Install system dependencies for Playwright
         playwright install-deps chromium
     
-    - name: 🔐 Set up Environment Variables
+    - name: 🤖 Run Collection
       env:
         REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
         REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
@@ -56,102 +45,62 @@ jobs:
         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
       run: |
-        echo "🔐 Environment variables set"
-    
-    - name: 🤖 Run Automated Collection
-      env:
-        REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
-        REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
-        REDDIT_USERNAME: ${{ secrets.REDDIT_USERNAME }}
-        REDDIT_PASSWORD: ${{ secrets.REDDIT_PASSWORD }}
-        REDDIT_ACCESS_TOKEN: ${{ secrets.REDDIT_ACCESS_TOKEN }}
-        REDDIT_REFRESH_TOKEN: ${{ secrets.REDDIT_REFRESH_TOKEN }}
-        REDDIT_USER_AGENT: ${{ secrets.REDDIT_USER_AGENT }}
-        TWITTER_USERNAME: ${{ secrets.TWITTER_USERNAME }}
-        TWITTER_PASSWORD: ${{ secrets.TWITTER_PASSWORD }}
-        TWITTER_COOKIES: ${{ secrets.TWITTER_COOKIES }}
-        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-        SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
-      run: |
-        echo "🤖 Starting automated collection..."
-        
-        # Run collection with timeout
-        timeout 30m python -c "
-import os
-import sys
-sys.path.append('.')
-
-print('🤖 AUTOMATED COLLECTION STARTED')
-print('=' * 50)
-
-try:
-    from services.collector_runner import collect_reddit_bookmarks, collect_twitter_bookmarks_synctter_bookmarks_sync
-    from scripts.database_manager import DatabaseManager
-    
-    db_manager = DatabaseManager()
-    
-    # Collect Reddit bookmarks
-    print('🔴 Collecting Reddit bookmarks...')
-    reddit_result = collect_reddit_bookmarks(db_manager, set(), set())
-    print(f'✅ Reddit collection: {reddit_result} posts')
-    
-    # Collect Twitter bookmarks
-    print('🐦 Collecting Twitter bookmarks...')
-    twitter_result = collect_twitter_bookmarks_synctter_bookmarks_sync(db_manager, set(), set())
-    print(f'✅ Twitter collection: {twitter_result} posts')
-    
-    print('✅ Collection completed successfully!')
-    
-except Exception as e:
-    print(f'❌ Collection failed: {e}')
-    import traceback
-    traceback.print_exc()
-    sys.exit(1)
-" || echo "⚠️ Collection timed out or failed"
-        
-        echo "✅ Automated collection completed!"
-    
-    - name: 📊 Send Telegram Notification
-      env:
-        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-        SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      run: |
-        echo "📱 Sending Telegram notification..."
-        
+        echo "🤖 Starting collection..."
         python -c "
-import requests
-import os
-from supabase import create_client, Client
-
-# Send heartbeat notification
-bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
-chat_id = os.getenv('TELEGRAM_CHAT_ID')
-
-message = '''🤖 Automated Collection Complete!
-
-✅ Collection system is working
-📊 Check your database for new posts
-🔄 Next run in 6 hours
-
-System Status: OPERATIONAL'''
-
-url = f'https://api.telegram.org/bot{bot_token}/sendMessage'
-data = {'chat_id': chat_id, 'text': message}
-
-try:
-    response = requests.post(url, data=data)
-    if response.status_code == 200:
-        print('✅ Telegram notification sent!')
-    else:
-        print(f'❌ Failed to send notification: {response.status_code}')
-except Exception as e:
-    print(f'❌ Error sending notification: {e}')
-"
+        import os
+        import sys
+        sys.path.append('.')
         
-        echo "📱 Notification sent!"
+        print('🤖 AUTOMATED COLLECTION STARTED')
+        print('=' * 50)
+        
+        try:
+            from services.collector_runner import collect_reddit_bookmarks, collect_twitter_bookmarks_sync
+            from scripts.database_manager import DatabaseManager
+            
+            db_manager = DatabaseManager()
+            
+            print('🔴 Collecting Reddit bookmarks...')
+            reddit_result = collect_reddit_bookmarks(db_manager, set(), set())
+            print(f'✅ Reddit collection: {reddit_result} posts')
+            
+            print('🐦 Collecting Twitter bookmarks...')
+            twitter_result = collect_twitter_bookmarks_sync(db_manager, set(), set())
+            print(f'✅ Twitter collection: {twitter_result} posts')
+            
+            print('✅ Collection completed successfully!')
+            
+        except Exception as e:
+            print(f'❌ Collection failed: {e}')
+            import traceback
+            traceback.print_exc()
+            sys.exit(1)
+        "
+    
+    - name: 📱 Send Notification
+      env:
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      run: |
+        echo "📱 Sending notification..."
+        python -c "
+        import requests
+        import os
+        
+        bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
+        chat_id = os.getenv('TELEGRAM_CHAT_ID')
+        
+        message = '🤖 Automated Collection Complete! Your new bookmarks have been collected and processed.'
+        
+        url = f'https://api.telegram.org/bot{bot_token}/sendMessage'
+        data = {'chat_id': chat_id, 'text': message}
+        
+        try:
+            response = requests.post(url, data=data)
+            if response.status_code == 200:
+                print('✅ Telegram notification sent!')
+            else:
+                print(f'❌ Failed to send notification: {response.status_code}')
+        except Exception as e:
+            print(f'❌ Error sending notification: {e}')
+        "
