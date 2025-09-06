@@ -11,15 +11,17 @@ from .social_extractor_base import SocialExtractorBase, SocialPost
 class RedditExtractor(SocialExtractorBase):
     """Extract saved posts and comments from Reddit"""
     
-    def __init__(self, client_id: str, client_secret: str, user_agent: str, username: str = None, password: str = None):
+    def __init__(self, client_id: str, client_secret: str, user_agent: str, username: str = None, password: str = None, access_token: str = None, refresh_token: str = None):
         super().__init__()
         self.client_id = client_id
         self.client_secret = client_secret
         self.user_agent = user_agent
         self.username = username
         self.password = password
+        self.access_token = access_token
+        self.refresh_token = refresh_token
         self.reddit = None
-        self.read_only_mode = not (username and password)
+        self.read_only_mode = not (username and password) and not access_token
     
     def authenticate(self) -> bool:
         """Authenticate with Reddit API, providing specific error handling."""
@@ -41,68 +43,114 @@ class RedditExtractor(SocialExtractorBase):
                 print(f"❌ Reddit read-only auth failed: {read_only_error}")
                 return False
         
+        # Try OAuth2 authentication first (if tokens are available)
+        if self.access_token and self.refresh_token:
+            try:
+                print("🔍 Reddit OAuth2 authentication")
+                self.reddit = praw.Reddit(
+                    client_id=self.client_id,
+                    client_secret=self.client_secret,
+                    user_agent=self.user_agent,
+                    access_token=self.access_token,
+                    refresh_token=self.refresh_token,
+                    check_for_async=False
+                )
+                
+                # Test authentication
+                user = self.reddit.user.me()
+                if user:
+                    print(f"✅ Reddit OAuth2 authenticated as: {user.name}")
+                    return True
+                else:
+                    print("❌ Reddit OAuth2 authentication failed: Could not retrieve user.")
+                    return False
+                    
+            except Exception as oauth_error:
+                print(f"❌ Reddit OAuth2 error: {oauth_error}")
+                
+                # Check if it's a network connectivity issue
+                if "NameResolutionError" in str(oauth_error) or "oauth.reddit.com" in str(oauth_error):
+                    print("🌐 Network connectivity issue detected")
+                    print("🔄 Trying alternative Reddit endpoints...")
+                    
+                    # Try with different Reddit configuration
+                    try:
+                        import requests
+                        # Test if we can reach Reddit at all
+                        response = requests.get("https://www.reddit.com", timeout=10)
+                        if response.status_code == 200:
+                            print("✅ Reddit main site is accessible")
+                            print("⚠️ OAuth endpoint has DNS issues - this is temporary")
+                            print("🔄 Falling back to read-only mode for now...")
+                            return self._fallback_to_readonly()
+                        else:
+                            print(f"❌ Reddit main site returned: {response.status_code}")
+                    except Exception as network_error:
+                        print(f"❌ Network test failed: {network_error}")
+                
+                print("🔄 Falling back to password authentication...")
+                # Continue to password authentication below
+        
+        # Try password-based authentication (if OAuth2 failed or not available)
+        if self.username and self.password:
+            try:
+                print("🔍 Reddit password authentication")
+                self.reddit = praw.Reddit(
+                    client_id=self.client_id,
+                    client_secret=self.client_secret,
+                    user_agent=self.user_agent,
+                    username=self.username,
+                    password=self.password,
+                    check_for_async=False
+                )
+                
+                # Test authentication
+                user = self.reddit.user.me()
+                if user:
+                    print(f"✅ Reddit authenticated as: {user.name}")
+                    return True
+                else:
+                    print("❌ Reddit authentication failed: Could not retrieve user.")
+                    return False
+                    
+            except praw.exceptions.RedditAPIException as e:
+                print(f"❌ Reddit API error: {e}")
+                # Try without password (read-only mode)
+                try:
+                    print("🔄 Trying read-only authentication...")
+                    self.reddit = praw.Reddit(
+                        client_id=self.client_id,
+                        client_secret=self.client_secret,
+                        user_agent=self.user_agent,
+                        check_for_async=False
+                    )
+                    # Test with a simple API call
+                    subreddit = self.reddit.subreddit("test")
+                    subreddit.display_name  # This will fail if auth is bad
+                    print("✅ Reddit read-only authentication successful")
+                    return True
+                except Exception as read_only_error:
+                    print(f"❌ Reddit read-only auth also failed: {read_only_error}")
+                    return False
+    
+    def _fallback_to_readonly(self) -> bool:
+        """Fallback to read-only mode when OAuth fails"""
         try:
-            # Try password-based authentication first
+            print("🔍 Reddit read-only fallback")
             self.reddit = praw.Reddit(
                 client_id=self.client_id,
                 client_secret=self.client_secret,
                 user_agent=self.user_agent,
-                username=self.username,
-                password=self.password,
                 check_for_async=False
             )
-            
-            # Test authentication
-            user = self.reddit.user.me()
-            if user:
-                print(f"✅ Reddit authenticated as: {user.name}")
-                return True
-            else:
-                print("❌ Reddit authentication failed: Could not retrieve user.")
-                return False
-                
-        except praw.exceptions.RedditAPIException as e:
-            print(f"❌ Reddit API error: {e}")
-            # Try without password (read-only mode)
-            try:
-                print("🔄 Trying read-only authentication...")
-                self.reddit = praw.Reddit(
-                    client_id=self.client_id,
-                    client_secret=self.client_secret,
-                    user_agent=self.user_agent,
-                    check_for_async=False
-                )
-                # Test with a simple API call
-                subreddit = self.reddit.subreddit("test")
-                subreddit.display_name  # This will fail if auth is bad
-                print("✅ Reddit read-only authentication successful")
-                return True
-            except Exception as read_only_error:
-                print(f"❌ Reddit read-only auth also failed: {read_only_error}")
-                return False
-                
-        except prawcore.exceptions.PrawcoreException as e:
-            print(f"❌ Reddit API error during authentication: {e}")
-            # Try read-only mode as fallback
-            try:
-                print("🔄 Falling back to read-only mode...")
-                self.reddit = praw.Reddit(
-                    client_id=self.client_id,
-                    client_secret=self.client_secret,
-                    user_agent=self.user_agent,
-                    check_for_async=False
-                )
-                # Test with a simple API call
-                subreddit = self.reddit.subreddit("test")
-                subreddit.display_name
-                print("✅ Reddit read-only fallback successful")
-                self.read_only_mode = True
-                return True
-            except Exception as fallback_error:
-                print(f"❌ Reddit read-only fallback also failed: {fallback_error}")
-                return False
-        except Exception as e:
-            print(f"❌ An unexpected error occurred during Reddit authentication: {e}")
+            # Test with a simple API call
+            subreddit = self.reddit.subreddit("test")
+            subreddit.display_name  # This will fail if auth is bad
+            print("✅ Reddit read-only fallback successful")
+            self.read_only_mode = True
+            return True
+        except Exception as read_only_error:
+            print(f"❌ Reddit read-only fallback failed: {read_only_error}")
             return False
     
     def get_saved_posts(self, limit: int = 100, max_retries: int = 3) -> List[SocialPost]:
