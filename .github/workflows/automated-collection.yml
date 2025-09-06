@@ -15,8 +15,6 @@ on:
         type: boolean
   
   # Also trigger on push to main for testing
-  push:
-    branches: [ main ]
 
 jobs:
   automated-collection:
