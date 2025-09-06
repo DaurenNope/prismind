@@ -97,6 +97,40 @@ def store_posts(posts, db_manager):
     
     return stored_count
 
+def store_posts_supabase(posts, supabase):
+    """Store posts in Supabase"""
+    if not posts:
+        return 0
+        
+    stored_count = 0
+    import time
+    
+    for post in posts:
+        try:
+            # Generate a simple ID based on timestamp (smaller number)
+            post_id = int(time.time()) + stored_count
+            
+            # Convert to Supabase format
+            supabase_post = {
+                'id': post_id,
+                'title': post['title'],
+                'content': post['content'],
+                'platform': post['platform'],
+                'author': post['author'],
+                'url': post['url'],
+                'created_at': post['created_timestamp'],
+                'value_score': post.get('score', 0),
+                'category': 'general'
+            }
+            
+            supabase.table('posts').insert(supabase_post).execute()
+            stored_count += 1
+        except Exception as e:
+            print(f"⚠️ Error storing post in Supabase: {e}")
+            continue
+    
+    return stored_count
+
 def main():
     """Main collection function"""
     print("🤖 SIMPLE COLLECTION - ACTUALLY WORKS")
@@ -105,16 +139,25 @@ def main():
     load_dotenv()
     
     try:
-        from scripts.database_manager import DatabaseManager
-        db_manager = DatabaseManager()
+        # Use Supabase for storage
+        from supabase import create_client, Client
+        
+        url = os.getenv('SUPABASE_URL')
+        key = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
+        
+        if not url or not key:
+            print('❌ Supabase credentials not found')
+            return
+        
+        supabase: Client = create_client(url, key)
         
         # Collect posts
         reddit_posts = collect_reddit_simple()
         twitter_posts = collect_twitter_simple()
         
-        # Store posts
-        reddit_stored = store_posts(reddit_posts, db_manager)
-        twitter_stored = store_posts(twitter_posts, db_manager)
+        # Store posts in Supabase
+        reddit_stored = store_posts_supabase(reddit_posts, supabase)
+        twitter_stored = store_posts_supabase(twitter_posts, supabase)
         
         # Send notification
         bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
