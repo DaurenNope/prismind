@@ -299,14 +299,14 @@ def collect_reddit_bookmarks(db_manager, existing_ids, existing_urls=None):
     reddit_password = os.getenv('REDDIT_PASSWORD')
     reddit_user_agent = os.getenv('REDDIT_USER_AGENT', 'PrisMind:1.0 (by /u/YourUsername)')
     
-    if not (reddit_client_id and reddit_client_secret and reddit_username and reddit_password):
+    if not (reddit_client_id and reddit_client_secret):
         # Allow tests to monkeypatch RedditExtractor without real creds
         if os.getenv('ALLOW_REDDIT_TESTS_WITHOUT_CREDS', '0') != '1':
             print("❌ Reddit credentials not found. Please set:")
             print("   REDDIT_CLIENT_ID")
             print("   REDDIT_CLIENT_SECRET") 
-            print("   REDDIT_USERNAME")
-            print("   REDDIT_PASSWORD")
+            print("   REDDIT_USERNAME (optional, for saved posts)")
+            print("   REDDIT_PASSWORD (optional, for saved posts)")
             print("   REDDIT_USER_AGENT (optional)")
             return 0
     
@@ -393,6 +393,15 @@ def collect_reddit_bookmarks(db_manager, existing_ids, existing_urls=None):
             posts_scraped=0,
             success=False
         )
+        return 0
+
+def collect_twitter_bookmarks_sync(db_manager, existing_ids, existing_urls=None):
+    """Synchronous wrapper for Twitter collection"""
+    import asyncio
+    try:
+        return asyncio.run(collect_twitter_bookmarks(db_manager, existing_ids, existing_urls))
+    except Exception as e:
+        print(f"❌ Twitter collection error: {e}")
         return 0
 
 async def collect_threads_bookmarks(db_manager, existing_ids):

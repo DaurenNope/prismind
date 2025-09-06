@@ -19,10 +19,30 @@ class RedditExtractor(SocialExtractorBase):
         self.username = username
         self.password = password
         self.reddit = None
+        self.read_only_mode = not (username and password)
     
     def authenticate(self) -> bool:
         """Authenticate with Reddit API, providing specific error handling."""
+        if self.read_only_mode:
+            print("🔍 Reddit read-only mode (no username/password provided)")
+            try:
+                self.reddit = praw.Reddit(
+                    client_id=self.client_id,
+                    client_secret=self.client_secret,
+                    user_agent=self.user_agent,
+                    check_for_async=False
+                )
+                # Test with a simple API call
+                subreddit = self.reddit.subreddit("test")
+                subreddit.display_name  # This will fail if auth is bad
+                print("✅ Reddit read-only authentication successful")
+                return True
+            except Exception as read_only_error:
+                print(f"❌ Reddit read-only auth failed: {read_only_error}")
+                return False
+        
         try:
+            # Try password-based authentication first
             self.reddit = praw.Reddit(
                 client_id=self.client_id,
                 client_secret=self.client_secret,
@@ -31,6 +51,8 @@ class RedditExtractor(SocialExtractorBase):
                 password=self.password,
                 check_for_async=False
             )
+            
+            # Test authentication
             user = self.reddit.user.me()
             if user:
                 print(f"✅ Reddit authenticated as: {user.name}")
@@ -38,12 +60,47 @@ class RedditExtractor(SocialExtractorBase):
             else:
                 print("❌ Reddit authentication failed: Could not retrieve user.")
                 return False
+                
         except praw.exceptions.RedditAPIException as e:
-            print(f"❌ Reddit authentication failed: {e}")
-            return False
+            print(f"❌ Reddit API error: {e}")
+            # Try without password (read-only mode)
+            try:
+                print("🔄 Trying read-only authentication...")
+                self.reddit = praw.Reddit(
+                    client_id=self.client_id,
+                    client_secret=self.client_secret,
+                    user_agent=self.user_agent,
+                    check_for_async=False
+                )
+                # Test with a simple API call
+                subreddit = self.reddit.subreddit("test")
+                subreddit.display_name  # This will fail if auth is bad
+                print("✅ Reddit read-only authentication successful")
+                return True
+            except Exception as read_only_error:
+                print(f"❌ Reddit read-only auth also failed: {read_only_error}")
+                return False
+                
         except prawcore.exceptions.PrawcoreException as e:
             print(f"❌ Reddit API error during authentication: {e}")
-            return False
+            # Try read-only mode as fallback
+            try:
+                print("🔄 Falling back to read-only mode...")
+                self.reddit = praw.Reddit(
+                    client_id=self.client_id,
+                    client_secret=self.client_secret,
+                    user_agent=self.user_agent,
+                    check_for_async=False
+                )
+                # Test with a simple API call
+                subreddit = self.reddit.subreddit("test")
+                subreddit.display_name
+                print("✅ Reddit read-only fallback successful")
+                self.read_only_mode = True
+                return True
+            except Exception as fallback_error:
+                print(f"❌ Reddit read-only fallback also failed: {fallback_error}")
+                return False
         except Exception as e:
             print(f"❌ An unexpected error occurred during Reddit authentication: {e}")
             return False
@@ -53,6 +110,10 @@ class RedditExtractor(SocialExtractorBase):
         if not self.reddit:
             if not self.authenticate():
                 raise Exception("Authentication with Reddit failed")
+
+        if self.read_only_mode:
+            print("⚠️ Cannot access saved posts in read-only mode. Returning empty list.")
+            return []
 
         posts = []
         for attempt in range(max_retries):
@@ -64,7 +125,7 @@ class RedditExtractor(SocialExtractorBase):
                         posts.append(post)
                 print(f"✅ Retrieved {len(posts)} saved items from Reddit")
                 return posts # Success
-            except praw.exceptions.PrawcoreException as e:
+            except prawcore.exceptions.PrawcoreException as e:
                 print(f"❌ Reddit API error on attempt {attempt + 1}: {e}")
                 if attempt >= max_retries - 1:
                     print("❌ All retries failed for getting saved posts.")
@@ -81,6 +142,10 @@ class RedditExtractor(SocialExtractorBase):
             if not self.authenticate():
                 raise Exception("Authentication with Reddit failed")
 
+        if self.read_only_mode:
+            print("⚠️ Cannot access liked posts in read-only mode. Returning empty list.")
+            return []
+
         posts = []
         for attempt in range(max_retries):
             try:
@@ -91,7 +156,7 @@ class RedditExtractor(SocialExtractorBase):
                         posts.append(post)
                 print(f"✅ Retrieved {len(posts)} upvoted items from Reddit")
                 return posts # Success
-            except praw.exceptions.PrawcoreException as e:
+            except prawcore.exceptions.PrawcoreException as e:
                 print(f"❌ Reddit API error on attempt {attempt + 1}: {e}")
                 if attempt >= max_retries - 1:
                     print("❌ All retries failed for getting upvoted posts.")
