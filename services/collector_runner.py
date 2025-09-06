@@ -297,6 +297,8 @@ def collect_reddit_bookmarks(db_manager, existing_ids, existing_urls=None):
     reddit_client_secret = os.getenv('REDDIT_CLIENT_SECRET')
     reddit_username = os.getenv('REDDIT_USERNAME')
     reddit_password = os.getenv('REDDIT_PASSWORD')
+    reddit_access_token = os.getenv('REDDIT_ACCESS_TOKEN')
+    reddit_refresh_token = os.getenv('REDDIT_REFRESH_TOKEN')
     reddit_user_agent = os.getenv('REDDIT_USER_AGENT', 'PrisMind:1.0 (by /u/YourUsername)')
     
     if not (reddit_client_id and reddit_client_secret):
@@ -316,7 +318,9 @@ def collect_reddit_bookmarks(db_manager, existing_ids, existing_urls=None):
             client_secret=reddit_client_secret,
             user_agent=reddit_user_agent,
             username=reddit_username,
-            password=reddit_password
+            password=reddit_password,
+            access_token=reddit_access_token,
+            refresh_token=reddit_refresh_token
         )
         
         print("🔍 Extracting Reddit saved posts...")
