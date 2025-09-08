@@ -25,8 +25,32 @@ jobs:
         pip install -r requirements.txt
         playwright install chromium
         playwright install-deps chromium
+        echo "🔧 Ensured Playwright runtime installed"
     
-    - name: 🤖 Run Collection
+    - name: 🗝️ Prepare Cookies (if provided)
+      run: |
+        mkdir -p cookies
+        if [ -n "${{ secrets.REDDIT_COOKIES_JSON }}" ]; then
+          echo "${{ secrets.REDDIT_COOKIES_JSON }}" > cookies/reddit.json
+          echo "✅ Wrote reddit cookies"
+        else
+          echo "⚠️ No REDDIT_COOKIES_JSON secret"
+        fi
+        if [ -n "${{ secrets.TWITTER_COOKIES_JSON }}" ]; then
+          echo "${{ secrets.TWITTER_COOKIES_JSON }}" > cookies/twitter.json
+          echo "✅ Wrote twitter cookies"
+        else
+          echo "⚠️ No TWITTER_COOKIES_JSON secret"
+        fi
+
+    - name: 🤖 Run Cookie-based Collection (Reddit/Twitter)
+      env:
+        REDDIT_USERNAME: ${{ secrets.REDDIT_USERNAME }}
+      run: |
+        echo "🤖 Starting cookie-based collection..."
+        python scripts/cookie_collectors.py || true
+
+    - name: 🤖 Run API-based Collection (Fallback)
       env:
         REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
         REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
@@ -60,13 +84,21 @@ jobs:
             
             db_manager = DatabaseManager()
             
-            print('🔴 Collecting Reddit bookmarks...')
-            reddit_result = collect_reddit_bookmarks(db_manager, set(), set())
-            print(f'✅ Reddit collection: {reddit_result} posts')
+            print('🔴 Collecting Reddit bookmarks (fallback API)...')
+            try:
+                reddit_result = collect_reddit_bookmarks(db_manager, set(), set())
+            except Exception as _e:
+                reddit_result = 0
+                print(f'⚠️ Reddit API fallback failed: {_e}')
+            print(f'✅ Reddit API fallback: {reddit_result} posts')
             
-            print('🐦 Collecting Twitter bookmarks...')
-            twitter_result = collect_twitter_bookmarks_sync(db_manager, set(), set())
-            print(f'✅ Twitter collection: {twitter_result} posts')
+            print('🐦 Collecting Twitter bookmarks (fallback API)...')
+            try:
+                twitter_result = collect_twitter_bookmarks_sync(db_manager, set(), set())
+            except Exception as _e:
+                twitter_result = 0
+                print(f'⚠️ Twitter API fallback failed: {_e}')
+            print(f'✅ Twitter API fallback: {twitter_result} posts')
             
             print('✅ Collection completed successfully!')
             
