@@ -21,6 +21,10 @@ import sys as _sys
 from pathlib import Path as _Path
 _sys.path.append(str(_Path(__file__).resolve().parents[1]))
 from scripts.database_manager import DatabaseManager
+try:
+    from scripts.supabase_manager import SupabaseManager
+except Exception:
+    SupabaseManager = None  # type: ignore
 
 
 COOKIES_DIR = Path("cookies")
@@ -63,13 +67,25 @@ def _load_cookies(path: Path) -> List[Dict[str, Any]]:
 
 def _store_posts(db: DatabaseManager, posts: List[Dict[str, Any]]) -> int:
     stored = 0
+    supabase = None
+    if SupabaseManager is not None:
+        try:
+            supabase = SupabaseManager()
+        except Exception:
+            supabase = None
     for post in posts:
         try:
             db.add_post(post)
             stored += 1
         except Exception:
             # Likely duplicate post_id/URL; skip
-            continue
+            pass
+        # Also try to mirror to Supabase posts_v2 when available
+        if supabase:
+            try:
+                supabase.insert_post_v2({**post, 'title': post.get('content')[:120] if not post.get('title') else post.get('title')})
+            except Exception:
+                pass
     return stored
 
 
@@ -207,25 +223,33 @@ def collect_twitter_bookmarks(db: DatabaseManager) -> int:
             page.mouse.wheel(0, 2500)
             page.wait_for_timeout(800)
 
-        tweet_items = page.query_selector_all("article div[data-testid='tweetText']")
-        print(f"✅ Found {len(tweet_items)} potential bookmarked tweets")
+        # Prefer tweet root article with status link for robust ID capture
+        articles = page.query_selector_all("article[data-testid='tweet']") or page.query_selector_all("article")
+        print(f"✅ Found {len(articles)} potential bookmarked tweets")
 
         posts: List[Dict[str, Any]] = []
         now_iso = datetime.utcnow().isoformat()
-        for container in tweet_items:
+        seen_ids = set()
+        for art in articles:
             try:
-                text = container.inner_text().strip()
-                # Find tweet root article to access header/author/link
-                art = container.closest("article")
-                if not art:
-                    continue
-                author_el = art.query_selector("div[dir='ltr'] span")
-                author = author_el.inner_text().strip() if author_el else "Unknown"
                 link_el = art.query_selector("a[href*='/status/']")
                 href = link_el.get_attribute("href") if link_el else None
-                if href and not href.startswith("http"):
+                if not href:
+                    continue
+                if not href.startswith("http"):
                     href = f"https://x.com{href}"
-                post_id = href.split("/status/")[-1].split("?")[0] if href and "/status/" in href else (href or text[:32])
+                if "/status/" not in href:
+                    continue
+                post_id = href.split("/status/")[-1].split("?")[0]
+                if not post_id or post_id in seen_ids:
+                    continue
+                seen_ids.add(post_id)
+
+                text_el = art.query_selector("div[data-testid='tweetText']")
+                text = text_el.inner_text().strip() if text_el else ""
+
+                author_el = art.query_selector("a[href^='https://x.com/'] div[dir='ltr'] span") or art.query_selector("div[dir='ltr'] span")
+                author = author_el.inner_text().strip() if author_el else "Unknown"
 
                 posts.append({
                     'platform': 'twitter',

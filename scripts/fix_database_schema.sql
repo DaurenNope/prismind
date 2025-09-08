@@ -2,25 +2,22 @@
 -- Run this in your Supabase SQL editor
 
 -- First, drop the existing table and recreate it with BIGINT
-DROP TABLE IF EXISTS public.posts CASCADE;
+-- Non-destructive improvements for readability & performance
+-- Run in Supabase SQL editor
 
--- Recreate the posts table with BIGINT for id
-CREATE TABLE public.posts (
-    id BIGINT PRIMARY KEY,
-    title TEXT,
-    content TEXT,
-    platform TEXT,
-    author TEXT,
-    author_handle TEXT,
-    url TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    summary TEXT,
-    value_score INTEGER DEFAULT 0,
-    smart_tags TEXT,
-    ai_summary TEXT,
-    folder_category TEXT,
-    category TEXT
-);
+-- 1) Ensure created_at exists and default
+ALTER TABLE public.posts
+ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+
+-- 2) Backfill created_at from saved_at or existing timestamp columns
+UPDATE public.posts
+SET created_at = COALESCE(public.posts.created_at, NULLIF(public.posts.saved_at, ''), public.posts.created_timestamp, NOW())
+WHERE public.posts.created_at IS NULL;
+
+-- 3) Create helpful indexes
+CREATE INDEX IF NOT EXISTS idx_posts_created_at ON public.posts(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_posts_platform ON public.posts(platform);
+CREATE INDEX IF NOT EXISTS idx_posts_category ON public.posts(category);
 
 -- Enable Row Level Security (RLS) - optional but recommended
 ALTER TABLE public.posts ENABLE ROW LEVEL SECURITY;
@@ -37,19 +34,21 @@ CREATE INDEX IF NOT EXISTS idx_posts_created_at ON public.posts(created_at DESC)
 CREATE INDEX IF NOT EXISTS idx_posts_value_score ON public.posts(value_score DESC);
 
 -- Insert a test record to verify the table works
-INSERT INTO public.posts (id, title, content, platform, author, author_handle, url, summary, value_score, smart_tags, ai_summary, folder_category, category)
-VALUES (
-    999999,
-    'Test Post',
-    'This is a test post to verify the table structure.',
-    'test',
-    'Test Author',
-    '@testauthor',
-    'https://example.com/test',
-    'Test summary',
-    5,
-    '["test", "verification"]',
-    'This is a test AI summary.',
-    'test',
-    'test'
-) ON CONFLICT (id) DO NOTHING;
+-- 4) Optional: create a materialized view for data readability
+CREATE MATERIALIZED VIEW IF NOT EXISTS public.posts_readable AS
+SELECT 
+  id,
+  platform,
+  COALESCE(title, smart_title, LEFT(COALESCE(content,''), 120)) AS title,
+  author,
+  url,
+  COALESCE(category, folder_category) AS category,
+  value_score,
+  COALESCE(engagement_score, num_comments) AS engagement,
+  COALESCE(created_at, NOW()) AS created_at,
+  is_saved
+FROM public.posts
+ORDER BY created_at DESC, id DESC;
+
+CREATE INDEX IF NOT EXISTS idx_posts_readable_created_at ON public.posts_readable(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_posts_readable_platform ON public.posts_readable(platform);

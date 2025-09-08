@@ -30,17 +30,23 @@ jobs:
     - name: 🗝️ Prepare Cookies (if provided)
       run: |
         mkdir -p cookies
+        set -e
+        REDDIT_LEN=${#REDDIT_COOKIES_JSON}
+        TWITTER_LEN=${#TWITTER_COOKIES_JSON}
+        echo "🔎 Secrets length -> reddit: ${REDDIT_LEN}, twitter: ${TWITTER_LEN}"
         if [ -n "${{ secrets.REDDIT_COOKIES_JSON }}" ]; then
           echo "${{ secrets.REDDIT_COOKIES_JSON }}" > cookies/reddit.json
-          echo "✅ Wrote reddit cookies"
+          echo "✅ Wrote reddit cookies ($(wc -c < cookies/reddit.json) bytes)"
+          head -c 120 cookies/reddit.json | tr -d '\n' || true; echo " ..."
         else
-          echo "⚠️ No REDDIT_COOKIES_JSON secret"
+          echo "❌ Missing REDDIT_COOKIES_JSON"; exit 1
         fi
         if [ -n "${{ secrets.TWITTER_COOKIES_JSON }}" ]; then
           echo "${{ secrets.TWITTER_COOKIES_JSON }}" > cookies/twitter.json
-          echo "✅ Wrote twitter cookies"
+          echo "✅ Wrote twitter cookies ($(wc -c < cookies/twitter.json) bytes)"
+          head -c 120 cookies/twitter.json | tr -d '\n' || true; echo " ..."
         else
-          echo "⚠️ No TWITTER_COOKIES_JSON secret"
+          echo "❌ Missing TWITTER_COOKIES_JSON"; exit 1
         fi
 
     - name: 🤖 Run Cookie-based Collection (Reddit/Twitter)
