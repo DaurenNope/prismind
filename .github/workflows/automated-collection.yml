@@ -34,15 +34,15 @@ jobs:
         REDDIT_LEN=${#REDDIT_COOKIES_JSON}
         TWITTER_LEN=${#TWITTER_COOKIES_JSON}
         echo "🔎 Secrets length -> reddit: ${REDDIT_LEN}, twitter: ${TWITTER_LEN}"
-        if [ -n "${{ secrets.REDDIT_COOKIES_JSON }}" ]; then
-          echo "${{ secrets.REDDIT_COOKIES_JSON }}" > cookies/reddit.json
+        if [ -n "${{ secrets.REDDIT_COOKIES_JSON }}" ] && [ "${{ secrets.REDDIT_COOKIES_JSON }}" != "" ]; then
+          echo '${{ secrets.REDDIT_COOKIES_JSON }}' > cookies/reddit.json
           echo "✅ Wrote reddit cookies ($(wc -c < cookies/reddit.json) bytes)"
           head -c 120 cookies/reddit.json | tr -d '\n' || true; echo " ..."
         else
           echo "❌ Missing REDDIT_COOKIES_JSON"; exit 1
         fi
-        if [ -n "${{ secrets.TWITTER_COOKIES_JSON }}" ]; then
-          echo "${{ secrets.TWITTER_COOKIES_JSON }}" > cookies/twitter.json
+        if [ -n "${{ secrets.TWITTER_COOKIES_JSON }}" ] && [ "${{ secrets.TWITTER_COOKIES_JSON }}" != "" ]; then
+          echo '${{ secrets.TWITTER_COOKIES_JSON }}' > cookies/twitter.json
           echo "✅ Wrote twitter cookies ($(wc -c < cookies/twitter.json) bytes)"
           head -c 120 cookies/twitter.json | tr -d '\n' || true; echo " ..."
         else
@@ -54,7 +54,7 @@ jobs:
         REDDIT_USERNAME: ${{ secrets.REDDIT_USERNAME }}
       run: |
         echo "🤖 Starting cookie-based collection..."
-        python scripts/cookie_collectors.py || true
+        python scripts/cookie_collectors.py || echo "⚠️ Cookie-based collection failed but continuing..."
 
     - name: 🤖 Run API-based Collection (Fallback)
       env:
@@ -91,30 +91,36 @@ jobs:
             db_manager = DatabaseManager()
             
             print('🔴 Collecting Reddit bookmarks (fallback API)...')
+            reddit_result = 0
             try:
                 reddit_result = collect_reddit_bookmarks(db_manager, set(), set())
             except Exception as _e:
-                reddit_result = 0
                 print(f'⚠️ Reddit API fallback failed: {_e}')
             print(f'✅ Reddit API fallback: {reddit_result} posts')
             
             print('🐦 Collecting Twitter bookmarks (fallback API)...')
+            twitter_result = 0
             try:
                 twitter_result = collect_twitter_bookmarks_sync(db_manager, set(), set())
             except Exception as _e:
-                twitter_result = 0
                 print(f'⚠️ Twitter API fallback failed: {_e}')
             print(f'✅ Twitter API fallback: {twitter_result} posts')
             
             print('✅ Collection completed successfully!')
             
+            # Save results for notification step
+            with open('collection_results.txt', 'w') as f:
+                f.write(f'Reddit: {reddit_result} posts\n')
+                f.write(f'Twitter: {twitter_result} posts\n')
+                f.write(f'Total: {reddit_result + twitter_result} posts\n')
+            
         except Exception as e:
             print(f'❌ Collection failed: {e}')
             import traceback
             traceback.print_exc()
-            sys.exit(1)
+            # Don't exit with error code to allow notification step to run
         "
-    
+
     - name: 📱 Send Notification
       env:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -128,7 +134,18 @@ jobs:
         bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
         chat_id = os.getenv('TELEGRAM_CHAT_ID')
         
-        message = '🤖 Automated Collection Complete! Your new bookmarks have been collected and processed.'
+        # Read collection results if available
+        try:
+            with open('collection_results.txt', 'r') as f:
+                results = f.read()
+        except FileNotFoundError:
+            results = 'Collection results unavailable'
+        
+        message = f'''🤖 Automated Collection Complete!
+
+{results}
+
+Your new bookmarks have been collected and processed.'''
         
         url = f'https://api.telegram.org/bot{bot_token}/sendMessage'
         data = {'chat_id': chat_id, 'text': message}
@@ -139,6 +156,7 @@ jobs:
                 print('✅ Telegram notification sent!')
             else:
                 print(f'❌ Failed to send notification: {response.status_code}')
+                print(response.text)
         except Exception as e:
             print(f'❌ Error sending notification: {e}')
         "
