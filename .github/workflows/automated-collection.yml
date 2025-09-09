@@ -30,7 +30,6 @@ jobs:
     - name: 🗝️ Prepare Cookies (if provided)
       run: |
         mkdir -p cookies
-        set -e
         echo "🔎 Checking secrets..."
         if [ "${{ secrets.REDDIT_COOKIES_JSON }}" != "" ]; then
           echo "${{ secrets.REDDIT_COOKIES_JSON }}" > cookies/reddit.json
