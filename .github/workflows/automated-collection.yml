@@ -34,15 +34,15 @@ jobs:
         REDDIT_LEN=${#REDDIT_COOKIES_JSON}
         TWITTER_LEN=${#TWITTER_COOKIES_JSON}
         echo "🔎 Secrets length -> reddit: ${REDDIT_LEN}, twitter: ${TWITTER_LEN}"
-        if [ -n "${{ secrets.REDDIT_COOKIES_JSON }}" ] && [ "${{ secrets.REDDIT_COOKIES_JSON }}" != "" ]; then
-          echo '${{ secrets.REDDIT_COOKIES_JSON }}' > cookies/reddit.json
+        if [ -n "${{ secrets.REDDIT_COOKIES_JSON }}" ]; then
+          echo "${{ secrets.REDDIT_COOKIES_JSON }}" > cookies/reddit.json
           echo "✅ Wrote reddit cookies ($(wc -c < cookies/reddit.json) bytes)"
           head -c 120 cookies/reddit.json | tr -d '\n' || true; echo " ..."
         else
           echo "❌ Missing REDDIT_COOKIES_JSON"; exit 1
         fi
-        if [ -n "${{ secrets.TWITTER_COOKIES_JSON }}" ] && [ "${{ secrets.TWITTER_COOKIES_JSON }}" != "" ]; then
-          echo '${{ secrets.TWITTER_COOKIES_JSON }}' > cookies/twitter.json
+        if [ -n "${{ secrets.TWITTER_COOKIES_JSON }}" ]; then
+          echo "${{ secrets.TWITTER_COOKIES_JSON }}" > cookies/twitter.json
           echo "✅ Wrote twitter cookies ($(wc -c < cookies/twitter.json) bytes)"
           head -c 120 cookies/twitter.json | tr -d '\n' || true; echo " ..."
         else
@@ -122,6 +122,7 @@ jobs:
         "
 
     - name: 📱 Send Notification
+      if: always()
       env:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
