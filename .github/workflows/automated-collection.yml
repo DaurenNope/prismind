@@ -25,135 +25,43 @@ jobs:
         pip install -r requirements.txt
         playwright install chromium
         playwright install-deps chromium
-        echo "🔧 Ensured Playwright runtime installed"
     
-    - name: 🗝️ Prepare Cookies (if provided)
+    - name: 🗝️ Prepare Cookies
       run: |
         mkdir -p cookies
-        echo "🔎 Checking secrets..."
-        if [ "${{ secrets.REDDIT_COOKIES_JSON }}" != "" ]; then
-          echo "${{ secrets.REDDIT_COOKIES_JSON }}" > cookies/reddit.json
-          echo "✅ Wrote reddit cookies ($(wc -c < cookies/reddit.json) bytes)"
-          head -c 120 cookies/reddit.json | tr -d '\n' || true; echo " ..."
-        else
-          echo "❌ Missing REDDIT_COOKIES_JSON"; exit 1
-        fi
-        if [ "${{ secrets.TWITTER_COOKIES_JSON }}" != "" ]; then
-          echo "${{ secrets.TWITTER_COOKIES_JSON }}" > cookies/twitter.json
-          echo "✅ Wrote twitter cookies ($(wc -c < cookies/twitter.json) bytes)"
-          head -c 120 cookies/twitter.json | tr -d '\n' || true; echo " ..."
-        else
-          echo "❌ Missing TWITTER_COOKIES_JSON"; exit 1
-        fi
-
-    - name: 🤖 Run Cookie-based Collection (Reddit/Twitter)
+        echo "${{ secrets.REDDIT_COOKIES_JSON }}" > cookies/reddit.json
+        echo "${{ secrets.TWITTER_COOKIES_JSON }}" > cookies/twitter.json
+    
+    - name: 🤖 Run Collection
       env:
         REDDIT_USERNAME: ${{ secrets.REDDIT_USERNAME }}
-      run: |
-        echo "🤖 Starting cookie-based collection..."
-        python scripts/cookie_collectors.py || echo "⚠️ Cookie-based collection failed but continuing..."
-
-    - name: 🤖 Run API-based Collection (Fallback)
-      env:
-        REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
-        REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
-        REDDIT_USERNAME: ${{ secrets.REDDIT_USERNAME }}
-        REDDIT_PASSWORD: ${{ secrets.REDDIT_PASSWORD }}
-        REDDIT_ACCESS_TOKEN: ${{ secrets.REDDIT_ACCESS_TOKEN }}
-        REDDIT_REFRESH_TOKEN: ${{ secrets.REDDIT_REFRESH_TOKEN }}
-        REDDIT_USER_AGENT: ${{ secrets.REDDIT_USER_AGENT }}
-        TWITTER_USERNAME: ${{ secrets.TWITTER_USERNAME }}
-        TWITTER_PASSWORD: ${{ secrets.TWITTER_PASSWORD }}
-        TWITTER_COOKIES: ${{ secrets.TWITTER_COOKIES }}
         SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
         SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
       run: |
-        echo "🤖 Starting REAL bookmark collection..."
-        python -c "
-        import os
-        import sys
-        sys.path.append('.')
-        
-        print('🤖 REAL BOOKMARK COLLECTION STARTED')
-        print('=' * 50)
-        
-        try:
-            from services.collector_runner import collect_reddit_bookmarks, collect_twitter_bookmarks_sync
-            from scripts.database_manager import DatabaseManager
-            
-            db_manager = DatabaseManager()
-            
-            print('🔴 Collecting Reddit bookmarks (fallback API)...')
-            reddit_result = 0
-            try:
-                reddit_result = collect_reddit_bookmarks(db_manager, set(), set())
-            except Exception as _e:
-                print(f'⚠️ Reddit API fallback failed: {_e}')
-            print(f'✅ Reddit API fallback: {reddit_result} posts')
-            
-            print('🐦 Collecting Twitter bookmarks (fallback API)...')
-            twitter_result = 0
-            try:
-                twitter_result = collect_twitter_bookmarks_sync(db_manager, set(), set())
-            except Exception as _e:
-                print(f'⚠️ Twitter API fallback failed: {_e}')
-            print(f'✅ Twitter API fallback: {twitter_result} posts')
-            
-            print('✅ Collection completed successfully!')
-            
-            # Save results for notification step
-            with open('collection_results.txt', 'w') as f:
-                f.write(f'Reddit: {reddit_result} posts\\n')
-                f.write(f'Twitter: {twitter_result} posts\\n')
-                f.write(f'Total: {reddit_result + twitter_result} posts\\n')
-            
-        except Exception as e:
-            print(f'❌ Collection failed: {e}')
-            import traceback
-            traceback.print_exc()
-            # Don't exit with error code to allow notification step to run
-        "
-
+        python scripts/cookie_collectors.py
+    
     - name: 📱 Send Notification
       env:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       run: |
-        echo "📱 Sending notification..."
         python -c "
         import requests
         import os
+        import json
         
         bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
         chat_id = os.getenv('TELEGRAM_CHAT_ID')
         
-        # Read collection results if available
-        try:
-            with open('collection_results.txt', 'r') as f:
-                results = f.read()
-        except FileNotFoundError:
-            results = 'Collection results unavailable'
-        
-        message = f'''🤖 Automated Collection Complete!
-
-{results}
-
-Your new bookmarks have been collected and processed.'''
+        message = '🤖 Automated PrisMind Collection Complete!\n\nCheck your dashboard for new bookmarks.'
         
         url = f'https://api.telegram.org/bot{bot_token}/sendMessage'
         data = {'chat_id': chat_id, 'text': message}
         
-        try:
-            response = requests.post(url, data=data)
-            if response.status_code == 200:
-                print('✅ Telegram notification sent!')
-            else:
-                print(f'❌ Failed to send notification: {response.status_code}')
-                print(response.text)
-        except Exception as e:
-            print(f'❌ Error sending notification: {e}')
+        response = requests.post(url, data=data)
+        if response.status_code == 200:
+            print('✅ Telegram notification sent!')
+        else:
+            print(f'❌ Failed to send notification: {response.status_code}')
+            print(response.text)
         "
