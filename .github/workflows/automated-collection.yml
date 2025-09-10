@@ -6,33 +6,33 @@ on:
   workflow_dispatch:
 
 jobs:
-  automated-collection:
+  collect-bookmarks:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
     
     steps:
-    - name: 🔄 Checkout Repository
+    - name: 🔄 Checkout code
       uses: actions/checkout@v4
     
     - name: 🐍 Setup Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.11'
-        cache: 'pip'
     
-    - name: 📦 Install Dependencies
+    - name: 📦 Install dependencies
       run: |
         pip install -r requirements.txt
         playwright install chromium
         playwright install-deps chromium
     
-    - name: 🗝️ Prepare Cookies
+    - name: 🗃️ Prepare cookies
       run: |
         mkdir -p cookies
         echo "${{ secrets.REDDIT_COOKIES_JSON }}" > cookies/reddit.json
         echo "${{ secrets.TWITTER_COOKIES_JSON }}" > cookies/twitter.json
+        ls -la cookies/
     
-    - name: 🤖 Run Collection
+    - name: 🕵️ Collect bookmarks
       env:
         REDDIT_USERNAME: ${{ secrets.REDDIT_USERNAME }}
         SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -40,7 +40,8 @@ jobs:
       run: |
         python scripts/cookie_collectors.py
     
-    - name: 📱 Send Notification
+    - name: 📱 Send Telegram notification
+      if: always()
       env:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -48,13 +49,15 @@ jobs:
         python -c "
         import requests
         import os
-        import json
         
         bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
         chat_id = os.getenv('TELEGRAM_CHAT_ID')
         
-        message = '🤖 Automated PrisMind Collection Complete!\n\nCheck your dashboard for new bookmarks.'
-        
+        if not bot_token or not chat_id:
+            print('❌ Telegram credentials not set')
+            exit(1)
+            
+        message = '✅ PrisMind collection completed successfully!'
         url = f'https://api.telegram.org/bot{bot_token}/sendMessage'
         data = {'chat_id': chat_id, 'text': message}
         
