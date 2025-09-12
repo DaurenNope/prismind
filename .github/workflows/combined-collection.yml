@@ -1,0 +1,236 @@
+name: 🤖 Combined Twitter & Reddit Collection
+
+on:
+  schedule:
+    # Run every 6 hours
+    - cron: '0 */6 * * *'
+  # Allow manual triggering
+  workflow_dispatch:
+
+jobs:
+  collect-all-sources:
+    name: Collect Twitter & Reddit
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 🔄 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🐍 Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+        
+    - name: 📦 Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: 🔐 Configure environment
+      env:
+        TWITTER_USERNAME: ${{ secrets.TWITTER_USERNAME }}
+        TWITTER_PASSWORD: ${{ secrets.TWITTER_PASSWORD }}
+        REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
+        REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
+        REDDIT_USERNAME: ${{ secrets.REDDIT_USERNAME }}
+        REDDIT_PASSWORD: ${{ secrets.REDDIT_PASSWORD }}
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      run: |
+        # Create .env file with secrets
+        echo "TWITTER_USERNAME=$TWITTER_USERNAME" > .env
+        echo "TWITTER_PASSWORD=$TWITTER_PASSWORD" >> .env
+        echo "REDDIT_CLIENT_ID=$REDDIT_CLIENT_ID" >> .env
+        echo "REDDIT_CLIENT_SECRET=$REDDIT_CLIENT_SECRET" >> .env
+        echo "REDDIT_USERNAME=$REDDIT_USERNAME" >> .env
+        echo "REDDIT_PASSWORD=$REDDIT_PASSWORD" >> .env
+        
+        # Create data directory if it doesn't exist
+        mkdir -p data
+        
+    - name: 🔍 Ensure required files exist
+      run: |
+        # Create any missing __init__.py files
+        echo "🔍 Ensuring __init__.py files exist in all directories:"
+        mkdir -p src/core/extraction
+        touch src/__init__.py
+        touch src/core/__init__.py
+        touch src/core/extraction/__init__.py
+        
+        # Ensure WorkingRedditExtractor is available
+        echo "🔍 Ensuring WorkingRedditExtractor is available:"
+        if [ -f "src/core/extraction/working_reddit_extractor.py" ]; then
+          echo "✅ working_reddit_extractor.py found"
+        else
+          echo "⚠️ working_reddit_extractor.py not found, checking for alternative locations"
+          find . -name "working_reddit_extractor.py" -exec cp {} src/core/extraction/ \;
+          echo "✅ Copied working_reddit_extractor.py to src/core/extraction/"
+        fi
+        
+    - name: 🔄 Run combined collection
+      id: collector
+      env:
+        PYTHONPATH: ${{ github.workspace }}
+      run: |
+        echo "::group::Collection Process"
+        echo "🚀 Running combined Twitter & Reddit collection..."
+        
+        # Run the collection script and capture output
+        PYTHONPATH=$(pwd) python3 scripts/trigger_collections.py > collector_output.txt 2>&1
+        EXIT_CODE=$?
+        
+        # Always save the output, even if the command fails
+        OUTPUT=$(cat collector_output.txt || echo "No output captured")
+        echo "$OUTPUT" > collection_output.txt
+        
+        # Print the output for debugging
+        echo "🔍 Collector output (exit code: $EXIT_CODE):"
+        echo "$OUTPUT"
+        echo "::endgroup::"
+        
+        # Save the output to a file for debugging
+        echo "::group::Saving debug information"
+        echo "📝 Saving debug information to debug_output.txt..."
+        echo "Exit Code: $EXIT_CODE" > debug_output.txt
+        echo "===== ENVIRONMENT =====" >> debug_output.txt
+        env | sort >> debug_output.txt
+        echo "\n===== COLLECTOR OUTPUT =====" >> debug_output.txt
+        echo "$OUTPUT" >> debug_output.txt
+        echo "\n===== FILES IN CURRENT DIRECTORY =====" >> debug_output.txt
+        ls -la >> debug_output.txt
+        echo "\n===== COLLECTOR SCRIPT =====" >> debug_output.txt
+        cat scripts/trigger_collections.py >> debug_output.txt 2>/dev/null || echo "Could not read collector script" >> debug_output.txt
+        echo "::endgroup::"
+        
+        # Set job outputs based on results
+        if [ $EXIT_CODE -eq 0 ]; then
+          TWITTER_POSTS=$(echo "$OUTPUT" | grep -oP "Twitter collection complete: \K\d+" || echo "0")
+          REDDIT_POSTS=$(echo "$OUTPUT" | grep -oP "Reddit collection complete: \K\d+" || echo "0")
+          TOTAL_POSTS=$(echo "$OUTPUT" | grep -oP "Total new posts: \K\d+" || echo "0")
+          
+          echo "TWITTER_POSTS=$TWITTER_POSTS" >> $GITHUB_OUTPUT
+          echo "REDDIT_POSTS=$REDDIT_POSTS" >> $GITHUB_OUTPUT
+          echo "TOTAL_POSTS=$TOTAL_POSTS" >> $GITHUB_OUTPUT
+          echo "STATUS=success" >> $GITHUB_OUTPUT
+          echo "✅ Successfully collected $TOTAL_POSTS new posts ($TWITTER_POSTS from Twitter, $REDDIT_POSTS from Reddit)"
+        else
+          echo "TWITTER_POSTS=0" >> $GITHUB_OUTPUT
+          echo "REDDIT_POSTS=0" >> $GITHUB_OUTPUT
+          echo "TOTAL_POSTS=0" >> $GITHUB_OUTPUT
+          echo "STATUS=failure" >> $GITHUB_OUTPUT
+          echo "❌ Collection failed with exit code $EXIT_CODE"
+          echo "::error::Collection failed with exit code $EXIT_CODE"
+          # Include the error message in the output
+          echo "ERROR_MESSAGE=$(echo "$OUTPUT" | head -n 5 | tr '\n' ' ')" >> $GITHUB_OUTPUT
+        fi
+        
+        # Show the output file for debugging
+        echo "::group::Collection Output File"
+        ls -la collection_output.txt || echo "No collection_output.txt found"
+        cat collection_output.txt || true
+        echo "::endgroup::"
+        
+        # Don't exit with error to allow the notification step to run
+    
+    - name: 📱 Send Telegram notification
+      if: always()
+      env:
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        GITHUB_RUN_ID: ${{ github.run_id }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+      run: |
+        # Debug: Show current directory and file existence
+        echo "::group::Current Directory and Files"
+        echo "Current directory: $(pwd)"
+        ls -la
+        echo "::endgroup::"
+        
+        # Initialize OUTPUT variable
+        OUTPUT=""
+        
+        # Try to read collection output from multiple possible locations
+        if [ -f "collection_output.txt" ]; then
+          OUTPUT=$(cat collection_output.txt || echo "Error reading collection_output.txt")
+          echo "Read from collection_output.txt"
+        elif [ -f "$GITHUB_WORKSPACE/collection_output.txt" ]; then
+          OUTPUT=$(cat "$GITHUB_WORKSPACE/collection_output.txt" || echo "Error reading $GITHUB_WORKSPACE/collection_output.txt")
+          echo "Read from $GITHUB_WORKSPACE/collection_output.txt"
+        elif [ -f "collector_output.txt" ]; then
+          OUTPUT=$(cat collector_output.txt || echo "Error reading collector_output.txt")
+          echo "Read from collector_output.txt"
+        elif [ -f "debug_output.txt" ]; then
+          OUTPUT=$(head -n 50 debug_output.txt || echo "Error reading debug_output.txt")
+          echo "Read from debug_output.txt"
+        else
+          OUTPUT="No collection output file was found. Check the logs for details."
+          echo "::warning::No collection output file found"
+        fi
+        
+        # Get run URL for direct link to logs
+        RUN_URL="https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+        
+        # Get collector status and new posts count
+        COLLECTOR_STATUS="${{ steps.collector.outputs.STATUS || 'failure' }}"
+        TWITTER_POSTS="${{ steps.collector.outputs.TWITTER_POSTS || '0' }}"
+        REDDIT_POSTS="${{ steps.collector.outputs.REDDIT_POSTS || '0' }}"
+        TOTAL_POSTS="${{ steps.collector.outputs.TOTAL_POSTS || '0' }}"
+        ERROR_MESSAGE="${{ steps.collector.outputs.ERROR_MESSAGE || 'Unknown error occurred' }}"
+        
+        echo "Collector status: $COLLECTOR_STATUS"
+        echo "Twitter posts: $TWITTER_POSTS"
+        echo "Reddit posts: $REDDIT_POSTS"
+        echo "Total posts: $TOTAL_POSTS"
+        echo "Error message: $ERROR_MESSAGE"
+        
+        # Format message based on status
+        if [ "$COLLECTOR_STATUS" = "success" ]; then
+          if [ "$TOTAL_POSTS" -gt 0 ]; then
+            # Extract post titles from the output
+            POST_TITLES=$(echo "$OUTPUT" | grep -oP 'Title=\K[^,]*' | head -5 | sed 's/^/• /')
+            EMOJI="📥"
+            MESSAGE="✅ *$TOTAL_POSTS New Post(s) Collected*\n\n📊 Sources:\n• Twitter: $TWITTER_POSTS\n• Reddit: $REDDIT_POSTS\n\n$POST_TITLES"
+            if [ "$TOTAL_POSTS" -gt 5 ]; then
+              MESSAGE="$MESSAGE\n\n+$(($TOTAL_POSTS - 5)) more posts..."
+            fi
+          else
+            EMOJI="ℹ️"
+            MESSAGE="ℹ️ No new posts found from any source"
+          fi
+        else
+          EMOJI="❌"
+          # Include the error message and first few lines of the output
+          ERROR_DETAILS=$(echo "$OUTPUT" | head -n 10 | tr '\n' ' ' | cut -c1-200)
+          MESSAGE="❌ *Collection Failed*\n\n$ERROR_MESSAGE\n\nError details: $ERROR_DETAILS\n\nCheck the full logs for more information."
+        fi
+        
+        # Get the current time in a nice format
+        CURRENT_TIME=$(date '+%Y-%m-%d %H:%M:%S %Z')
+        
+        # Format the final message with a clean header and footer
+        FINAL_MESSAGE="$EMOJI *Combined Collection Report*\n*$CURRENT_TIME*\n\n$MESSAGE\n\n[View Run]($RUN_URL)"
+        
+        # Debug: Show the message that will be sent
+        echo "::group::Telegram Message"
+        echo "$FINAL_MESSAGE"
+        echo "::endgroup::"
+        
+        # Escape special characters for JSON
+        ESCAPED_MESSAGE=$(python3 -c 'import json, sys; print(json.dumps(sys.stdin.read()))' <<< "$FINAL_MESSAGE")
+        
+        # Send the notification
+        echo "Sending Telegram notification..."
+        RESPONSE=$(curl -s -X POST \
+          -H "Content-Type: application/json" \
+          -d "{\"chat_id\": \"$TELEGRAM_CHAT_ID\", \"text\": $ESCAPED_MESSAGE, \"parse_mode\": \"Markdown\", \"disable_web_page_preview\": true}" \
+          https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage)
+        
+        # Check if the request was successful
+        if echo "$RESPONSE" | grep -q '"ok":true'; then
+          echo "✅ Notification sent successfully"
+        else
+          echo "::error::Failed to send Telegram notification"
+          echo "Response: $RESPONSE"
+          exit 1
+        fi
