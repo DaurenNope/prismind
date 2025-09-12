@@ -34,6 +34,21 @@ print("📦 Attempting to import WorkingRedditExtractor...")
 print(f"📂 Current working directory: {os.getcwd()}")
 print(f"🔍 Python path: {sys.path}")
 
+# Print all directories in the current path
+print("📂 Directories in current path:")
+for directory in os.listdir(os.getcwd()):
+    if os.path.isdir(os.path.join(os.getcwd(), directory)):
+        print(f"  - {directory}")
+
+# Print src directory structure if it exists
+if os.path.exists(os.path.join(os.getcwd(), 'src')):
+    print("📂 src directory structure:")
+    for root, dirs, files in os.walk(os.path.join(os.getcwd(), 'src')):
+        print(f"  - {root}")
+        for file in files:
+            if file.endswith('.py'):
+                print(f"    - {file}")
+
 try:
     print("🔄 Trying import from src.core.extraction...")
     from src.core.extraction import WorkingRedditExtractor
@@ -46,13 +61,44 @@ except ImportError as e:
         print("✅ Successfully imported WorkingRedditExtractor from direct path")
     except ImportError as e2:
         print(f"❌ Error with alternative import: {e2}")
-        print("📋 Listing available modules in src.core.extraction:")
+        print("📋 Trying to debug import issues:")
         try:
+            # Try to import the src module first
+            print("🔍 Attempting to import src module...")
+            import src
+            print(f"✅ Successfully imported src module: {dir(src)}")
+            
+            # Try to import src.core
+            print("🔍 Attempting to import src.core module...")
+            import src.core
+            print(f"✅ Successfully imported src.core module: {dir(src.core)}")
+            
+            # Try to import src.core.extraction
+            print("🔍 Attempting to import src.core.extraction module...")
             import src.core.extraction
-            print(f"Available: {dir(src.core.extraction)}")
+            print(f"✅ Successfully imported src.core.extraction module: {dir(src.core.extraction)}")
         except ImportError as e3:
-            print(f"❌ Cannot import src.core.extraction at all: {e3}")
-        sys.exit(1)
+            print(f"❌ Cannot import modules: {e3}")
+            
+        # List all available modules in Python path
+        print("📋 Listing all modules in sys.path:")
+        for path in sys.path:
+            if os.path.exists(path) and os.path.isdir(path):
+                print(f"  Modules in {path}:")
+                for item in os.listdir(path):
+                    if os.path.isdir(os.path.join(path, item)) and not item.startswith('__'):
+                        print(f"    - {item}")
+        
+        # Try a fallback approach - direct import
+        print("🔄 Trying fallback approach - direct import...")
+        try:
+            sys.path.insert(0, os.path.join(os.getcwd(), 'src', 'core', 'extraction'))
+            print(f"🔍 Updated Python path: {sys.path}")
+            from working_reddit_extractor import WorkingRedditExtractor
+            print("✅ Successfully imported WorkingRedditExtractor using fallback")
+        except ImportError as e4:
+            print(f"❌ All import attempts failed: {e4}")
+            sys.exit(1)
 
 def main():
     print("🚀 Testing Reddit Collector with Real Data")

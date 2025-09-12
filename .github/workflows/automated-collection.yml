@@ -65,10 +65,43 @@ jobs:
         # Add the project root to PYTHONPATH to ensure imports work correctly
         echo "🔍 Python version:"
         python3 --version
+        
+        # Debug Python environment
+        echo "🔍 Python environment:"
+        python3 -c "import sys; print(sys.path)"
+        
+        # Debug directory structure
         echo "🔍 Current directory structure:"
+        find . -type d | sort
+        
+        # Check for extraction directory and its contents
+        echo "🔍 Extraction directory contents:"
         find . -type d -name "extraction" | xargs ls -la
+        
+        # Check for working_reddit_extractor.py
+        echo "🔍 Looking for working_reddit_extractor.py:"
+        find . -name "working_reddit_extractor.py"
+        
+        # Check __init__.py files
         echo "🔍 Checking __init__.py files:"
         find . -name "__init__.py" | xargs cat
+        
+        # Create any missing __init__.py files
+        echo "🔍 Ensuring __init__.py files exist in all directories:"
+        mkdir -p src/core/extraction
+        touch src/__init__.py
+        touch src/core/__init__.py
+        touch src/core/extraction/__init__.py
+        
+        # Copy WorkingRedditExtractor if needed
+        echo "🔍 Ensuring WorkingRedditExtractor is available:"
+        if [ -f "src/core/extraction/working_reddit_extractor.py" ]; then
+          echo "✅ working_reddit_extractor.py exists"
+        else
+          echo "⚠️ working_reddit_extractor.py not found, checking for alternative locations"
+          find . -name "working_reddit_extractor.py" -exec cp {} src/core/extraction/ \;
+          echo "✅ Copied working_reddit_extractor.py to src/core/extraction/"
+        fi
         echo "🔍 Running with PYTHONPATH set:"
         PYTHONPATH=$(pwd) python3 -v scripts/test_reddit_collector.py > collector_output.txt 2>&1
         EXIT_CODE=$?
