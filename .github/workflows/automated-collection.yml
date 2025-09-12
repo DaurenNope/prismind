@@ -25,10 +25,11 @@ jobs:
         pip install -r requirements.txt
     
     - name: 🔍 Run Reddit collector
+      id: collector
       env:
         REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
         REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
-        REDDIT_USER_AGENT: ${{ secrets.REDDIT_USER_AGENT }}
+        REDDIT_USER_AGENT: ${{ secrets.REDDIT_USER_AGENT || 'prismind/1.0' }}
         REDDIT_USERNAME: ${{ secrets.REDDIT_USERNAME }}
         REDDIT_PASSWORD: ${{ secrets.REDDIT_PASSWORD }}
       run: |
@@ -54,7 +55,6 @@ jobs:
         
         # Exit with original status code
         exit $EXIT_CODE
-      id: collector
     
     - name: 📱 Send Telegram notification
       if: always()
