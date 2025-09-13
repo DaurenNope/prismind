@@ -1,0 +1,163 @@
+name: 🌐 Social Media Collector
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 */6 * * *'
+
+jobs:
+  collect-social:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: 🐍 Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: 📦 Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install python-dotenv requests
+    
+    - name: 🚀 Run Collection Script
+      env:
+        # Reddit
+        REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
+        REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
+        REDDIT_USERNAME: ${{ secrets.REDDIT_USERNAME }}
+        REDDIT_PASSWORD: ${{ secrets.REDDIT_PASSWORD }}
+        
+        # Twitter
+        TWITTER_EMAIL: ${{ secrets.TWITTER_EMAIL }}
+        TWITTER_USERNAME: ${{ secrets.TWITTER_USERNAME }}
+        TWITTER_PASSWORD: ${{ secrets.TWITTER_PASSWORD }}
+        
+        # Threads
+        THREADS_USERNAME: ${{ secrets.THREADS_USERNAME }}
+        THREADS_PASSWORD: ${{ secrets.THREADS_PASSWORD }}
+        
+      run: |
+        python -c "
+import os
+import sys
+import logging
+from datetime import datetime
+
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler('collection.log')
+    ]
+)
+logger = logging.getLogger(__name__)
+
+class Collector:
+    def __init__(self):
+        self.results = {}
+        self.start_time = datetime.utcnow()
+        
+    def collect_reddit(self):
+        try:
+            from src.core.extraction.working_reddit_extractor import WorkingRedditExtractor
+            logger.info("🔴 Starting Reddit collection...")
+            extractor = WorkingRedditExtractor()
+            posts = extractor.get_saved_posts(limit=10)
+            self.results['reddit'] = {
+                'status': 'success',
+                'count': len(posts),
+                'posts': [{
+                    'title': p.get('title'),
+                    'url': p.get('url'),
+                    'created': p.get('created_timestamp')
+                } for p in posts]
+            }
+            logger.info(f"✅ Collected {len(posts)} Reddit posts")
+        except Exception as e:
+            logger.error(f"❌ Reddit collection failed: {str(e)}")
+            self.results['reddit'] = {'status': 'error', 'error': str(e)}
+    
+    def collect_twitter(self):
+        try:
+            from src.core.extraction.twitter_extractor import TwitterExtractor
+            logger.info("🐦 Starting Twitter collection...")
+            # Add Twitter collection logic
+            self.results['twitter'] = {'status': 'pending', 'message': 'Implementation needed'}
+            logger.info("⚠️ Twitter collection not implemented yet")
+        except Exception as e:
+            logger.error(f"❌ Twitter collection failed: {str(e)}")
+            self.results['twitter'] = {'status': 'error', 'error': str(e)}
+    
+    def collect_threads(self):
+        try:
+            from src.core.extraction.threads_extractor import ThreadsExtractor
+            logger.info("🧵 Starting Threads collection...")
+            # Add Threads collection logic
+            self.results['threads'] = {'status': 'pending', 'message': 'Implementation needed'}
+            logger.info("⚠️ Threads collection not implemented yet")
+        except Exception as e:
+            logger.error(f"❌ Threads collection failed: {str(e)}")
+            self.results['threads'] = {'status': 'error', 'error': str(e)}
+    
+    def run(self):
+        logger.info("🚀 Starting social media collection...")
+        
+        # Run all collectors
+        self.collect_reddit()
+        self.collect_twitter()
+        self.collect_threads()
+        
+        # Calculate duration
+        duration = (datetime.utcnow() - self.start_time).total_seconds()
+        self.results['duration_seconds'] = duration
+        self.results['end_time'] = datetime.utcnow().isoformat()
+        
+        # Save results
+        with open('collection_results.json', 'w') as f:
+            json.dump(self.results, f, indent=2)
+        
+        logger.info(f"✅ Collection completed in {duration:.2f} seconds")
+        return self.results
+
+if __name__ == '__main__':
+    import json
+    collector = Collector()
+    results = collector.run()
+    print("\nCollection Results:")
+    print(json.dumps(results, indent=2))
+"
+
+    - name: 📤 Upload results
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: collection-results
+        path: |
+          collection.log
+          collection_results.json
+    
+    - name: 📱 Send notification
+      if: always()
+      uses: appleboy/telegram-action@master
+      with:
+        to: ${{ secrets.TELEGRAM_CHAT_ID }}
+        token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        message: |
+          🌐 *Social Media Collection Complete*
+          
+          {{#success()}}
+          ✅ Collection completed successfully!
+          {{/success}}
+          
+          {{#failure()}}
+          ❌ Collection completed with errors
+          {{/failure}}
+          
+          [View Run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
