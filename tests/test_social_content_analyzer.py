@@ -12,8 +12,8 @@ import pytest
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.analysis.social_content_analyzer import SocialContentAnalyzer
-from core.extraction.social_extractor_base import SocialPost
+from src.core.analysis.social_content_analyzer import SocialContentAnalyzer
+from src.core.extraction.social_extractor_base import SocialPost
 
 
 class TestSocialContentAnalyzer:

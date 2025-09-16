@@ -288,9 +288,15 @@ def main():
 
     total = 0
     # Always attempt; function will use /user/me/saved if username missing
-    total += collect_reddit_saved(db, username or None)
+    try:
+        total += collect_reddit_saved(db, username or None)
+    except Exception as e:
+        print(f"⚠️ Reddit cookie collection skipped due to error: {e}")
 
-    total += collect_twitter_bookmarks(db)
+    try:
+        total += collect_twitter_bookmarks(db)
+    except Exception as e:
+        print(f"⚠️ Twitter cookie collection skipped due to error: {e}")
     print(f"🎉 Cookie-based collection complete. Stored: {total}")
 
 

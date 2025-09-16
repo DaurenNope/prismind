@@ -1,4 +1,4 @@
-from services.database import DatabaseManager
+from src.services.database import DatabaseManager
 
 
 def test_database_crud(tmp_path):

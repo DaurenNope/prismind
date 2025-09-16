@@ -1,0 +1,124 @@
+{
+  "reddit": {
+    "status": "success",
+    "count": 10,
+    "posts": [
+      {
+        "title": "The truth of 9/11",
+        "url": "https://reddit.com/r/theories/comments/1ne5dyp/the_truth_of_911/",
+        "created": "2025-09-11T10:39:11",
+        "subreddit": "theories",
+        "author": "Animeproduction13",
+        "analysis": {
+          "status": "error",
+          "error": "401 Client Error: Unauthorized for url: https://api.openai.com/v1/chat/completions"
+        }
+      },
+      {
+        "title": "If you could change one thing about yourself, what would it be?",
+        "url": "https://reddit.com/r/SovereignAiCollective/comments/1nc0552/if_you_could_change_one_thing_about_yourself_what/",
+        "created": "2025-09-08T21:16:23",
+        "subreddit": "SovereignAiCollective",
+        "author": "NoCalendar2846",
+        "analysis": {
+          "status": "error",
+          "error": "401 Client Error: Unauthorized for url: https://api.openai.com/v1/chat/completions"
+        }
+      },
+      {
+        "title": "Scrapeless MCP Server Is Officially Live! Build Your Ultimate AI-Web Connector",
+        "url": "https://reddit.com/r/Scrapeless/comments/1ne523l/scrapeless_mcp_server_is_officially_live_build/",
+        "created": "2025-09-11T10:19:38",
+        "subreddit": "Scrapeless",
+        "author": "Lily_Scrapeless",
+        "analysis": {
+          "status": "error",
+          "error": "401 Client Error: Unauthorized for url: https://api.openai.com/v1/chat/completions"
+        }
+      },
+      {
+        "title": "What is wrong with you people?",
+        "url": "https://reddit.com/r/ClaudeCode/comments/1nez1nk/what_is_wrong_with_you_people/",
+        "created": "2025-09-12T09:56:21",
+        "subreddit": "ClaudeCode",
+        "author": "Free-_-Yourself",
+        "analysis": {
+          "status": "error",
+          "error": "401 Client Error: Unauthorized for url: https://api.openai.com/v1/chat/completions"
+        }
+      },
+      {
+        "title": "Anyone Else Getting Weird Vibes After Kirk Shooting?",
+        "url": "https://reddit.com/r/spirituality/comments/1neq2gs/anyone_else_getting_weird_vibes_after_kirk/",
+        "created": "2025-09-12T01:12:48",
+        "subreddit": "spirituality",
+        "author": "Regular_Alps7213",
+        "analysis": {
+          "status": "error",
+          "error": "401 Client Error: Unauthorized for url: https://api.openai.com/v1/chat/completions"
+        }
+      },
+      {
+        "title": "5 Underrated AI Tools You\u2019ll Actually Use Every Day",
+        "url": "https://reddit.com/r/aitools/comments/1ne5uav/5_underrated_ai_tools_youll_actually_use_every_day/",
+        "created": "2025-09-11T11:04:47",
+        "subreddit": "aitools",
+        "author": "Pleasant-Mechanic991",
+        "analysis": {
+          "status": "error",
+          "error": "401 Client Error: Unauthorized for url: https://api.openai.com/v1/chat/completions"
+        }
+      },
+      {
+        "title": "Free AI video credits for creators",
+        "url": "https://reddit.com/r/doitong/comments/1nbqoyq/free_ai_video_credits_for_creators/",
+        "created": "2025-09-08T15:23:50",
+        "subreddit": "doitong",
+        "author": "No_Heat8337",
+        "analysis": {
+          "status": "error",
+          "error": "401 Client Error: Unauthorized for url: https://api.openai.com/v1/chat/completions"
+        }
+      },
+      {
+        "title": "Which religion, according to you, astral projectors, is closest to the truth?",
+        "url": "https://reddit.com/r/AstralProjection/comments/1nedqvt/which_religion_according_to_you_astral_projectors/",
+        "created": "2025-09-11T16:42:48",
+        "subreddit": "AstralProjection",
+        "author": "CZ-TheFlyInTheSoup",
+        "analysis": {
+          "status": "error",
+          "error": "401 Client Error: Unauthorized for url: https://api.openai.com/v1/chat/completions"
+        }
+      },
+      {
+        "title": "What are some takes you have on simulation theory that you have that you think don't warrant a full post?",
+        "url": "https://reddit.com/r/SimulationTheory/comments/1ne62oh/what_are_some_takes_you_have_on_simulation_theory/",
+        "created": "2025-09-11T11:17:45",
+        "subreddit": "SimulationTheory",
+        "author": "Sabotendies",
+        "analysis": {
+          "status": "error",
+          "error": "401 Client Error: Unauthorized for url: https://api.openai.com/v1/chat/completions"
+        }
+      },
+      {
+        "title": "If you learn quantum computing it becomes quite clear we live in a simulation",
+        "url": "https://reddit.com/r/SimulationTheory/comments/1ncgzjy/if_you_learn_quantum_computing_it_becomes_quite/",
+        "created": "2025-09-09T12:02:38",
+        "subreddit": "SimulationTheory",
+        "author": "QuantumOdysseyGame",
+        "analysis": {
+          "status": "error",
+          "error": "401 Client Error: Unauthorized for url: https://api.openai.com/v1/chat/completions"
+        }
+      }
+    ]
+  },
+  "twitter": {
+    "status": "error",
+    "error": "No module named 'src.core.extraction.twitter_extractor'"
+  },
+  "duration_seconds": 8.712939,
+  "end_time": "2025-09-14T12:15:45.700766"
+}

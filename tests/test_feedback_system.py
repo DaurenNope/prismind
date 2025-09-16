@@ -12,7 +12,7 @@ import pytest
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.learning.feedback_system import FeedbackSystem
+from src.core.learning.feedback_system import FeedbackSystem
 
 
 class TestFeedbackSystem:

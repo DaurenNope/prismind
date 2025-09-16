@@ -18,8 +18,8 @@ sys.path.insert(0, str(project_root))
 
 from datetime import datetime
 
-from core.analysis.intelligent_content_analyzer import IntelligentContentAnalyzer
-from core.extraction.social_extractor_base import SocialPost
+from src.core.analysis.intelligent_content_analyzer import IntelligentContentAnalyzer
+from src.core.extraction.social_extractor_base import SocialPost
 from scripts.database_manager import DatabaseManager
 from supabase_manager import SupabaseManager
 

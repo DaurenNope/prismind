@@ -2,7 +2,7 @@ import asyncio
 
 import pandas as pd
 
-from services.collector_runner import (
+from src.services.collector_runner import (
     collect_reddit_bookmarks,
     collect_twitter_bookmarks,
 )

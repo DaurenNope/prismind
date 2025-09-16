@@ -12,6 +12,15 @@ import json
 import logging
 import requests
 from datetime import datetime
+from dotenv import load_dotenv
+
+# Add project root to Python path and load .env file
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+# Load environment variables from .env file
+load_dotenv(os.path.join(project_root, '.env'))
 
 # Setup logging
 logging.basicConfig(

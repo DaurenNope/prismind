@@ -12,7 +12,7 @@ import pytest
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.analysis.value_scorer import ValueScorer
+from src.core.analysis.value_scorer import ValueScorer
 
 
 class TestValueScorer:

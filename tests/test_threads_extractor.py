@@ -20,8 +20,8 @@ import sys
 
 sys.path.append(str(Path(__file__).parent.parent / "src"))
 
-from core.extraction.social_extractor_base import SocialPost
-from core.extraction.threads_extractor import ThreadsExtractor
+from src.core.extraction.social_extractor_base import SocialPost
+from src.core.extraction.threads_extractor import ThreadsExtractor
 
 
 @pytest.fixture

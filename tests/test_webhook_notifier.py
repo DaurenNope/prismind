@@ -1,6 +1,6 @@
 import types
 
-from services.notifier_webhook import WebhookNotifier
+from src.services.notifier_webhook import WebhookNotifier
 
 
 def test_webhook_notifier_disabled(monkeypatch):

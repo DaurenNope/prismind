@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.extraction.twitter_extractor_playwright import TwitterExtractorPlaywright
+from src.core.extraction.twitter_extractor_playwright import TwitterExtractorPlaywright
 
 # Load environment variables
 load_dotenv()

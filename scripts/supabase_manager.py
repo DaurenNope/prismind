@@ -48,17 +48,66 @@ class SupabaseManager:
                     return _Q()
             self.client = _Stub()  # type: ignore
     
-    def insert_post(self, post_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Insert a new post"""
+    def insert_post(self, post_data: Dict[str, Any], upsert: bool = False) -> Dict[str, Any]:
+        """Insert or update a post.
+        
+        Args:
+            post_data: Dictionary containing post data
+            upsert: If True, update existing post if URL exists
+            
+        Returns:
+            Dict containing the inserted/updated post data or empty dict on failure
+        """
         try:
-            result = self.client.table('posts').insert(post_data).execute()
+            # Make a copy to avoid modifying the original
+            data = post_data.copy()
+            
+            # If upsert is True, try to find existing post by URL
+            if upsert and 'url' in data:
+                existing = self.client.table('posts').select('*').eq('url', data['url']).execute()
+                if hasattr(existing, 'data') and existing.data and len(existing.data) > 0:
+                    # Update existing post
+                    post_id = existing.data[0]['id']
+                    # Don't include the id in the update data
+                    update_data = {k: v for k, v in data.items() if k != 'id'}
+                    result = self.client.table('posts').update(update_data).eq('id', post_id).execute()
+                    logger.info(f"Updated existing post with URL: {data.get('url')}")
+                    return result.data[0] if hasattr(result, 'data') and result.data else {}
+            
+            # For new posts, we need to generate an ID since the table doesn't auto-increment
+            # We'll use the hash of the URL if available, otherwise use a random number
+            if 'url' in data and data['url']:
+                import hashlib
+                # Generate a consistent numeric ID from the URL
+                post_id = int(hashlib.md5(data['url'].encode('utf-8')).hexdigest()[:8], 16) % 1000000
+            else:
+                import random
+                post_id = random.randint(100000, 999999)
+                
+            # Make sure the ID is positive (PostgreSQL requires it)
+            post_id = abs(post_id)
+            
+            # Add the generated ID to the data
+            data['id'] = post_id
+            
+            # Ensure required fields have default values
+            data.setdefault('value_score', 0)
+            data.setdefault('smart_tags', '')
+            
+            # Insert new post with explicit ID
+            result = self.client.table('posts').insert(data).execute()
+            
             # In tests the client may be a mock; prefer echoing back
-            if getattr(result, 'data', None):
+            if hasattr(result, 'data') and result.data:
                 return result.data[0] if result.data else {}
-            # If mock returns no data, follow test expectation of empty dict
+                
+            # If we get here, something went wrong
+            logger.error(f"Unexpected response from Supabase: {result}")
             return {}
+            
         except Exception as e:
-            logger.error(f"Error inserting post: {e}")
+            logger.error(f"Error in insert_post: {str(e)}")
+            logger.error(f"Post data: {post_data}")
             return {}
 
     def _resolve_create_client(self):  # pragma: no cover - small helper

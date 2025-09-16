@@ -1,88 +1,187 @@
-## Feature flags
+# 🧠 PrisMind - Personal Intelligence Engine
 
-- `SAVE_TO_SUPABASE=1`: push new analyzed posts to Supabase in addition to local SQLite.
-- `OLLAMA_URL=http://localhost:11434` and `OLLAMA_MODEL=qwen2.5:7b`: use local Qwen via Ollama as primary analyzer.
-- `USE_VALUE_SCORER=0`: disable saving numeric value_score (ranking only).
-- `ENABLE_LOCAL_FEEDBACK=0`: disable local feedback learning (kept for legacy tests).
+Transform your social media bookmarks into a structured, searchable knowledge base. PrisMind extracts saved content from Twitter, Reddit, and Threads, analyzes your interests with AI, and organizes them into actionable insights.
 
-# PrisMind - Intelligent Universal Bookmarker
+[![CI](https://github.com/DaurenNope/prismind/actions/workflows/ci.yml/badge.svg)](https://github.com/DaurenNope/prismind/actions/workflows/ci.yml)
+[![Code Style: Black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-PrisMind is a powerful personal intelligence engine that transforms your social media bookmarks into a structured, searchable knowledge base. It extracts your saved content from platforms like Twitter, Reddit, and Threads, analyzes it with AI to understand your interests, and organizes it into actionable insights.
-
-## 🚀 Key Features
+## ✨ Key Features
 
 - **Multi-Platform Extraction**: Pulls saved content from Twitter, Reddit, and Threads
-- **AI-Powered Analysis**: Uses Mistral AI, Gemini, and Perplexity to categorize content, assign value scores, and extract insights
-- **🖼️ Media Content Analysis**: Analyzes images and videos using local OCR + AI for free, offline processing
+- **AI-Powered Analysis**: Uses Mistral AI, Gemini, and Perplexity to categorize content and extract insights
+- **Text Analysis**: Analyzes saved content to extract key information and insights
 - **Interactive Dashboard**: Streamlit-based interface for data exploration and control
 - **Comprehensive Testing**: Full test suite covering all core functionality
-- **Professional Codebase**: Clean, well-structured code with proper documentation
+- **Clean Architecture**: Well-structured, maintainable codebase with proper documentation
 
-## 🏗️ Architecture
+## 🏗️ Project Structure
 
 ```
 prismind/
-├── app.py                        # Streamlit dashboard (single-file app)
-├── collect_multi_platform.py     # Multi-platform collection orchestrator
-├── services/                     # Application services (canonical imports)
-│   ├── aps_scheduler_runner.py   # APScheduler runner for periodic collection
-│   ├── database.py               # DatabaseManager canonical module
-│   ├── analyzer.py               # Analyzer protocol
-│   ├── collector.py              # Collector protocol
-│   ├── notifier.py               # Notifier protocol
-│   ├── preferences.py            # User preferences dataclass
-│   └── scheduler.py              # Scheduler protocol
-├── integrations/                 # Thin wrappers for external systems
-│   ├── supabase_wrapper.py       # Minimal Supabase helper
-│   └── webhook_wrapper.py        # Simple webhook client
-├── core/                         # Core functionality
-│   ├── analysis/                 # AI analysis modules
-│   │   ├── intelligent_content_analyzer.py  # Primary AI analysis
-│   │   ├── mistral_analyzer.py             # Mistral AI integration
-│   │   ├── shuttleai_analyzer.py           # ShuttleAI integration
-│   │   └── value_scorer.py                 # Content value scoring
-│   ├── extraction/               # Platform extractors
-│   │   ├── twitter_extractor_playwright.py # Twitter extraction
-│   │   ├── reddit_extractor.py             # Reddit extraction
-│   │   └── threads_extractor.py            # Threads extraction
-│   └── learning/                 # Learning and feedback
-│       ├── feedback_system.py              # User feedback system
-│       └── smart_organizer.py              # Intelligent organization
-├── scripts/                      # Legacy helpers (kept for compatibility)
-│   └── database_manager.py       # Compatibility shim → services.database
-├── config/                       # Configuration files (cookies, secrets templates)
-│   └── streamlit_secrets*.toml   # Streamlit configuration
-├── tests/                        # Comprehensive test suite
-├── dev/                          # Development utilities
-├── sql/                          # SQL scripts and schemas
-└── templates/                    # Templates and examples
+├── config/                      # Configuration files
+│   ├── streamlit_secrets.toml   # Streamlit secrets
+│   └── *.json                   # Other config files
+├── data/                        # Data storage
+│   ├── *.db                     # SQLite database files
+│   └── *.sql                    # SQL scripts
+├── docs/                        # Documentation
+│   ├── cleanup_plan_1.md        # Cleanup progress
+│   ├── coding_rules_1.md        # Coding standards
+│   └── project_roadmap_1.md     # Development roadmap
+├── scripts/                     # Utility scripts
+│   ├── cleanup_files.py         # File organization
+│   ├── organize_root.py         # Root directory cleanup
+│   └── update_imports.py        # Import refactoring
+├── src/                         # Source code
+│   ├── core/                    # Core functionality
+│   │   ├── analysis/           # AI analysis
+│   │   ├── extraction/         # Data extraction
+│   │   └── models/             # Data models
+│   ├── services/               # Application services
+│   │   ├── database_manager.py # Database operations
+│   │   └── collection_service.py # Collection logic
+│   ├── web/                    # Web interface
+│   │   ├── components/         # UI components
+│   │   └── app.py              # Main application
+│   └── utils/                  # Utility functions
+├── tests/                      # Test suite
+│   ├── unit/                   # Unit tests
+│   └── integration/            # Integration tests
+├── .env.example               # Example environment variables
+├── .gitignore                 # Git ignore rules
+├── pyproject.toml             # Project metadata
+└── requirements.txt           # Python dependencies
 ```
 
-## 🛠️ Installation
+## 🚀 Quick Start
 
-### 1. Prerequisites
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/DaurenNope/prismind.git
+   cd prismind
+   ```
 
-- Python 3.10+
-- Modern web browser (Chrome/Edge)
-- Git
+2. **Set up the environment**
+   ```bash
+   # Create and activate virtual environment
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   
+   # Install dependencies
+   pip install -r requirements.txt
+   ```
 
-### 2. Setup
+3. **Configure environment variables**
+   ```bash
+   cp .env.example .env
+   # Edit .env with your credentials
+   nano .env
+   ```
+
+4. **Run the application**
+   ```bash
+   # Start the Streamlit dashboard
+   streamlit run src/web/app.py
+   ```
+
+## ⚙️ Configuration
+
+### Environment Variables
+
+- `SAVE_TO_SUPABASE=1`: Push analyzed posts to Supabase
+- `OLLAMA_URL=http://localhost:11434`: URL for local Ollama server
+- `OLLAMA_MODEL=qwen2.5:7b`: Model to use with Ollama
+- `USE_VALUE_SCORER=0`: Disable value scoring
+- `ENABLE_LOCAL_FEEDBACK=0`: Disable local feedback learning
+
+## 🧪 Testing
+
+Run the test suite with pytest:
 
 ```bash
-# Clone the repository
-git clone https://github.com/DaurenNope/prismind.git
-cd prismind
+# Run all tests
+pytest
 
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+# Run unit tests only
+pytest tests/unit/
 
-# Install dependencies
-pip install -r config/requirements.txt
+# Run integration tests
+pytest tests/integration/
 
-# Install Playwright browsers
-playwright install
+# Run with coverage report
+pytest --cov=src --cov-report=term-missing
 ```
+
+## 🛠 Development
+
+### Code Style
+
+We use:
+- **Black** for code formatting
+- **isort** for import sorting
+- **mypy** for static type checking
+- **flake8** for linting
+
+Run code quality checks:
+
+```bash
+# Format code
+black .
+
+# Sort imports
+isort .
+
+# Check types
+mypy .
+
+# Lint code
+flake8 .
+```
+
+### Pre-commit Hooks
+
+Install pre-commit hooks to automatically run checks before each commit:
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+## 🤝 Contributing
+
+Contributions are welcome! Please follow these steps:
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- Built with ❤️ and Python
+- Thanks to all contributors who have helped shape this project
+
+## 🔐 Cookie Setup
+
+PrisMind requires cookies to access your saved content:
+
+### Twitter
+```bash
+python scripts/export_cookies.py twitter
+```
+
+### Reddit
+```bash
+python scripts/export_cookies.py reddit
+```
+
+Follow the prompts to log in to each platform. The cookies will be saved to the [cookies/](cookies/) directory.
 
 ### 3. Configuration
 
@@ -115,28 +214,51 @@ THREADS_PASSWORD="your_threads_password"
 SUPABASE_SERVICE_ROLE_KEY="your_supabase_key"
 ```
 
-## 🚀 Quick Start
+## 🤖 GitHub Automation
 
-### Option 1: One-Command Launch
-```bash
-./start.sh
-```
-This starts the dashboard automatically.
+To enable automated collection:
 
-### Option 2: Manual Launch
-```bash
-# Start dashboard
-streamlit run app.py --server.port 8521
-```
+1. Set up your secrets in GitHub repository settings:
+   ```
+   gh secret set REDDIT_COOKIES_JSON < cookies/reddit.json
+   gh secret set TWITTER_COOKIES_JSON < cookies/twitter.json
+   gh secret set REDDIT_USERNAME --body "your_reddit_username"
+   gh secret set TELEGRAM_BOT_TOKEN --body "your_telegram_bot_token"
+   gh secret set TELEGRAM_CHAT_ID --body "your_telegram_chat_id"
+   ```
 
-### Option 3: Data Collection
-```bash
-# Collect bookmarks from all platforms
-python collect_multi_platform.py
+2. For additional API-based fallback, set these secrets:
+   ```
+   gh secret set REDDIT_CLIENT_ID --body "your_reddit_client_id"
+   gh secret set REDDIT_CLIENT_SECRET --body "your_reddit_client_secret"
+   gh secret set REDDIT_PASSWORD --body "your_reddit_password"
+   gh secret set REDDIT_ACCESS_TOKEN --body "your_reddit_access_token"
+   gh secret set REDDIT_REFRESH_TOKEN --body "your_reddit_refresh_token"
+   gh secret set REDDIT_USER_AGENT --body "your_reddit_user_agent"
+   ```
 
-# Or run the lightweight APScheduler runner (recommended)
-python services/aps_scheduler_runner.py
-```
+3. The automation runs every 6 hours by default. You can trigger it manually from the GitHub Actions tab.
+
+### Debugging GitHub Automation
+
+If the GitHub automation is not working:
+
+1. Check that all required secrets are set:
+   ```bash
+   python debug_github_automation.py
+   ```
+
+2. Verify the workflow file exists at `.github/workflows/automated-collection.yml`
+
+3. Check the GitHub Actions logs for specific error messages
+
+4. Make sure your cookies are not expired - re-export them periodically:
+   ```bash
+   python scripts/export_cookies.py
+   # Then update the secrets
+   gh secret set REDDIT_COOKIES_JSON < cookies/reddit.json
+   gh secret set TWITTER_COOKIES_JSON < cookies/twitter.json
+   ```
 
 ## 📊 Usage
 
@@ -270,6 +392,35 @@ python -m pytest tests/ --cov=core --cov=scripts -v
 ## 📄 License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
+
+## 📚 Documentation
+
+### Getting Started
+- [User Guide](docs/user_guide.md) - Comprehensive guide to using PrisMind
+- [Installation Guide](docs/installation.md) - Step-by-step installation instructions
+- [Configuration Reference](docs/configuration_reference.md) - All available configuration options
+
+### Development
+- [Development Guide](docs/development/README.md) - Setting up a development environment
+- [Coding Standards](docs/development/CODING_STANDARDS.md) - Code style and best practices
+- [Testing Guide](docs/testing_guide.md) - How to write and run tests
+- [API Reference](docs/api.rst) - Detailed API documentation
+
+### Project
+- [Project Roadmap](docs/roadmap.md) - Current status and future plans
+- [Architecture](docs/architecture.md) - System architecture and design decisions
+- [Release Process](docs/release_process.md) - How we manage releases
+- [Code Review Guidelines](docs/code_review_guidelines.md) - Our code review process
+
+### Operations
+- [Deployment Guide](docs/deployment_guide.md) - Production deployment instructions
+- [Monitoring](docs/monitoring.md) - System monitoring and alerting
+- [Backup and Recovery](docs/backup_recovery.md) - Data backup procedures
+
+### Community
+- [Contributing Guidelines](CONTRIBUTING.md) - How to contribute to the project
+- [Code of Conduct](CODE_OF_CONDUCT.md) - Community guidelines
+- [Changelog](CHANGELOG.md) - Release history and changes
 
 ## 🆘 Support
 

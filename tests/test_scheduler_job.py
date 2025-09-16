@@ -1,4 +1,4 @@
-from services.aps_scheduler_runner import run_collection_job
+from src.services.aps_scheduler_runner import run_collection_job
 
 
 def test_scheduler_job_monkeypatch(monkeypatch):

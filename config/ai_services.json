@@ -1,0 +1,14 @@
+{
+  "ollama": {
+    "enabled": true,
+    "url": "http://localhost:11434"
+  },
+  "openai": {
+    "enabled": false,
+    "api_key": ""
+  },
+  "gemini": {
+    "enabled": false,
+    "api_key": ""
+  }
+}
