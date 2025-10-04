@@ -69,10 +69,9 @@ ENV/
 
 # Environment variables
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env.*
+!.env.example
+.env.temp
 
 # Jupyter Notebook
 .ipynb_checkpoints
@@ -249,3 +248,51 @@ playwright_user_data/
 # Local configuration files
 .env
 env_example.txt
+
+# Cleanup patterns to prevent file proliferation
+test_*.py
+debug_*.py
+analyze_*.py
+check_*.py
+backup_*.py
+show_*.py
+demonstrate_*.py
+extract_*.py
+simple_*.py
+working_*.py
+*_scraper.py
+*_extractor.py
+*_collector.py
+
+# Temporary data files
+backup_*.json
+database_backup_*.json
+transfer_log_*.json
+unique_posts_analysis_*.json
+collection_results.json
+*_debug.html
+fixed_table.csv
+*_analysis_*.json
+
+# Screenshot and test artifacts
+bot_detection_test.png
+stealth_test_*.png
+*_screenshot.png
+
+# User-specific cookies and credentials
+*_cookies_*.json
+threads_cookies_*.json
+# Telegram session files
+*.session
+telegram_scraper.session
+
+# Temporary files
+*.temp
+.DS_Store
+
+# Playwright/Browser artifacts
+.browser/
+playwright/.auth/
+
+# Backup directories
+_backup*/
