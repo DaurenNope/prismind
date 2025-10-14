@@ -356,70 +356,77 @@ class ThreadsExtractor(SocialExtractorBase):
                 await self.pw.stop()
             return False
 
-    async def get_saved_posts(self, username: str, password: str, limit: int = 100, cookies_path: str = "config/threads_cookies_qronoya.json") -> List[SocialPost]:
+    async def get_saved_posts(self, username: str = None, password: str = None, limit: int = 50, cookies_path: str = "cookies/threads_cookies.json") -> List[SocialPost]:
         """
-        Attempts to get saved/bookmarked posts. This is experimental due to Threads authentication challenges.
+        Fetch saved/bookmarked Threads posts.
+        If already authenticated (has self.page), uses existing session.
+        Otherwise, authenticates with provided credentials.
+        
+        Direct link: https://www.threads.com/saved
         """
-        logging.warning("Fetching saved posts from Threads is experimental and may not always succeed.")
-        if not await self.authenticate(username, password, cookies_path):
-            logging.error("Authentication failed, cannot fetch saved posts.")
-            return []
+        logging.info("Fetching saved posts from Threads...")
+        
+        # Check if already authenticated
+        if not (hasattr(self, 'page') and self.page):
+            logging.info("Not authenticated yet, authenticating now...")
+            if not username or not password:
+                logging.error("No credentials provided and not already authenticated")
+                return []
+            
+            auth_success = await self.authenticate(username, password, cookies_path)
+            if not auth_success:
+                logging.error("Authentication failed, cannot fetch saved posts.")
+                return []
+        else:
+            logging.info("Using existing authenticated session")
 
         posts = []
         try:
             page = self.page
             
-            # First navigate to Threads main page to establish session
-            logging.info("Navigating to Threads main page to establish session...")
-            await page.goto("https://www.threads.net/", wait_until='domcontentloaded', timeout=20000)
-            await page.wait_for_timeout(3000)
-            
-            # Check if we need to login to Threads (it might redirect to Instagram)
-            current_url = page.url
-            if "instagram.com" in current_url:
-                logging.info("Redirected to Instagram, handling Threads login flow...")
-                # Look for "Continue to Threads" or similar button
-                continue_selectors = [
-                    'button:has-text("Continue")',
-                    'a:has-text("Continue to Threads")',
-                    'button:has-text("Get started")',
-                    '[role="button"]:has-text("Continue")',
-                    'a[href*="threads"]'
-                ]
-                
-                for selector in continue_selectors:
-                    try:
-                        if await page.is_visible(selector, timeout=3000):
-                            logging.info(f"Clicking continue button: {selector}")
-                            await page.click(selector)
-                            await page.wait_for_load_state('networkidle', timeout=10000)
-                            break
-                    except Exception as e:
-                        logging.debug(f"Continue selector {selector} failed: {e}")
-                        continue
-            
-            # Now try to access saved posts
-            bookmarks_url = "https://www.threads.net/saved"
+            # Go directly to saved posts page
+            bookmarks_url = "https://www.threads.com/saved"
             logging.info(f"Navigating to saved posts: {bookmarks_url}")
             await page.goto(bookmarks_url, wait_until='domcontentloaded', timeout=20000)
-            await page.wait_for_timeout(5000) # Wait for dynamic content
+            await page.wait_for_timeout(5000)  # Wait for dynamic content
 
+            # Extract post links by scrolling
             post_links = set()
-            for _ in range(5): # Scroll a few times to load posts
+            scroll_attempts = 5
+            
+            logging.info(f"Scrolling to load saved posts (max {scroll_attempts} scrolls)...")
+            for i in range(scroll_attempts):
                 content = await page.content()
                 selector = Selector(content)
+                
+                # Find all post links
                 links = selector.css('a[href*="/post/"]::attr(href)').getall()
+                before_count = len(post_links)
+                
                 for link in links:
-                    post_links.add(f"https://www.threads.net{link}")
+                    if not link.startswith('http'):
+                        link = f"https://www.threads.net{link}"
+                    post_links.add(link)
+                
+                new_found = len(post_links) - before_count
+                logging.info(f"  Scroll {i+1}/{scroll_attempts}: Found {new_found} new posts (total: {len(post_links)})")
+                
+                # Scroll down
                 await page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
                 await page.wait_for_timeout(2000)
+                
+                # Stop if we found enough
+                if len(post_links) >= limit:
+                    logging.info(f"Reached limit of {limit} posts")
+                    break
 
             if not post_links:
-                logging.warning("No saved post links found. The page might not have loaded correctly or there are no saved posts.")
+                logging.warning("No saved post links found. Either no saved posts exist or page structure changed.")
                 return []
 
+            # Limit to requested number
             urls_to_scrape = list(post_links)[:limit]
-            logging.info(f"Found {len(urls_to_scrape)} saved post URLs to scrape.")
+            logging.info(f"Found {len(post_links)} total saved posts, will scrape {len(urls_to_scrape)}")
             
             # Close the authentication browser before scraping
             if hasattr(self, 'browser') and self.browser:
@@ -427,6 +434,7 @@ class ThreadsExtractor(SocialExtractorBase):
             if hasattr(self, 'pw') and self.pw:
                 await self.pw.stop()
             
+            # Scrape the posts
             return await self.scrape_posts_from_urls_async(urls_to_scrape)
 
         except Exception as e:
