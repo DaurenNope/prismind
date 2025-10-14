@@ -655,9 +655,22 @@ async def collect_threads_bookmarks(
         successful_count = 0
         last_post_id = None
         last_post_url = None
+        
+        # Helper function to detect language
+        def detect_language(text: str) -> str:
+            """Detect if content is primarily Russian or English"""
+            if not text:
+                return 'en'
+            russian_chars = sum(1 for c in text if '\u0400' <= c <= '\u04FF')
+            total_chars = len(text.replace(' ', ''))
+            if total_chars > 0 and russian_chars / total_chars > 0.3:
+                return 'ru'
+            return 'en'
+        
         for post_data in new_posts:
             try:
                 post_id = str(post_data.get("post_id", ""))
+                content = post_data.get("content", "")
                 
                 # Normalize post ID
                 normalized_id = state_manager.normalize_post_id(post_id, "threads")
@@ -666,11 +679,12 @@ async def collect_threads_bookmarks(
                 post_dict = {
                     "post_id": post_data.get("post_id"),
                     "title": post_data.get("title", ""),
-                    "content": post_data.get("content", ""),
+                    "content": content,
                     "url": post_data.get("url"),
                     "platform": "threads",
                     "author": post_data.get("author"),
                     "username": post_data.get("username"),
+                    "language": detect_language(content),  # Add language detection
                     "created_at": post_data.get(
                         "created_at", datetime.now().isoformat()
                     ),
