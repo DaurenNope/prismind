@@ -51,12 +51,36 @@ class ThreadsExtractor(SocialExtractorBase):
             self.browser = await self.pw.chromium.launch(headless=True)
             self.context = await self.browser.new_context(storage_state=cookies_path)
             self.page = await self.context.new_page()
-            await self.page.goto("https://www.threads.net", wait_until='domcontentloaded')
             
-            # More reliable check for login status
-            await self.page.wait_for_selector('a[href*="/profile"] svg', timeout=10000)
-            logging.info("Successfully authenticated with existing cookies.")
-            return True
+            # Go directly to saved posts to test if logged in
+            await self.page.goto("https://www.threads.com/saved", wait_until='domcontentloaded', timeout=15000)
+            await asyncio.sleep(3)
+            
+            # Check if we're on the login page (redirect) or saved page
+            current_url = self.page.url
+            if 'login' in current_url:
+                logging.info("Cookie auth failed - redirected to login page")
+                return False
+            
+            # Try multiple success indicators with short timeouts
+            success_indicators = [
+                'a[href*="/post/"]',  # Post links mean we're logged in
+                '[role="main"]',  # Main content area
+                'button[aria-label="Create"]',  # Create button
+                'nav[role="navigation"]'  # Nav bar
+            ]
+            
+            for indicator in success_indicators:
+                try:
+                    await self.page.wait_for_selector(indicator, timeout=3000)
+                    logging.info(f"✅ Cookie authentication successful - found: {indicator}")
+                    return True
+                except:
+                    continue
+            
+            logging.info("Cookie auth unclear - no definitive logged-in elements found")
+            return False
+            
         except Exception as e:
             logging.error(f"Cookie authentication failed: {e}")
             # Clean up browser on error

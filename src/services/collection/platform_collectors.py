@@ -590,7 +590,11 @@ async def collect_threads_bookmarks(
 
         # Authenticate if credentials provided
         if threads_username and threads_password:
+            # Use the most recent cookie file
             cookies_file = threads_cookies_file or "config/threads_cookies.json"
+            if not Path(cookies_file).exists():
+                cookies_file = "cookies/threads_cookies.json"
+            
             auth_success = await extractor.authenticate(
                 username=threads_username,
                 password=threads_password,
