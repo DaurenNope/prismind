@@ -1,470 +1,0 @@
-🚀 Starting backfill process...
-======================================================================
-✅ Ollama (Qwen) initialized
-✅ Mistral AI initialized
-✅ Google Gemini initialized
-🧠 Intelligent Content Analyzer initialized with 3 AI services
-2025-10-13 14:50:28,175 - INFO - Use pytorch device_name: mps
-2025-10-13 14:50:28,175 - INFO - Load pretrained SentenceTransformer: all-MiniLM-L6-v2
-2025-10-13 14:50:32,743 - INFO - Embedding model 'all-MiniLM-L6-v2' loaded successfully with 384 dimensions
-2025-10-13 14:50:33,168 - INFO - HTTP Request: GET https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?select=%2A&embedding=is.null&limit=50 "HTTP/2 200 OK"
-📊 Found 50 posts to process
-
-[1/50] Processing: 1954563404351328349
-   Title: He casually dropped an 18 minute masterclass on us...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00,  9.03it/s]Batches: 100%|██████████| 1/1 [00:00<00:00,  9.01it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:50:33,488 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1954563404351328349 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[2/50] Processing: 1950111813036867629
-   Title: Goodbye Cursor
-
-Augment Code just got a major upgr...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00,  3.12it/s]Batches: 100%|██████████| 1/1 [00:00<00:00,  3.12it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:50:34,010 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1950111813036867629 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[3/50] Processing: 1917405303282491484
-   Title: Build production AI Agents with scalable long term...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 10.39it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:50:34,299 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1917405303282491484 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[4/50] Processing: 1964266520462197042
-   Title: The biggest liquidation event - in $KAS history - ...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00,  6.31it/s]Batches: 100%|██████████| 1/1 [00:00<00:00,  6.30it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:50:34,649 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1964266520462197042 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[5/50] Processing: 1947845528860996008
-   Title: open-source design agent for UI mockups in your ID...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 22.20it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:50:34,900 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1947845528860996008 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[6/50] Processing: 1955362523441684645
-   Title: learn how to build an LLM from scratch, honestly.
-...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 45.06it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:50:35,119 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1955362523441684645 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[7/50] Processing: 1948377637560398080
-   Title: BREAKING: AI can now replace an entire trading tea...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 40.60it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:50:35,342 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1948377637560398080 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[8/50] Processing: 1946565851408400814
-   Title: Claude Code Templates now has a web interface for ...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 22.87it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:50:35,578 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1946565851408400814 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[9/50] Processing: 1965408468258750643
-   Title: if you want advice on how to "beat" the algorithm
-...
-   🧠 Analyzing with AI...
-🔍 Analyzing twitter post: 1965408468258750643
-✅ Analysis complete - Value Score: 7.6/10
-   ✅ Analysis complete: Technology
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00,  2.45it/s]Batches: 100%|██████████| 1/1 [00:00<00:00,  2.45it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:51:02,732 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1965408468258750643 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[10/50] Processing: 1950127308972671039
-   Title: BREAKING: AI now lets you create UNLIMITED-length ...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 32.70it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:51:02,962 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1950127308972671039 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-💤 Processed 10 posts, taking a short break...
-[11/50] Processing: 1917843659170669042
-   Title: Let's compare Qwen 3 and DeepSeek-R1 on RAG (100% ...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 12.70it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:51:05,248 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1917843659170669042 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[12/50] Processing: 1930900756023922827
-   Title: BREAKING: The easiest web scraping tool just launc...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 27.13it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:51:05,488 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1930900756023922827 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[13/50] Processing: 1941069771526836261
-   Title: BREAKING: You can now scrape any website using pla...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 21.23it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:51:05,724 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1941069771526836261 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[14/50] Processing: 1940783858234126786
-   Title: Insane.
-
-I asked Bolt to turn any photo into a Run...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 70.64it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:51:05,929 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1940783858234126786 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[15/50] Processing: 1924230161836167514
-   Title: I might’ve found a golden rule for 
-@cursor_ai
- an...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00,  7.61it/s]Batches: 100%|██████████| 1/1 [00:00<00:00,  7.61it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:51:06,252 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1924230161836167514 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[16/50] Processing: 1969342263319752712
-   Title: In 2010, at 15 years of age, I was one of the firs...
-   🧠 Analyzing with AI...
-🔍 Analyzing twitter post: 1969342263319752712
-✅ Analysis complete - Value Score: 7.1/10
-   ✅ Analysis complete: Business
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00,  3.09it/s]Batches: 100%|██████████| 1/1 [00:00<00:00,  3.09it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:51:31,077 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1969342263319752712 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[17/50] Processing: DEBUG_EMB_888
-   Title: Debug Embedding Test...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 15.65it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:51:31,323 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.DEBUG_EMB_888 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[18/50] Processing: 1919102686903034225
-   Title: This site is literally a prompt library with 500+ ...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 21.63it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:51:31,552 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1919102686903034225 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[19/50] Processing: 1921732056616149402
-   Title: The intersection of A2A and MCP:
-
-We recommend tha...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 32.12it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:51:31,764 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1921732056616149402 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[20/50] Processing: 1921754009221906848
-   Title: Zed just dropped the fastest Agentic code editor b...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00,  5.37it/s]Batches: 100%|██████████| 1/1 [00:00<00:00,  5.37it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:51:32,137 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1921754009221906848 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-💤 Processed 20 posts, taking a short break...
-[21/50] Processing: 1921611360548389145
-   Title:  Company Researcher
-
-A multi-agent system that gen...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 21.80it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:51:34,366 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1921611360548389145 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[22/50] Processing: 1921205930013667732
-   Title: Fine-tune Qwen3, LLaMA 4, and Gemma 2x faster with...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 44.06it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:51:34,582 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1921205930013667732 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[23/50] Processing: 1918596998619640193
-   Title: BREAKING: AI can now makes phone calls for you.
-
-P...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 92.11it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:51:34,772 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1918596998619640193 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[24/50] Processing: 1924065764971278844
-   Title: lowkey i think ilya 30u30 needs an upgrade to 50u5...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 35.68it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:51:34,985 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1924065764971278844 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[25/50] Processing: 1947693459147526179
-   Title: there's a quiet shift happening in how we design s...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 83.77it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:51:35,176 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1947693459147526179 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[26/50] Processing: 1950569222595133858
-   Title: How to turn your website into a revenue generating...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 22.88it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:51:35,403 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1950569222595133858 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[27/50] Processing: 1949968745159364994
-   Title: This guy literally explains how to MASTER N8N in 5...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 22.30it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:51:35,633 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1949968745159364994 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[28/50] Processing: 1950185166732660765
-   Title: http://Remottr.com has officially helped over 15,0...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 29.62it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:51:35,852 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1950185166732660765 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[29/50] Processing: 1950136265439138075
-   Title: Claude Code is Terrifyingly Powerful!
-
-This agenti...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 92.54it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:51:36,051 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1950136265439138075 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[30/50] Processing: 1921947425847341514
-   Title: The Automation Era Has Begun.
-
-We're the first gen...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 24.89it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:51:36,269 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1921947425847341514 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-💤 Processed 30 posts, taking a short break...
-[31/50] Processing: 1mg4190
-   Title: My biggest takeaway after using Claude Code profes...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 13.61it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:51:38,528 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1mg4190 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[32/50] Processing: 16ushyy
-   Title: Indeed's CEO says college students might be learni...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 39.67it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:51:38,737 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.16ushyy "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[33/50] Processing: 1lqexnh
-   Title: I hated making UI, so I made this tool...
-
-https:/...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 103.11it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:51:38,930 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1lqexnh "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[34/50] Processing: DEBUG2_999
-   Title: Debug 2...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 31.16it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:51:39,181 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.DEBUG2_999 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[35/50] Processing: 1949047494496907430
-   Title: I still believe this is the best repo to learn abo...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 53.66it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:51:39,384 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1949047494496907430 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[36/50] Processing: 1948702664348631446
-   Title: I built 7 custom subagents for Claude Code to help...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 22.89it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:51:39,615 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1948702664348631446 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[37/50] Processing: 1947876829575975179
-   Title: a step-by-step guide to validating your ai agent i...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 24.19it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:51:39,842 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1947876829575975179 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[38/50] Processing: 1954884361695719474
-   Title: I’m a psychiatrist.
-
-In 2025, I’ve seen 12 people ...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 25.17it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:51:40,070 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1954884361695719474 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[39/50] Processing: 1947705425874587689
-   Title: omg.. AI is getting crazier..
-
-you can now use thi...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 60.42it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:51:40,287 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1947705425874587689 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[40/50] Processing: 1950137991323902116
-   Title: holy sh*t… Claude 4 Sonnet just went full investme...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 48.93it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:51:40,492 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1950137991323902116 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-💤 Processed 40 posts, taking a short break...
-[41/50] Processing: 1966657829084762544
-   Title: &gt; be me
-&gt; Larry Ellison
-&gt; own a database ...
-   🧠 Analyzing with AI...
-🔍 Analyzing twitter post: 1966657829084762544
-✅ Analysis complete - Value Score: 7.1/10
-   ✅ Analysis complete: Technology
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00,  2.33it/s]Batches: 100%|██████████| 1/1 [00:00<00:00,  2.32it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:52:10,555 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1966657829084762544 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[42/50] Processing: 1944800394087161959
-   Title: In 1974, this man experienced a "glitch in reality...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 41.41it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:52:10,773 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1944800394087161959 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[43/50] Processing: 1944821031530647610
-   Title: there are literally over 7500+ lines of system pro...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00,  8.34it/s]Batches: 100%|██████████| 1/1 [00:00<00:00,  8.33it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:52:11,100 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1944821031530647610 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[44/50] Processing: 1944705474059718789
-   Title: Claude Code pro tip:
-
-Use Kimi K2 as your agent by...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 30.50it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:52:11,323 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1944705474059718789 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[45/50] Processing: 1951278683521687813
-   Title: WTF... First they said no to Elon Musk.
-
-Then they...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 38.33it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:52:11,547 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1951278683521687813 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[46/50] Processing: 1942612086548488223
-   Title: Crazy...
-
-this bootstrapped app was only released ...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 12.20it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:52:11,819 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1942612086548488223 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[47/50] Processing: 1942228615644553462
-   Title: You thought we were done with bada$$ style codes f...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 14.99it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:52:12,077 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1942228615644553462 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[48/50] Processing: 1942487625191026861
-   Title: BREAKING: The world’s first agentic browser just l...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 13.42it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:52:12,362 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1942487625191026861 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[49/50] Processing: 1907445162621784182
-   Title: Goodbye Cursor
-
-Augment Agent just dropped and it ...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 71.80it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:52:12,563 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1907445162621784182 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-[50/50] Processing: 1939639471772709225
-   Title: $14,000 in 30 days with this AI AD Factory 
-
-This ...
-   🔢 Generating embedding...
-Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 70.05it/s]
-   ✅ Embedding generated (384 dims)
-2025-10-13 14:52:12,773 - INFO - HTTP Request: PATCH https://ahlbudltabimzxegdkfc.supabase.co/rest/v1/posts?post_id=eq.1939639471772709225 "HTTP/2 200 OK"
-   ✅ Updated in Supabase
-
-💤 Processed 50 posts, taking a short break...
-======================================================================
-🎉 Backfill complete!
-   ✅ Success: 50
-   ❌ Errors: 0
-   📊 Total: 50
