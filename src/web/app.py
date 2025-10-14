@@ -3,6 +3,9 @@
 🧠 PrisMind - Personal Intelligence Engine
 ========================================
 
+> RULES COMPLIANCE: Follow RULES.md for all development guidelines
+> CHANGE PROCESS: Use CHANGE_TEMPLATE.md for all modifications
+
 Transform your social media bookmarks into a structured, searchable knowledge base.
 PrisMind extracts saved content from Twitter, Reddit, and Threads, analyzes your interests with AI,
 and organizes them into actionable insights.
@@ -26,12 +29,17 @@ if str(project_root) not in sys.path:
 
 # Import components
 from src.web.components.sidebar import render_sidebar
-from src.web.components.dashboard import render_dashboard
-from src.services.collection_service import (
-    run_twitter_collection,
-    run_reddit_collection,
-    run_threads_collection
+from src.web.components.tabs import (
+    render_dashboard_tab,
+    render_browse_tab,
+    render_settings_tab,
+    render_discoveries_tab,
 )
+from src.web.components.automation_tab import render_automation_tab
+from src.web.components.telegram_tab import render_telegram_tab
+from src.web.components.unified_feed_tab import render_unified_feed
+from src.pipeline.orchestrator import get_orchestrator
+from src.services.analysis_service import analyze_recent_posts
 
 # Load environment variables from .env file
 load_dotenv()
@@ -39,26 +47,12 @@ load_dotenv()
 # Suppress warnings for cleaner output
 warnings.filterwarnings('ignore')
 
-# Database manager
-class InMemoryDatabaseManager:
-    """Simple in-memory storage for demo purposes"""
-    def __init__(self):
-        self.posts = []
-    
-    def get_all_posts(self, include_deleted=False):
-        return [p for p in self.posts if include_deleted or not p.get('deleted', False)]
-    
-    def get_posts(self, limit=100):
-        return self.get_all_posts()[:limit]
-    
-    def add_post(self, post_data):
-        post_data['id'] = len(self.posts) + 1
-        post_data['created_at'] = datetime.now().isoformat()
-        self.posts.append(post_data)
-        return post_data
+# Use shared database manager
+from src.services.new_database_manager import get_database_manager as _get_db_manager
 
-# Initialize database manager
-db_manager = InMemoryDatabaseManager()
+@st.cache_resource
+def get_database_manager():
+    return _get_db_manager()
 
 def init_session_state():
     """Initialize the session state variables"""
@@ -70,18 +64,16 @@ def init_session_state():
         st.session_state.background_collector = None
         st.session_state.background_running = False
         st.session_state.current_page = 0
+        st.session_state.analysis_batch_size = 10
+        st.session_state.analysis_last_result = None
 
 def run_collection(platform: str) -> dict:
     """Run collection for a specific platform"""
     try:
-        if platform == 'twitter':
-            result = run_twitter_collection()
-        elif platform == 'reddit':
-            result = run_reddit_collection()
-        elif platform == 'threads':
-            result = run_threads_collection()
-        else:
-            return {'error': f'Unsupported platform: {platform}'}
+        orch = get_orchestrator()
+        # Call orchestrator per-platform and adapt to UI result shape
+        count = asyncio.run(orch.collect_platform(platform))
+        result = {'collected': count}
         
         # Update collection stats
         if 'collected' in result:
@@ -110,100 +102,7 @@ async def run_automated_collection():
             print(f"Error in automated collection: {e}")
             await asyncio.sleep(60)  # Wait a minute before retrying
 
-def render_dashboard():
-    """Render the dashboard view"""
-    st.header("📊 Intelligence Dashboard")
-    
-    # Get posts data
-    posts = db_manager.get_all_posts()
-    
-    if posts:
-        df = pd.DataFrame(posts)
-        
-        # Calculate metrics
-        total_posts = len(df)
-        ai_analyzed = len(df[df.get('ai_analyzed', False)])
-        avg_score = df.get('score', pd.Series([0])).mean()
-        
-        # Display metrics
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("📚 Total Posts", total_posts)
-        with col2:
-            st.metric("🤖 AI Analyzed", f"{ai_analyzed} ({int((ai_analyzed/total_posts)*100)}%)" if total_posts > 0 else "0 (0%)")
-        with col3:
-            st.metric("🌐 Platforms", df['platform'].nunique() if 'platform' in df.columns else 0)
-        with col4:
-            st.metric("⭐ Avg Score", f"{avg_score:.1f}/10" if 'score' in df.columns else "N/A")
-        
-        # Platform distribution
-        st.subheader("📈 Platform Distribution")
-        if 'platform' in df.columns:
-            platform_counts = df['platform'].value_counts()
-            st.bar_chart(platform_counts)
-            
-            # Display platform counts
-            for platform, count in platform_counts.items():
-                st.write(f"- {platform}: {count}")
-        
-        # Recent posts
-        st.subheader("🆕 Recent Posts")
-        recent_posts = df.sort_values('created_at', ascending=False).head(5)
-        for _, post in recent_posts.iterrows():
-            st.write(f"**{post.get('title', 'No title')}**")
-            st.caption(f"From {post.get('platform', 'unknown')} • {post.get('created_at', '')}")
-            st.write("---")
-    else:
-        st.info("No posts found. Try collecting some posts first!")
-
-def render_browse():
-    """Render the browse posts view"""
-    st.header("🎯 Browse Posts")
-    st.write("Browse and filter your collected posts.")
-    
-    # Add filtering options
-    st.subheader("🔍 Filters")
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        platform_filter = st.multiselect(
-            "Filter by Platform",
-            options=["Twitter", "Reddit", "Threads"],
-            default=[]
-        )
-    
-    with col2:
-        date_filter = st.date_input(
-            "Filter by Date",
-            value=[datetime.now().date() - timedelta(days=7), datetime.now().date()],
-            max_value=datetime.now().date(),
-            key="date_filter"
-        )
-    
-    # Add search functionality
-    search_query = st.text_input("Search posts", "", placeholder="Enter keywords to search...")
-    
-    # Display filtered posts
-    st.subheader("📝 Posts")
-    st.write("Post list will be displayed here based on filters.")
-
-def render_settings():
-    """Render the settings view"""
-    st.header("⚙️ Settings")
-    
-    # General Settings
-    with st.expander("General Settings", expanded=True):
-        st.selectbox("Theme", ["Light", "Dark", "System"], key="theme_setting")
-        st.slider("Posts per page", 10, 100, 20, key="posts_per_page")
-    
-    # API Settings
-    with st.expander("API Settings"):
-        st.text_input("Reddit API Key", type="password", key="reddit_api_key")
-        st.text_input("Twitter API Key", type="password", key="twitter_api_key")
-    
-    # Save settings button
-    if st.button("💾 Save Settings"):
-        st.success("Settings saved successfully!")
+## Tabs moved to src/web/components/tabs.py
 
 def main():
     """Main application entry point"""
@@ -243,21 +142,99 @@ def main():
     st.markdown("*Transform your social media bookmarks into structured intelligence*")
     
     # Create tabs for different views
-    tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "🎯 Browse Posts", "⚙️ Settings"])
+    tab1, tab_news, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["📰 Discoveries", "🗞️ Digest", "🇷🇺 Telegram", "📡 Sources", "✍️ Rewriter", "🤖 Automation", "📚 Browse", "⚙️ Settings"])
     
     with tab1:
-        render_dashboard()
+        render_unified_feed()  # Main discovery feed: RSS + Reddit + GitHub
     
     with tab2:
-        render_browse()
+        render_discoveries_tab()
+
+    with tab_news:
+        st.subheader("Daily Digest")
+        try:
+            orch = get_orchestrator()
+            col_x, col_y = st.columns([1, 1])
+            with col_x:
+                if st.button("Run Quick E2E Check", help="Collect → Analyze (10) → Build digest"):
+                    with st.spinner("Running collect → analyze → digest..."):
+                        _ = asyncio.run(orch.collect_all())
+                        _ = asyncio.run(orch.analyze_batch(limit=10))
+            with col_y:
+                if st.button("Refresh Digest"):
+                    pass
+            with st.spinner("Building news feed..."):
+                feed = asyncio.run(orch.build_news_feed(limit=50))
+            if not feed:
+                st.info("No items available yet. Try collecting content first.")
+            else:
+                for item in feed:
+                    with st.container():
+                        title = item.get("title") or "Untitled"
+                        url = item.get("url") or ""
+                        meta = f"{item.get('platform','')} • {item.get('source','')} • {item.get('created_at','')}"
+                        st.markdown(f"### [{title}]({url})")
+                        st.caption(meta)
+                        if item.get("summary"):
+                            st.write(item["summary"]) 
+                        tags = item.get("tags") or []
+                        if tags:
+                            st.caption("Tags: " + ", ".join(tags))
+                        st.divider()
+        except Exception as e:
+            st.error(f"Error building digest: {e}")
+
+        st.subheader("Quick Actions")
+        col_a, col_b = st.columns([1, 1])
+        with col_a:
+            if st.button("🤖 Analyze Recent Posts", help="Run AI analysis on recent or unanalyzed posts"):
+                batch_size = st.session_state.get('analysis_batch_size', 10)
+                with st.spinner(f"Analyzing up to {batch_size} posts..."):
+                    analysis_result = analyze_recent_posts(limit=batch_size, unanalyzed_only=True)
+                st.session_state.analysis_last_result = analysis_result
+                processed = analysis_result.get('processed', 0)
+                attempted = analysis_result.get('attempted', 0)
+                errors = analysis_result.get('errors') or []
+                if processed:
+                    st.success(f"Analyzed {processed} of {attempted} posts.")
+                elif attempted:
+                    st.warning("No posts were successfully analyzed. Check logs for details.")
+                else:
+                    st.info("No posts available for analysis.")
+                if errors:
+                    with st.expander("Show analysis errors"):
+                        for err in errors[:10]:
+                            st.write(f"- {err}")
+                        if len(errors) > 10:
+                            st.write(f"...and {len(errors) - 10} more errors")
+        with col_b:
+            if st.session_state.analysis_last_result:
+                last = st.session_state.analysis_last_result
+                processed = last.get('processed', 0)
+                attempted = last.get('attempted', 0)
+                st.metric("Last Analysis", f"{processed}/{attempted} posts")
     
     with tab3:
-        render_settings()
+        render_telegram_tab()
+    
+    with tab4:
+        from src.web.components.sources_tab import render_sources_tab
+        render_sources_tab()
+    
+    with tab5:
+        from src.web.components.rewriter_tab import render_rewriter_tab
+        render_rewriter_tab()
+    
+    with tab6:
+        render_browse_tab()
+    
+    with tab7:
+        render_settings_tab()
     
     # Handle collection triggers
     if st.session_state.get('run_twitter_collection', False):
         with st.spinner("Collecting from Twitter..."):
-            result = run_twitter_collection()
+            result = run_collection('twitter')
             if 'error' in result:
                 st.error(f"Error collecting from Twitter: {result['error']}")
             else:
@@ -266,7 +243,7 @@ def main():
     
     if st.session_state.get('run_reddit_collection', False):
         with st.spinner("Collecting from Reddit..."):
-            result = run_reddit_collection()
+            result = run_collection('reddit')
             if 'error' in result:
                 st.error(f"Error collecting from Reddit: {result['error']}")
             else:
@@ -275,7 +252,7 @@ def main():
     
     if st.session_state.get('run_threads_collection', False):
         with st.spinner("Collecting from Threads..."):
-            result = run_threads_collection()
+            result = run_collection('threads')
             if 'error' in result:
                 st.error(f"Error collecting from Threads: {result['error']}")
             else:

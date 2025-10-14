@@ -1,430 +1,281 @@
+#!/usr/bin/env python3
 """
-Sophisticated Value Scoring System for PrisMind
-Analyzes content quality, relevance, and learning potential to assign intelligent value scores
+Unified Value Scorer for PrisMind
+Combines sophisticated scoring with intelligent analysis
 """
 
 import re
 from datetime import datetime
 from typing import Any, Dict, List
 
+from src.core.extraction.social_extractor_base import SocialPost
+from .value_scorer_patterns import ValueScorerPatterns
+
 
 class ValueScorer:
-    """Sophisticated value scoring system for social media content"""
+    """Unified value scoring system for social media content"""
     
     def __init__(self):
-        # Load quality indicators and patterns
-        self.quality_indicators = self._load_quality_patterns()
-        self.learning_keywords = self._load_learning_keywords()
-        self.spam_indicators = self._load_spam_patterns()
+        self.patterns = ValueScorerPatterns()
     
     def calculate_value_score(self, post_data: Dict[str, Any]) -> float:
         """Calculate comprehensive value score for a post"""
-        
-        # Base score
-        score = 5.0
-        
-        # Content quality analysis (40% of score)
-        content_score = self._analyze_content_quality(post_data)
-        score += content_score * 0.4
-        
-        # Engagement quality analysis (25% of score)
-        engagement_score = self._analyze_engagement_quality(post_data)
-        score += engagement_score * 0.25
-        
-        # Learning potential analysis (20% of score)
-        learning_score = self._analyze_learning_potential(post_data)
-        score += learning_score * 0.2
-        
-        # Recency and relevance (10% of score)
-        recency_score = self._analyze_recency_relevance(post_data)
-        score += recency_score * 0.1
-        
-        # Platform-specific adjustments (5% of score)
-        platform_score = self._analyze_platform_factors(post_data)
-        score += platform_score * 0.05
-        
-        # Apply penalties for spam/low-quality content
-        penalty = self._calculate_penalties(post_data)
-        score -= penalty
-        
-        # Clamp score between 1-10
-        return max(1.0, min(10.0, round(score, 1)))
+        try:
+            # Base scoring components
+            content_quality = self._analyze_content_quality(post_data)
+            engagement_quality = self._analyze_engagement_quality(post_data)
+            learning_potential = self._analyze_learning_potential(post_data)
+            recency_relevance = self._analyze_recency_relevance(post_data)
+            platform_factors = self._analyze_platform_factors(post_data)
+            
+            # Calculate penalties
+            penalties = self._calculate_penalties(post_data)
+            
+            # Weighted combination
+            weights = {
+                'content_quality': 0.35,
+                'engagement_quality': 0.25,
+                'learning_potential': 0.20,
+                'recency_relevance': 0.10,
+                'platform_factors': 0.10
+            }
+            
+            base_score = (
+                content_quality * weights['content_quality'] +
+                engagement_quality * weights['engagement_quality'] +
+                learning_potential * weights['learning_potential'] +
+                recency_relevance * weights['recency_relevance'] +
+                platform_factors * weights['platform_factors']
+            )
+            
+            # Apply penalties
+            final_score = max(0.0, base_score - penalties)
+            
+            return min(1.0, final_score)
+            
+        except Exception as e:
+            print(f"Error calculating value score: {e}")
+            return 0.0
+    
+    def calculate_intelligent_value_score(self, analysis: Dict, post: SocialPost) -> float:
+        """Calculate intelligent value score using AI analysis"""
+        try:
+            # Base score from traditional analysis
+            base_score = self.calculate_value_score(post.to_dict())
+            
+            # AI analysis factors
+            ai_quality = analysis.get('quality_score', 0.5)
+            ai_relevance = analysis.get('relevance_score', 0.5)
+            ai_engagement = analysis.get('engagement_score', 0.5)
+            
+            # Combine with AI insights
+            ai_score = (ai_quality + ai_relevance + ai_engagement) / 3
+            
+            # Weighted combination
+            final_score = (base_score * 0.6) + (ai_score * 0.4)
+            
+            return min(1.0, final_score)
+            
+        except Exception as e:
+            print(f"Error calculating intelligent value score: {e}")
+            return 0.0
     
     def _analyze_content_quality(self, post_data: Dict[str, Any]) -> float:
-        """Analyze content quality factors"""
-        content = post_data.get('content', '') or ''
-        if not content or content.lower() == 'none':
-            return -2.0
+        """Analyze content quality"""
+        content = post_data.get('content', '')
+        if not content:
+            return 0.0
         
-        quality_score = 0.0
+        # Use patterns to analyze content
+        quality_analysis = self.patterns.analyze_content_quality(content)
         
-        # Length analysis
-        length = len(content.strip())
-        if length < 20:
-            quality_score -= 2.0  # Too short
-        elif length < 50:
-            quality_score -= 1.0  # Very short
-        elif 100 <= length <= 500:
-            quality_score += 1.0  # Good length
-        elif 500 < length <= 1000:
-            quality_score += 1.5  # Detailed
-        elif length > 2000:
-            quality_score -= 0.5  # Potentially too long
+        # Additional quality checks
+        quality_score = quality_analysis['score']
         
-        # Quality indicators
-        content_lower = content.lower()
+        # Length factor
+        content_length = len(content)
+        if content_length < 50:
+            quality_score *= 0.7
+        elif content_length > 1000:
+            quality_score *= 1.1
         
-        # Positive quality indicators
-        positive_patterns = [
-            (r'\bhow to\b', 1.5, 'tutorial'),
-            (r'\bexplain\w*\b', 1.0, 'explanation'),
-            (r'\blearn\w*\b', 1.0, 'educational'),
-            (r'\btutorial\b', 1.5, 'tutorial'),
-            (r'\bguide\b', 1.0, 'guide'),
-            (r'\btip\w*\b', 0.8, 'tips'),
-            (r'\binsight\w*\b', 1.0, 'insights'),
-            (r'\banalysis\b', 1.2, 'analysis'),
-            (r'\bresearch\b', 1.5, 'research'),
-            (r'\bstudy\b', 1.2, 'study'),
-            (r'\bdata\b', 1.0, 'data'),
-            (r'\bevidence\b', 1.2, 'evidence'),
-            (r'\bexample\w*\b', 0.8, 'examples'),
-            (r'\bcase study\b', 1.5, 'case_study'),
-            (r'\bbest practice\w*\b', 1.3, 'best_practices'),
-            (r'\blessons? learned\b', 1.2, 'lessons'),
-            (r'\bmistake\w*\b', 0.8, 'mistakes'),
-            (r'\bsolution\w*\b', 1.0, 'solutions'),
-            (r'\bframework\b', 1.2, 'framework'),
-            (r'\bmethodology\b', 1.3, 'methodology')
-        ]
+        # Structure factor
+        if self.patterns.has_good_structure(content):
+            quality_score *= 1.2
         
-        for pattern, score_boost, category in positive_patterns:
-            if re.search(pattern, content_lower):
-                quality_score += score_boost
+        # Technical depth factor
+        if self.patterns.has_technical_depth(content):
+            quality_score *= 1.3
         
-        # Structure quality
-        if self._has_good_structure(content):
-            quality_score += 1.0
-        
-        # Technical depth indicators
-        if self._has_technical_depth(content):
-            quality_score += 1.5
-        
-        # Actionable content
-        if self._is_actionable(content):
-            quality_score += 1.0
-        
-        return quality_score
+        return min(1.0, quality_score)
     
     def _analyze_engagement_quality(self, post_data: Dict[str, Any]) -> float:
-        """Analyze engagement quality vs quantity"""
-        platform = post_data.get('platform', '').lower()
-        engagement_score = 0.0
+        """Analyze engagement quality"""
+        engagement = post_data.get('engagement', {})
+        if not engagement:
+            return 0.5
         
-        if platform == 'reddit':
-            score = post_data.get('engagement_score', 0)
-            upvote_ratio = post_data.get('upvote_ratio', 0.5)
-            num_comments = post_data.get('num_comments', 0)
-            
-            # Score-based quality (Reddit upvotes are meaningful)
-            if score > 1000:
-                engagement_score += 2.0
-            elif score > 500:
-                engagement_score += 1.5
-            elif score > 100:
-                engagement_score += 1.0
-            elif score > 50:
-                engagement_score += 0.5
-            elif score < 5:
-                engagement_score -= 1.0
-            
-            # Upvote ratio quality
-            if upvote_ratio > 0.9:
-                engagement_score += 1.5
-            elif upvote_ratio > 0.8:
-                engagement_score += 1.0
-            elif upvote_ratio < 0.6:
-                engagement_score -= 1.0
-            
-            # Comments indicate discussion
-            if num_comments > 100:
-                engagement_score += 1.0
-            elif num_comments > 50:
-                engagement_score += 0.5
-            
-        elif platform == 'twitter':
-            # Accept either flat metrics or nested engagement dict
-            engagement = post_data.get('engagement') or {}
-            likes = post_data.get('likes', engagement.get('likes', 0))
-            retweets = post_data.get('retweets', engagement.get('retweets', 0))
-            replies = post_data.get('replies', engagement.get('comments', engagement.get('replies', 0)))
-            
-            # Twitter engagement is more inflated, so higher thresholds
-            total_engagement = likes + (retweets * 2) + (replies * 3)
-            
-            if total_engagement > 10000:
-                engagement_score += 2.0
-            elif total_engagement > 5000:
-                engagement_score += 1.5
-            elif total_engagement > 1000:
-                engagement_score += 1.0
-            elif total_engagement > 100:
-                engagement_score += 0.5
-            elif total_engagement < 10:
-                engagement_score -= 0.5
-            
-            # Retweet to like ratio (retweets are more meaningful)
-            if likes > 0:
-                rt_ratio = retweets / likes
-                if rt_ratio > 0.1:  # High retweet ratio indicates shareworthy content
-                    engagement_score += 1.0
+        likes = engagement.get('likes', 0)
+        retweets = engagement.get('retweets', 0)
+        replies = engagement.get('replies', 0)
         
-        # Ensure engagement score stays within 0..10 range bounds used by tests
-        return max(0.0, min(10.0, engagement_score))
+        # Calculate engagement score
+        total_engagement = likes + (retweets * 2) + (replies * 3)
+        
+        # Normalize based on platform and content age
+        platform = post_data.get('platform', 'unknown')
+        if platform == 'twitter':
+            if total_engagement > 100:
+                return 1.0
+            elif total_engagement > 50:
+                return 0.8
+            elif total_engagement > 20:
+                return 0.6
+            else:
+                return 0.4
+        elif platform == 'reddit':
+            if total_engagement > 50:
+                return 1.0
+            elif total_engagement > 20:
+                return 0.8
+            elif total_engagement > 10:
+                return 0.6
+            else:
+                return 0.4
+        else:
+            # Generic scoring
+            if total_engagement > 30:
+                return 1.0
+            elif total_engagement > 15:
+                return 0.8
+            elif total_engagement > 5:
+                return 0.6
+            else:
+                return 0.4
     
     def _analyze_learning_potential(self, post_data: Dict[str, Any]) -> float:
-        """Analyze educational and learning value"""
-        content = post_data.get('content', '').lower()
+        """Analyze learning potential"""
+        content = post_data.get('content', '')
+        if not content:
+            return 0.0
+        
+        content_lower = content.lower()
         learning_score = 0.0
         
-        # Learning keywords
-        learning_patterns = [
-            (r'\blearn\w*\b', 1.0),
-            (r'\bteach\w*\b', 1.0),
-            (r'\beducation\w*\b', 0.8),
-            (r'\bskill\w*\b', 0.8),
-            (r'\bknowledge\b', 0.8),
-            (r'\bunderstand\w*\b', 0.6),
-            (r'\bexplain\w*\b', 0.8),
-            (r'\bconcept\w*\b', 0.8),
-            (r'\btheory\b', 0.8),
-            (r'\bpractice\b', 0.6),
-            (r'\bappl\w*\b', 0.6),  # application, apply, etc.
-            (r'\bimplement\w*\b', 0.8),
-            (r'\bstrateg\w*\b', 0.8),
-            (r'\btechnique\w*\b', 0.8),
-            (r'\bmethod\w*\b', 0.6),
-            (r'\bapproach\b', 0.6),
-            (r'\bprocess\b', 0.6),
-            (r'\bworkflow\b', 0.8),
-            (r'\bbest practice\w*\b', 1.2),
-            (r'\blessons? learned\b', 1.0)
+        # Check for learning keywords
+        learning_keywords = self.patterns.learning_keywords
+        learning_count = sum(1 for keyword in learning_keywords if keyword in content_lower)
+        
+        if learning_count > 0:
+            learning_score = min(learning_count * 0.1, 0.8)
+        
+        # Check for educational content indicators
+        educational_indicators = [
+            'tutorial', 'guide', 'how to', 'explanation', 'example',
+            'step by step', 'process', 'method', 'technique', 'approach'
         ]
         
-        for pattern, score in learning_patterns:
-            if re.search(pattern, content):
-                learning_score += score
+        educational_count = sum(1 for indicator in educational_indicators if indicator in content_lower)
+        if educational_count > 0:
+            learning_score += min(educational_count * 0.15, 0.2)
         
-        # Category-specific learning value
-        category = post_data.get('category', '').lower()
-        high_learning_categories = [
-            'tutorial', 'education', 'programming', 'technology',
-            'science', 'research', 'analysis', 'guide', 'how-to'
-        ]
+        # Check for technical content
+        if self.patterns.has_technical_depth(content):
+            learning_score += 0.3
         
-        if any(cat in category for cat in high_learning_categories):
-            learning_score += 1.0
-        
-        # Check for step-by-step content
-        if self._has_step_by_step_content(content):
-            learning_score += 1.5
-        
-        # Check for code examples or technical details
-        if self._has_technical_examples(content):
-            learning_score += 1.0
-        
-        return min(learning_score, 3.0)  # Cap at 3.0
+        return min(1.0, learning_score)
     
     def _analyze_recency_relevance(self, post_data: Dict[str, Any]) -> float:
-        """Analyze recency and ongoing relevance"""
-        recency_score = 0.0
-        
-        # Parse creation date
+        """Analyze recency and relevance"""
         created_at = post_data.get('created_at')
-        if created_at:
-            try:
-                if isinstance(created_at, str):
-                    post_date = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
-                else:
-                    post_date = created_at
-                
-                now = datetime.now(post_date.tzinfo) if post_date.tzinfo else datetime.now()
-                age_days = (now - post_date).days
-                
-                # Recency scoring
-                if age_days < 1:
-                    recency_score += 1.0  # Very recent
-                elif age_days < 7:
-                    recency_score += 0.8  # Recent
-                elif age_days < 30:
-                    recency_score += 0.5  # Somewhat recent
-                elif age_days < 90:
-                    recency_score += 0.2  # Still relevant
-                elif age_days > 365:
-                    recency_score -= 0.5  # Potentially outdated
-                
-            except Exception:
-                pass  # Ignore date parsing errors
+        if not created_at:
+            return 0.5
         
-        # Evergreen content indicators
-        content = post_data.get('content', '').lower()
-        evergreen_patterns = [
-            'fundamental', 'principle', 'basic', 'concept', 'theory',
-            'always', 'timeless', 'classic', 'essential', 'core'
-        ]
-        
-        if any(pattern in content for pattern in evergreen_patterns):
-            recency_score += 0.5  # Evergreen content bonus
-        
-        return recency_score
+        try:
+            if isinstance(created_at, str):
+                post_time = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+            else:
+                post_time = created_at
+            
+            now = datetime.now(post_time.tzinfo) if post_time.tzinfo else datetime.now()
+            age_hours = (now - post_time).total_seconds() / 3600
+            
+            # Recency scoring
+            if age_hours < 24:
+                return 1.0
+            elif age_hours < 168:  # 1 week
+                return 0.8
+            elif age_hours < 720:  # 1 month
+                return 0.6
+            elif age_hours < 2160:  # 3 months
+                return 0.4
+            else:
+                return 0.2
+                
+        except Exception:
+            return 0.5
     
     def _analyze_platform_factors(self, post_data: Dict[str, Any]) -> float:
-        """Platform-specific quality factors"""
-        platform = post_data.get('platform', '').lower()
-        platform_score = 0.0
+        """Analyze platform-specific factors"""
+        platform = post_data.get('platform', 'unknown')
         
-        if platform == 'reddit':
-            # Reddit tends to have more in-depth discussions
-            subreddit = post_data.get('folder_category', '').lower()
-            
-            # High-quality subreddits
-            quality_subreddits = [
-                'askscience', 'explainlikeimfive', 'todayilearned',
-                'programming', 'learnprogramming', 'datascience',
-                'machinelearning', 'askhistorians', 'changemyview'
-            ]
-            
-            if any(sub in subreddit for sub in quality_subreddits):
-                platform_score += 1.0
+        # Platform-specific scoring
+        platform_scores = {
+            'twitter': 0.8,
+            'reddit': 0.9,
+            'threads': 0.7,
+            'linkedin': 0.9,
+            'github': 1.0,
+            'medium': 0.9,
+            'dev.to': 0.9,
+            'hackernews': 0.9
+        }
         
-        elif platform == 'twitter':
-            # Twitter threads tend to be higher quality
-            content = post_data.get('content', '')
-            if 'thread' in content.lower() or '1/' in content:
-                platform_score += 0.5
-        
-        return platform_score
+        return platform_scores.get(platform, 0.5)
     
     def _calculate_penalties(self, post_data: Dict[str, Any]) -> float:
         """Calculate penalties for low-quality content"""
-        penalty = 0.0
-        content = post_data.get('content', '').lower()
+        penalties = 0.0
+        content = post_data.get('content', '')
         
-        # Spam indicators
-        spam_patterns = [
-            (r'\b(buy|sell|discount|offer|deal)\b.*\b(now|today|limited)\b', 2.0),
-            (r'\bclick here\b', 1.0),
-            (r'\bfree money\b', 2.0),
-            (r'\bget rich\b', 2.0),
-            (r'\bmake money fast\b', 2.0),
-            (r'!!!+', 1.0),  # Multiple exclamation marks
-            (r'\b(urgent|hurry|act now)\b', 1.0)
-        ]
+        if not content:
+            return 0.5
         
-        for pattern, penalty_score in spam_patterns:
-            if re.search(pattern, content):
-                penalty += penalty_score
-        
-        # Low-quality indicators
-        if len(content.strip()) < 10:
-            penalty += 2.0
-        
-        # Too many caps
-        if content.isupper() and len(content) > 20:
-            penalty += 1.0
-        
-        # Excessive emoji usage
-        emoji_count = len(re.findall(r'[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF\U0001F1E0-\U0001F1FF]', content))
-        if emoji_count > 5:
-            penalty += 0.5
-        
-        return penalty
-    
-    def _has_good_structure(self, content: str) -> bool:
-        """Check if content has good structure"""
-        # Look for lists, numbered points, headers
-        structure_indicators = [
-            r'^\d+\.',  # Numbered lists
-            r'^[-*•]',  # Bullet points
-            r'^#{1,6}\s',  # Headers
-            r':\s*$',  # Colons (indicating lists)
-        ]
-        
-        lines = content.split('\n')
-        structured_lines = 0
-        
-        for line in lines:
-            line = line.strip()
-            if any(re.search(pattern, line, re.MULTILINE) for pattern in structure_indicators):
-                structured_lines += 1
-        
-        return structured_lines >= 2
-    
-    def _has_technical_depth(self, content: str) -> bool:
-        """Check for technical depth indicators"""
-        technical_patterns = [
-            r'\bcode\b', r'\bfunction\b', r'\balgorithm\b', r'\bAPI\b',
-            r'\bdatabase\b', r'\bframework\b', r'\blibrary\b', r'\bsoftware\b',
-            r'\barchitecture\b', r'\bdesign pattern\b', r'\boptimization\b',
-            r'\bperformance\b', r'\bscalability\b', r'\bsecurity\b'
-        ]
-        
+        # Spam penalties
         content_lower = content.lower()
-        return sum(1 for pattern in technical_patterns if re.search(pattern, content_lower)) >= 2
-    
-    def _is_actionable(self, content: str) -> bool:
-        """Check if content provides actionable information"""
-        actionable_patterns = [
-            r'\bstep\w*\b', r'\bdo\b', r'\btry\b', r'\buse\b', r'\bapply\b',
-            r'\bimplement\b', r'\bstart\b', r'\bbegin\b', r'\bfollow\b',
-            r'\bpractice\b', r'\bexercise\b', r'\baction\w*\b'
-        ]
+        spam_count = sum(1 for spam in self.patterns.spam_indicators if spam in content_lower)
+        if spam_count > 0:
+            penalties += min(spam_count * 0.1, 0.4)
         
-        content_lower = content.lower()
-        return sum(1 for pattern in actionable_patterns if re.search(pattern, content_lower)) >= 2
-    
-    def _has_step_by_step_content(self, content: str) -> bool:
-        """Check for step-by-step instructions"""
-        step_patterns = [
-            r'step \d+', r'\d+\.\s', r'first.*second.*third',
-            r'next.*then.*finally', r'begin.*then.*end'
-        ]
+        # Low-quality content penalties
+        if len(content) < 20:
+            penalties += 0.3
         
-        content_lower = content.lower()
-        return any(re.search(pattern, content_lower) for pattern in step_patterns)
+        # Repetitive content penalties
+        words = content.split()
+        if len(words) > 10:
+            unique_words = set(words)
+            if len(unique_words) / len(words) < 0.5:
+                penalties += 0.2
+        
+        # Excessive punctuation penalties
+        if content.count('!') > 5 or content.count('?') > 5:
+            penalties += 0.1
+        
+        return min(0.5, penalties)
     
-    def _has_technical_examples(self, content: str) -> bool:
-        """Check for code examples or technical details"""
-        return bool(re.search(r'```|`[^`]+`|\bcode\b.*example|\bsyntax\b', content, re.IGNORECASE))
-    
-    def _load_quality_patterns(self) -> Dict:
-        """Load quality pattern configurations"""
-        return {
-            'high_quality': [
-                'tutorial', 'guide', 'explanation', 'analysis', 'research',
-                'study', 'framework', 'methodology', 'best practices'
-            ],
-            'medium_quality': [
-                'tips', 'advice', 'opinion', 'discussion', 'question'
-            ],
-            'low_quality': [
-                'rant', 'complaint', 'spam', 'advertisement'
-            ]
-        }
-    
-    def _load_learning_keywords(self) -> List[str]:
-        """Load learning-related keywords"""
-        return [
-            'learn', 'teach', 'education', 'tutorial', 'guide',
-            'how-to', 'explain', 'understand', 'concept', 'skill'
-        ]
-    
-    def _load_spam_patterns(self) -> List[str]:
-        """Load spam detection patterns"""
-        return [
-            r'\b(buy|sell|discount|offer|deal)\b.*\b(now|today|limited)\b',
-            r'\bclick here\b',
-            r'\bfree money\b',
-            r'\bget rich\b',
-            r'!!!+'
-        ]
+    def determine_rewrite_candidate(self, analysis: Dict[str, Any], post: 'SocialPost', quality_score: float) -> bool:
+        """Determine if a post is a good candidate for rewriting"""
+        # Simple logic for rewrite candidates
+        if quality_score < 0.3:
+            return True
+        
+        # Check for specific indicators
+        content = post.content or ""
+        if len(content) < 50:
+            return True
+            
+        if analysis.get('sentiment', {}).get('overall', 'neutral') == 'negative':
+            return True
+            
+        return False

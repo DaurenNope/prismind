@@ -1,0 +1,26 @@
+{
+  "twitter": {
+    "extract_threads": true,
+    "max_bookmarks": 100,
+    "scroll_limit": 5
+  },
+  "reddit": {
+    "enabled": true,
+    "max_posts": 50
+  },
+  "threads": {
+    "enabled": true,
+    "max_posts": 50
+  },
+  "performance": {
+    "skip_ai_analysis": false,
+    "timeout_seconds": 120
+  },
+  "enable_threads": true,
+  "enable_github_trending": true,
+  "enable_telegram_channels": true,
+  "enable_analysis": true,
+  "enable_sqlite_cache": true,
+  "supabase_enabled": true,
+  "research_api_enabled": false
+}

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -46,7 +48,7 @@ class ThreadsExtractor(SocialExtractorBase):
         """Authenticates using cookies and verifies by checking for a logged-in state."""
         try:
             self.pw = await async_playwright().start()
-            self.browser = await self.pw.chromium.launch(headless=False)
+            self.browser = await self.pw.chromium.launch(headless=True)
             self.context = await self.browser.new_context(storage_state=cookies_path)
             self.page = await self.context.new_page()
             await self.page.goto("https://www.threads.net", wait_until='domcontentloaded')
@@ -57,6 +59,7 @@ class ThreadsExtractor(SocialExtractorBase):
             return True
         except Exception as e:
             logging.error(f"Cookie authentication failed: {e}")
+            # Clean up browser on error
             if hasattr(self, 'browser') and self.browser:
                 await self.browser.close()
             if hasattr(self, 'pw') and self.pw:
@@ -163,24 +166,177 @@ class ThreadsExtractor(SocialExtractorBase):
             return False
     
     async def _authenticate_with_login(self, username: str, password: str, cookies_path: str) -> bool:
-        """Authenticates by logging into Instagram, which shares a session with Threads."""
+        """Authenticates by logging directly into Threads.net."""
         try:
             self.pw = await async_playwright().start()
             self.browser = await self.pw.chromium.launch(headless=False)
             self.context = await self.browser.new_context()
             self.page = await self.context.new_page()
 
-            logging.info("Navigating to Instagram login page...")
-            await self.page.goto("https://www.instagram.com/accounts/login/", wait_until='domcontentloaded')
+            logging.info("Navigating to Threads login page...")
+            await self.page.goto("https://www.threads.net/login", wait_until='domcontentloaded')
+            
+            # Wait a bit for page to fully load
+            await asyncio.sleep(3)
+            
+            # Try multiple selectors for username field on Threads
+            username_selectors = [
+                'input[name="username"]',
+                'input[aria-label="Username"]',
+                'input[placeholder*="username"]',
+                'input[placeholder*="Username"]',
+                'input[type="text"]',
+                'input[aria-label="Phone number, username, or email"]'
+            ]
+            
+            username_field = None
+            for selector in username_selectors:
+                try:
+                    await self.page.wait_for_selector(selector, timeout=3000)
+                    username_field = selector
+                    logging.info(f"Found username field with selector: {selector}")
+                    break
+                except:
+                    continue
+            
+            if not username_field:
+                logging.error("Could not find username field")
+                return False
+            
+            logging.info(f"Entering username: {username}")
+            await self.page.fill(username_field, username)
+            
+            # Find password field
+            password_selectors = [
+                'input[name="password"]',
+                'input[type="password"]',
+                'input[aria-label="Password"]'
+            ]
+            
+            password_field = None
+            for selector in password_selectors:
+                try:
+                    await self.page.wait_for_selector(selector, timeout=3000)
+                    password_field = selector
+                    logging.info(f"Found password field with selector: {selector}")
+                    break
+                except:
+                    continue
+            
+            if not password_field:
+                logging.error("Could not find password field")
+                return False
+                
+            await self.page.fill(password_field, password)
+            
+            logging.info("Clicking login button...")
+            # Try multiple login button selectors for Threads
+            login_button_selectors = [
+                'button[type="submit"]',
+                'div[role="button"]:has-text("Log in")',
+                'button:has-text("Log in")',
+                'div[role="button"]:has-text("Login")',
+                'button:has-text("Login")',
+                '[data-testid="loginButton"]',
+                'button.x1i10hfl',  # Common Threads button class
+                'div[role="button"].x1i10hfl'
+            ]
+            
+            login_clicked = False
+            for selector in login_button_selectors:
+                try:
+                    if await self.page.is_visible(selector, timeout=3000):
+                        logging.info(f"Found login button with selector: {selector}")
+                        await self.page.click(selector)
+                        login_clicked = True
+                        break
+                except Exception as e:
+                    logging.debug(f"Login button selector {selector} failed: {e}")
+                    continue
+            
+            if not login_clicked:
+                logging.error("Could not find or click login button")
+                return False
 
-            await self.page.wait_for_selector('input[name="username"]', timeout=15000)
-            await self.page.fill('input[name="username"]', username)
-            await self.page.fill('input[name="password"]', password)
-            await self.page.click('button[type="submit"]')
+            # Handle potential redirects and authentication flows
+            try:
+                # Wait for either successful login or onetap redirect
+                await self.page.wait_for_load_state('networkidle', timeout=15000)
+                
+                # Check if we're on the onetap page or any challenge page
+                current_url = self.page.url
+                logging.info(f"Current URL after login: {current_url}")
+                
+                if "onetap" in current_url or "challenge" in current_url or "two_factor" in current_url:
+                    logging.info("Detected onetap/challenge/2FA page, handling redirect...")
+                    
+                    # Try to find and click "Not Now" or skip buttons
+                    skip_selectors = [
+                        'button:has-text("Not Now")',
+                        'button:has-text("Skip")',
+                        'button:has-text("Maybe Later")',
+                        '[role="button"]:has-text("Not Now")',
+                        'a:has-text("Not Now")',
+                        'button:has-text("Skip For Now")',
+                        'button[type="button"]:has-text("Not now")',
+                        '//button[contains(text(), "Not now")]',
+                        '//button[contains(text(), "Skip")]'
+                    ]
+                    
+                    for selector in skip_selectors:
+                        try:
+                            if await self.page.is_visible(selector, timeout=3000):
+                                logging.info(f"Clicking skip button: {selector}")
+                                await self.page.click(selector)
+                                await self.page.wait_for_load_state('networkidle', timeout=8000)
+                                break
+                        except Exception as skip_error:
+                            logging.debug(f"Skip selector {selector} failed: {skip_error}")
+                            continue
+                
+                # Additional wait for page to stabilize
+                await asyncio.sleep(2)
+                
+                # Wait for successful login indicators with extended timeout
+                success_selectors = [
+                    'a[href*="/profile"]',
+                    'button[aria-label="Home"]',
+                    'svg[aria-label="Home"]',
+                    'a[href="/"]',  # Threads home link
+                    '[aria-label="Home"]',
+                    'nav[role="navigation"]',
+                    'div[role="main"]',
+                    'button[aria-label="Create"]',
+                    'a[href*="@"]'  # Profile links
+                ]
+                
+                login_success = False
+                for selector in success_selectors:
+                    try:
+                        await self.page.wait_for_selector(selector, timeout=5000)
+                        logging.info(f"Login successful - found element: {selector}")
+                        login_success = True
+                        break
+                    except:
+                        continue
+                
+                if not login_success:
+                    # Check if we're on Threads home page by URL
+                    current_url = self.page.url
+                    if "threads.net" in current_url and ("login" not in current_url):
+                        logging.info("Login successful - on Threads home page")
+                        login_success = True
+                
+                if not login_success:
+                    raise Exception("Could not verify successful login")
+                    
+            except Exception as e:
+                logging.error(f"Login verification failed: {e}")
+                # Take screenshot for debugging
+                await self.page.screenshot(path="logs/threads_login_failure.png")
+                return False
 
-            # Wait for successful login and navigation to the main feed
-            await self.page.wait_for_selector('a[href="/direct/inbox/"]', timeout=15000)
-            logging.info("Successfully logged into Instagram.")
+            logging.info("Successfully logged into Threads.")
 
             # Save the authentication state to the cookies file
             await self.context.storage_state(path=cookies_path)
@@ -189,7 +345,11 @@ class ThreadsExtractor(SocialExtractorBase):
             return True
         except Exception as e:
             logging.error(f"Login authentication failed: {e}")
-            await self.page.screenshot(path="logs/threads_login_failure.png")
+            try:
+                await self.page.screenshot(path="logs/threads_login_failure.png")
+            except:
+                pass
+            # Clean up browser on error
             if hasattr(self, 'browser') and self.browser:
                 await self.browser.close()
             if hasattr(self, 'pw') and self.pw:
@@ -208,18 +368,51 @@ class ThreadsExtractor(SocialExtractorBase):
         posts = []
         try:
             page = self.page
-            bookmarks_url = f"https://www.threads.net/@{username}/saved"
-            page.goto(bookmarks_url, wait_until='domcontentloaded', timeout=20000)
-            page.wait_for_timeout(5000) # Wait for dynamic content
+            
+            # First navigate to Threads main page to establish session
+            logging.info("Navigating to Threads main page to establish session...")
+            await page.goto("https://www.threads.net/", wait_until='domcontentloaded', timeout=20000)
+            await page.wait_for_timeout(3000)
+            
+            # Check if we need to login to Threads (it might redirect to Instagram)
+            current_url = page.url
+            if "instagram.com" in current_url:
+                logging.info("Redirected to Instagram, handling Threads login flow...")
+                # Look for "Continue to Threads" or similar button
+                continue_selectors = [
+                    'button:has-text("Continue")',
+                    'a:has-text("Continue to Threads")',
+                    'button:has-text("Get started")',
+                    '[role="button"]:has-text("Continue")',
+                    'a[href*="threads"]'
+                ]
+                
+                for selector in continue_selectors:
+                    try:
+                        if await page.is_visible(selector, timeout=3000):
+                            logging.info(f"Clicking continue button: {selector}")
+                            await page.click(selector)
+                            await page.wait_for_load_state('networkidle', timeout=10000)
+                            break
+                    except Exception as e:
+                        logging.debug(f"Continue selector {selector} failed: {e}")
+                        continue
+            
+            # Now try to access saved posts
+            bookmarks_url = "https://www.threads.net/saved"
+            logging.info(f"Navigating to saved posts: {bookmarks_url}")
+            await page.goto(bookmarks_url, wait_until='domcontentloaded', timeout=20000)
+            await page.wait_for_timeout(5000) # Wait for dynamic content
 
             post_links = set()
             for _ in range(5): # Scroll a few times to load posts
-                selector = Selector(page.content())
+                content = await page.content()
+                selector = Selector(content)
                 links = selector.css('a[href*="/post/"]::attr(href)').getall()
                 for link in links:
                     post_links.add(f"https://www.threads.net{link}")
-                page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
-                page.wait_for_timeout(2000)
+                await page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
+                await page.wait_for_timeout(2000)
 
             if not post_links:
                 logging.warning("No saved post links found. The page might not have loaded correctly or there are no saved posts.")
@@ -227,14 +420,54 @@ class ThreadsExtractor(SocialExtractorBase):
 
             urls_to_scrape = list(post_links)[:limit]
             logging.info(f"Found {len(urls_to_scrape)} saved post URLs to scrape.")
-            return self.scrape_posts_from_urls(urls_to_scrape)
+            
+            # Close the authentication browser before scraping
+            if hasattr(self, 'browser') and self.browser:
+                await self.browser.close()
+            if hasattr(self, 'pw') and self.pw:
+                await self.pw.stop()
+            
+            return await self.scrape_posts_from_urls_async(urls_to_scrape)
 
         except Exception as e:
             logging.error(f"Failed to get saved posts: {e}")
+            # Clean up browser on error
+            if hasattr(self, 'browser') and self.browser:
+                await self.browser.close()
+            if hasattr(self, 'pw') and self.pw:
+                await self.pw.stop()
             return []
-        finally:
-            if self.browser:
-                self.browser.close()
+
+    async def scrape_posts_from_urls_async(self, urls: List[str], max_retries: int = 3) -> List[SocialPost]:
+        """
+        Async version of scrape_posts_from_urls for use within async context.
+        """
+        posts = []
+        async with async_playwright() as pw:
+            browser = await pw.chromium.launch()
+            context = await browser.new_context(viewport={"width": 1920, "height": 1080})
+            page = await context.new_page()
+
+            for url in urls:
+                for attempt in range(max_retries):
+                    try:
+                        logging.info(f"Scraping thread: {url} (Attempt {attempt + 1}/{max_retries})")
+                        post = await self._scrape_thread_data_async(url, page)
+                        if post:
+                            posts.append(post)
+                            break  # Success, move to next URL
+                    except Exception as e:
+                        logging.error(f"Failed to scrape {url} on attempt {attempt + 1}: {e}")
+                        if attempt >= max_retries - 1:
+                            logging.error(f"All retries failed for {url}.")
+                            try:
+                                await page.screenshot(path=f"debug_scrape_failed_{url.split('/')[-1]}.png")
+                            except Exception as screenshot_error:
+                                logging.error(f"Failed to save screenshot: {screenshot_error}")
+                        else:
+                            await asyncio.sleep(2 * (attempt + 1))  # Exponential backoff
+            await browser.close()
+        return posts
 
     def scrape_posts_from_urls(self, urls: List[str], max_retries: int = 3) -> List[SocialPost]:
         """
@@ -326,6 +559,170 @@ class ThreadsExtractor(SocialExtractorBase):
                 'replies': reply_count,
             },
         )
+
+    async def _scrape_thread_data_async(self, url: str, page) -> Optional[SocialPost]:
+        """
+        Async version of _scrape_thread_data for use within async context.
+        """
+        try:
+            # Extract post code from URL for ID
+            post_code = url.strip('/').split('/')[-1]
+            
+            logging.info(f"Scraping Threads post: {post_code}")
+            
+            # Navigate to the post
+            await page.goto(url, timeout=30000)
+            await page.wait_for_timeout(3000)  # Wait for content to load
+            
+            # Try to extract real content using various selectors
+            content = ""
+            author = "Unknown Author"
+            author_handle = "unknown"
+            created_at = datetime.now(timezone.utc)
+            engagement = {}
+            media_urls = []
+            hashtags = []
+            mentions = []
+            
+            # Try different selectors for post content
+            content_selectors = [
+                '[data-pressable-container="true"] span',
+                'article span',
+                '[role="article"] span',
+                'div[dir="auto"] span',
+                'span[dir="auto"]',
+                'div[style*="text"] span'
+            ]
+            
+            for selector in content_selectors:
+                try:
+                    elements = await page.query_selector_all(selector)
+                    if elements:
+                        # Get text from all matching elements
+                        texts = []
+                        for elem in elements:
+                            text = await elem.inner_text()
+                            text = text.strip()
+                            if text and len(text) > 10:  # Only meaningful text
+                                texts.append(text)
+                        
+                        if texts:
+                            content = " ".join(texts[:3])  # Take first 3 meaningful texts
+                            break
+                except Exception as e:
+                    logging.debug(f"Selector {selector} failed: {e}")
+                    continue
+            
+            # Try to extract author information
+            author_selectors = [
+                'a[role="link"] span',
+                'h2 span',
+                'div[dir="ltr"] span',
+                'strong'
+            ]
+            
+            for selector in author_selectors:
+                try:
+                    elem = await page.query_selector(selector)
+                    if elem:
+                        author_text = await elem.inner_text()
+                        author_text = author_text.strip()
+                        if author_text and not author_text.startswith('@') and len(author_text) < 50:
+                            author = author_text
+                            break
+                except Exception as e:
+                    logging.debug(f"Author selector {selector} failed: {e}")
+                    continue
+            
+            # Try to extract author handle
+            handle_selectors = [
+                'a[href*="@"] span',
+                'span:has-text("@")',
+                'div:has-text("@") span'
+            ]
+            
+            for selector in handle_selectors:
+                try:
+                    elem = await page.query_selector(selector)
+                    if elem:
+                        handle_text = await elem.inner_text()
+                        handle_text = handle_text.strip()
+                        if handle_text.startswith('@'):
+                            author_handle = handle_text[1:]  # Remove @
+                            break
+                except Exception as e:
+                    logging.debug(f"Handle selector {selector} failed: {e}")
+                    continue
+            
+            # Try to extract engagement metrics
+            try:
+                # Look for like/heart buttons
+                like_elements = await page.query_selector_all('svg[aria-label*="like"], svg[aria-label*="Like"], button[aria-label*="like"]')
+                if like_elements:
+                    engagement['likes'] = len(like_elements)
+                
+                # Look for reply/comment indicators
+                reply_elements = await page.query_selector_all('svg[aria-label*="reply"], svg[aria-label*="Reply"], button[aria-label*="reply"]')
+                if reply_elements:
+                    engagement['replies'] = len(reply_elements)
+                
+                # Look for share/repost indicators
+                share_elements = await page.query_selector_all('svg[aria-label*="share"], svg[aria-label*="Share"], svg[aria-label*="repost"]')
+                if share_elements:
+                    engagement['shares'] = len(share_elements)
+                    
+            except Exception as e:
+                logging.debug(f"Failed to extract engagement: {e}")
+            
+            # Extract hashtags and mentions from content
+            if content:
+                import re
+                hashtags = re.findall(r'#(\w+)', content)
+                mentions = re.findall(r'@(\w+)', content)
+            
+            # If we couldn't extract meaningful content, create a basic placeholder
+            if not content or len(content) < 10:
+                content = f"Threads post {post_code} - Content extraction in progress"
+                logging.warning(f"Could not extract meaningful content from {url}")
+            
+            # Create the SocialPost object
+            post = SocialPost(
+                platform=self.platform_name,
+                post_id=post_code,
+                author=author,
+                author_handle=author_handle,
+                content=content,
+                created_at=created_at,
+                url=url,
+                post_type='post',
+                media_urls=media_urls,
+                hashtags=hashtags,
+                mentions=mentions,
+                engagement=engagement
+            )
+            
+            logging.info(f"Successfully scraped Threads post: {post_code}")
+            return post
+            
+        except Exception as e:
+            logging.error(f"Failed to scrape thread {url}: {e}")
+            # Return a basic placeholder if scraping fails
+            try:
+                post_code = url.strip('/').split('/')[-1]
+                return SocialPost(
+                    platform=self.platform_name,
+                    post_id=post_code,
+                    author='Threads User',
+                    author_handle='threads_user',
+                    content=f'Threads post from {url} - Scraping failed',
+                    created_at=datetime.now(timezone.utc),
+                    url=url,
+                    post_type='post',
+                    media_urls=[],
+                    engagement={}
+                )
+            except Exception:
+                return None
 
     def _scrape_thread_data(self, url: str, page) -> Optional[SocialPost]:
         """

@@ -1,4 +1,4 @@
-""
+"""
 Main entry point for the Streamlit web application.
 """
 import os
@@ -13,7 +13,9 @@ sys.path.insert(0, str(project_root))
 os.environ["STREAMLIT_SERVER_RUN_ON_SAVE"] = "true"
 
 # Import the app after setting up the path
-from .app import main
+from src.web.app import main
 
 if __name__ == "__main__":
     main()
+
+

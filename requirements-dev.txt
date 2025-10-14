@@ -12,6 +12,7 @@ isort>=5.12.0
 flake8>=6.1.0
 mypy>=1.5.1
 pre-commit>=3.3.3
+ruff>=0.6.9
 
 # Type stubs
 types-python-dateutil>=2.8.19

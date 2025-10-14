@@ -4,327 +4,222 @@ Scrape State Manager
 Tracks scraping progress and save points to avoid rescraping the same content
 """
 
-import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Dict, Any, Optional
 
 from dotenv import load_dotenv
+from .scrape_state_database import ScrapeStateDatabase
 
 # Load environment variables
 load_dotenv()
 
+
 class ScrapeStateManager:
-    def __init__(self, db_path=None):
+    """Manages scraping state and progress tracking"""
+    
+    def __init__(self, db_path: str = None, main_db_path: str = None):
         if db_path is None:
             var_dir = Path("var")
             var_dir.mkdir(exist_ok=True)
             db_path = str(var_dir / "scrape_state.db")
-        self.db_path = db_path
-        self.init_database()
+        
+        self.db = ScrapeStateDatabase(db_path)
+        self.main_db_path = main_db_path or "prismind.db"
+        self.logger = self._setup_logger()
     
-    def init_database(self):
-        """Initialize the state database"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        # Create state table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS scrape_state (
-                platform TEXT PRIMARY KEY,
-                last_scraped_at TIMESTAMP,
-                last_post_id TEXT,
-                last_post_url TEXT,
-                total_posts_scraped INTEGER DEFAULT 0,
-                last_scrape_success BOOLEAN DEFAULT TRUE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        
-        # Create post tracking table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS scraped_posts (
-                post_id TEXT PRIMARY KEY,
-                platform TEXT,
-                url TEXT,
-                scraped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                title TEXT,
-                author TEXT
-            )
-        ''')
-        
-        conn.commit()
-        conn.close()
+    def _setup_logger(self):
+        """Setup logger for state manager"""
+        import logging
+        logger = logging.getLogger(__name__)
+        if not logger.handlers:
+            handler = logging.StreamHandler()
+            handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+            logger.addHandler(handler)
+            logger.setLevel(logging.INFO)
+        return logger
     
-    def get_last_scrape_info(self, platform):
+    def get_last_scrape_info(self, platform: str) -> Optional[Dict[str, Any]]:
         """Get last scrape information for a platform"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            SELECT last_scraped_at, last_post_id, last_post_url, total_posts_scraped, last_scrape_success
-            FROM scrape_state 
-            WHERE platform = ?
-        ''', (platform,))
-        
-        result = cursor.fetchone()
-        conn.close()
-        
-        if result:
-            return {
-                'last_scraped_at': result[0],
-                'last_post_id': result[1],
-                'last_post_url': result[2],
-                'total_posts_scraped': result[3],
-                'last_scrape_success': bool(result[4])
-            }
+        return self.db.get_last_scrape_info(platform)
+    
+    def update_scrape_state(self, platform: str, last_post_id: str = None, 
+                          last_post_url: str = None, posts_scraped: int = 0, 
+                          success: bool = True, after_parameter: str = None):
+        """Update scrape state for a platform"""
+        self.db.update_scrape_state(
+            platform, last_post_id, last_post_url, posts_scraped, success, after_parameter
+        )
+    
+    def is_post_scraped(self, post_id: str, platform: str) -> bool:
+        """Check if a post has been scraped"""
+        return self.db.is_post_scraped(post_id, platform)
+    
+    def is_post_already_scraped(self, post_id: str, platform: str) -> bool:
+        """Alias for is_post_scraped for backward compatibility"""
+        return self.is_post_scraped(post_id, platform)
+    
+    def mark_post_scraped(self, post_id: str, platform: str, url: str = None, 
+                         title: str = None, author: str = None):
+        """Mark a post as scraped"""
+        self.db.mark_post_scraped(post_id, platform, url, title, author)
+    
+    def get_scraped_posts_count(self, platform: str) -> int:
+        """Get count of scraped posts for a platform"""
+        return self.db.get_scraped_posts_count(platform)
+    
+    def get_scraping_stats(self) -> Dict[str, Any]:
+        """Get overall scraping statistics"""
+        return self.db.get_scraping_stats()
+    
+    def reset_platform_state(self, platform: str):
+        """Reset state for a specific platform"""
+        self.db.reset_platform_state(platform)
+    
+    def update_last_scrape_info(self, platform: str, scrape_info: Dict[str, Any]):
+        """Update last scrape information"""
+        self.db.update_last_scrape_info(platform, scrape_info)
+    
+    def get_after_parameter(self, platform: str) -> Optional[str]:
+        """Get the after parameter for a platform"""
+        return self.db.get_after_parameter(platform)
+    
+    def cleanup_old_records(self, days: int = 30) -> int:
+        """Clean up old records"""
+        return self.db.cleanup_old_records(days)
+    
+    def get_last_collected_post_id(self, platform: str) -> Optional[str]:
+        """Get the last collected post ID for a platform"""
+        info = self.get_last_scrape_info(platform)
+        if info and info.get('last_post_id'):
+            return self.normalize_post_id(info['last_post_id'], platform)
         return None
     
-    def update_scrape_state(self, platform, last_post_id=None, last_post_url=None, posts_scraped=0, success=True):
-        """Update scrape state for a platform"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
+    def normalize_post_id(self, post_id: str, platform: str) -> str:
+        """Normalize post ID for consistent comparison across databases"""
+        if not post_id:
+            return ""
         
-        now = datetime.now().isoformat()
+        post_id = str(post_id).strip()
         
-        cursor.execute('''
-            INSERT OR REPLACE INTO scrape_state 
-            (platform, last_scraped_at, last_post_id, last_post_url, total_posts_scraped, last_scrape_success, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (platform, now, last_post_id, last_post_url, posts_scraped, success, now))
+        # Remove platform prefix if present (e.g., "twitter_123" -> "123")
+        if post_id.startswith(f"{platform}_"):
+            post_id = post_id[len(platform) + 1:]
         
-        conn.commit()
-        conn.close()
+        # Handle Reddit fullnames (e.g., "t3_xyz" -> "xyz")
+        if platform == "reddit" and post_id.startswith("t3_"):
+            post_id = post_id[3:]
+        
+        return post_id
     
-    def is_post_already_scraped(self, post_id, platform):
-        """Check if a post has already been scraped"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
+    def sync_state_from_main_db(self, force: bool = False):
+        """Sync state database from main posts database"""
+        import sqlite3
         
-        cursor.execute('''
-            SELECT 1 FROM scraped_posts 
-            WHERE post_id = ? AND platform = ?
-        ''', (post_id, platform))
-        
-        result = cursor.fetchone()
-        conn.close()
-        
-        return result is not None
-    
-    def mark_post_scraped(self, post_id, platform, url=None, title=None, author=None):
-        """Mark a post as scraped"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            INSERT OR REPLACE INTO scraped_posts 
-            (post_id, platform, url, title, author, scraped_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (post_id, platform, url, title, author, datetime.now().isoformat()))
-        
-        conn.commit()
-        conn.close()
-    
-    def get_scraped_posts_count(self, platform):
-        """Get count of scraped posts for a platform"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            SELECT COUNT(*) FROM scraped_posts 
-            WHERE platform = ?
-        ''', (platform,))
-        
-        result = cursor.fetchone()
-        conn.close()
-        
-        return result[0] if result else 0
-    
-    def get_scraping_stats(self):
-        """Get overall scraping statistics"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        # Get platform stats
-        cursor.execute('''
-            SELECT platform, last_scraped_at, total_posts_scraped, last_scrape_success
-            FROM scrape_state
-            ORDER BY last_scraped_at DESC
-        ''')
-        
-        platform_stats = cursor.fetchall()
-        
-        # Get total scraped posts
-        cursor.execute('SELECT COUNT(*) FROM scraped_posts')
-        total_posts = cursor.fetchone()[0]
-        
-        # Get posts by platform
-        cursor.execute('''
-            SELECT platform, COUNT(*) 
-            FROM scraped_posts 
-            GROUP BY platform
-        ''')
-        
-        posts_by_platform = dict(cursor.fetchall())
-        
-        conn.close()
-        
-        return {
-            'platform_stats': [
-                {
-                    'platform': row[0],
-                    'last_scraped_at': row[1],
-                    'total_posts_scraped': row[2],
-                    'last_scrape_success': bool(row[3])
-                }
-                for row in platform_stats
-            ],
-            'total_posts': total_posts,
-            'posts_by_platform': posts_by_platform
-        }
-    
-    def reset_platform_state(self, platform):
-        """Reset scraping state for a platform"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        cursor.execute('DELETE FROM scrape_state WHERE platform = ?', (platform,))
-        cursor.execute('DELETE FROM scraped_posts WHERE platform = ?', (platform,))
-        
-        conn.commit()
-        conn.close()
-        
-        print(f"🔄 Reset scraping state for {platform}")
-    
-    def update_last_scrape_info(self, platform, scrape_info):
-        """
-        Update the last scrape information for a platform
-        
-        Args:
-            platform (str): The platform name (e.g., 'reddit', 'twitter')
-            scrape_info (dict): Dictionary containing scrape info with keys:
-                - last_post_id: ID of the last scraped post
-                - last_post_url: URL of the last scraped post
-                - after_parameter: Pagination cursor for next scrape
-                - total_posts_scraped: Total number of posts scraped
-        """
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
+            # Check if we need to sync (silent check)
+            if not force:
+                stats = self.get_scraping_stats()
+                if stats.get('total_posts', 0) > 0:
+                    return  # Already synced, skip silently
             
-            now = datetime.now().isoformat()
-            last_post_id = scrape_info.get('last_post_id')
-            last_post_url = scrape_info.get('last_post_url')
-            after_parameter = scrape_info.get('after_parameter')
-            total_posts_scraped = scrape_info.get('total_posts_scraped', 0)
+            # Syncing state from main database (silent operation)
             
-            # Update the scrape state
-            cursor.execute('''
-                INSERT OR REPLACE INTO scrape_state 
-                (platform, last_scraped_at, last_post_id, last_post_url, 
-                 total_posts_scraped, last_scrape_success, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                platform, 
-                now, 
-                last_post_id, 
-                last_post_url,
-                total_posts_scraped,
-                True,  # Assuming success if we're updating
-                now
-            ))
+            # Connect to main database
+            main_conn = sqlite3.connect(self.main_db_path)
+            main_cursor = main_conn.cursor()
             
-            # If we have an after_parameter, store it in the state
-            if after_parameter:
-                # Store the after parameter in a separate table
-                cursor.execute('''
-                    CREATE TABLE IF NOT EXISTS scrape_state_extra (
-                        platform TEXT,
-                        key TEXT,
-                        value TEXT,
-                        updated_at TIMESTAMP,
-                        PRIMARY KEY (platform, key)
+            # Get all posts from main database
+            main_cursor.execute("""
+                SELECT post_id, platform, url, title, author, created_at
+                FROM posts
+                WHERE post_id IS NOT NULL AND post_id != ''
+                ORDER BY created_at ASC
+            """)
+            
+            posts = main_cursor.fetchall()
+            main_conn.close()
+            
+            if not posts:
+                return  # No posts to sync
+            
+            # Track posts by platform for state updates
+            platform_posts = {}
+            
+            # Mark each post as scraped
+            synced_count = 0
+            for post_id, platform, url, title, author, created_at in posts:
+                try:
+                    # Normalize the post ID
+                    normalized_id = self.normalize_post_id(post_id, platform)
+                    
+                    # Mark post as scraped
+                    self.mark_post_scraped(
+                        post_id=normalized_id,
+                        platform=platform,
+                        url=url,
+                        title=title,
+                        author=author
                     )
-                ''')
+                    
+                    # Track for platform state update
+                    if platform not in platform_posts:
+                        platform_posts[platform] = []
+                    platform_posts[platform].append((normalized_id, url, created_at))
+                    
+                    synced_count += 1
+                except Exception:
+                    continue  # Skip failed posts silently
+            
+            # Update platform states with the most recent post from each
+            for platform, posts_list in platform_posts.items():
+                # Sort by created_at descending to get the most recent
+                posts_list.sort(key=lambda x: x[2] if x[2] else '', reverse=True)
+                last_post_id, last_post_url, _ = posts_list[0]
                 
-                cursor.execute('''
-                    INSERT OR REPLACE INTO scrape_state_extra 
-                    (platform, key, value, updated_at)
-                    VALUES (?, ?, ?, ?)
-                ''', (platform, 'after_parameter', after_parameter, now))
+                self.update_scrape_state(
+                    platform=platform,
+                    last_post_id=last_post_id,
+                    last_post_url=last_post_url,
+                    posts_scraped=len(posts_list),
+                    success=True
+                )
             
-            conn.commit()
-            return True
+            # Sync completed silently
             
-        except sqlite3.Error as e:
-            print(f"❌ Error updating scrape state: {e}")
-            return False
-            
-        finally:
-            if 'conn' in locals():
-                conn.close()
-
-    def get_after_parameter(self, platform):
-        """Get the after parameter for pagination"""
-        try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
-            # Check if the extra state table exists
-            cursor.execute('''
-                SELECT name FROM sqlite_master 
-                WHERE type='table' AND name='scrape_state_extra'
-            ''')
-            if not cursor.fetchone():
-                return None
-                
-            cursor.execute('''
-                SELECT value FROM scrape_state_extra
-                WHERE platform = ? AND key = 'after_parameter'
-            ''', (platform,))
-            
-            result = cursor.fetchone()
-            return result[0] if result else None
-            
-        except sqlite3.Error as e:
-            print(f"❌ Error getting after parameter: {e}")
-            return None
-            
-        finally:
-            if 'conn' in locals():
-                conn.close()
-
-    def cleanup_old_records(self, days=30):
-        """Clean up old scraped post records"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
+        except Exception:
+            # Sync failure is not critical - collection will continue
+            pass
+    
+    def validate_state(self, platform: str) -> Dict[str, Any]:
+        """Validate state for a platform and return status"""
+        info = self.get_last_scrape_info(platform)
+        scraped_count = self.get_scraped_posts_count(platform)
         
-        cutoff_date = (datetime.now() - timedelta(days=days)).isoformat()
+        validation = {
+            'platform': platform,
+            'has_state': info is not None,
+            'last_post_id': info.get('last_post_id') if info else None,
+            'last_post_url': info.get('last_post_url') if info else None,
+            'posts_scraped_count': scraped_count,
+            'last_scrape_time': info.get('last_scrape_time') if info else None,
+            'last_success': info.get('success') if info else None,
+        }
         
-        cursor.execute('''
-            DELETE FROM scraped_posts 
-            WHERE scraped_at < ?
-        ''', (cutoff_date,))
+        # Check for issues
+        issues = []
+        if not info:
+            issues.append("No state record found")
+        elif not info.get('last_post_id'):
+            issues.append("No last_post_id set")
         
-        deleted_count = cursor.rowcount
-        conn.commit()
-        conn.close()
+        if scraped_count == 0:
+            issues.append("No posts marked as scraped")
         
-        print(f"🧹 Cleaned up {deleted_count} old scraped post records")
-        return deleted_count
+        validation['issues'] = issues
+        validation['is_valid'] = len(issues) == 0
+        
+        return validation
 
 # Global instance
 state_manager = ScrapeStateManager()
-
-if __name__ == "__main__":
-    # Test the state manager
-    print("🧪 Testing Scrape State Manager")
-    print("=" * 40)
-    
-    # Test stats
-    stats = state_manager.get_scraping_stats()
-    print(f"📊 Total scraped posts: {stats['total_posts']}")
-    print(f"📊 Posts by platform: {stats['posts_by_platform']}")
-    
-    for platform_stat in stats['platform_stats']:
-        print(f"📊 {platform_stat['platform']}: {platform_stat['total_posts_scraped']} posts, last scraped: {platform_stat['last_scraped_at']}")

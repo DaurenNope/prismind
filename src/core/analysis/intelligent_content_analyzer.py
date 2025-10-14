@@ -12,8 +12,9 @@ It analyzes not just the original post, but also:
 Author: PrisMind AI System
 """
 
-import json
 import os
+import json
+import asyncio
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -83,18 +84,38 @@ class IntelligentContentAnalyzer:
             self.ai_services.append({'name': 'basic'})
             print("⚠️ No AI services available, using basic analysis")
     
-    def analyze_bookmark(self, post: SocialPost, include_comments: bool = True, include_media: bool = True) -> Dict[str, Any]:
+    async def analyze_content(self, content_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Comprehensive analysis of a bookmarked post
+        Analyze content data and provide insights.
+        
+        This method is a wrapper around analyze_bookmark for backward compatibility.
         
         Args:
-            post: The social media post to analyze
-            include_comments: Whether to analyze comments (Reddit only)
-            include_media: Whether to analyze media content
+            content_data: Dictionary containing content information
             
         Returns:
-            Complete analysis with insights, value scoring, and actionable items
+            Analysis results
         """
+        # Create a minimal SocialPost object from the content data
+        post = SocialPost(
+            post_id=content_data.get("post_id", ""),
+            platform=content_data.get("platform", "unknown"),
+            content=content_data.get("content", ""),
+            author=content_data.get("author", ""),
+            author_handle=content_data.get("author_handle", ""),
+            url=content_data.get("url", ""),
+            created_at=content_data.get("created_at", datetime.now().isoformat()),
+            hashtags=content_data.get("hashtags", []),
+            engagement=content_data.get("engagement", {}),
+            media_urls=content_data.get("media_urls", []),
+            post_type=content_data.get("post_type", "text")
+        )
+        
+        # Analyze the post using the existing analyze_bookmark method
+        return self.analyze_bookmark(post)
+    
+    def analyze_bookmark(self, post: SocialPost, include_comments: bool = True, include_media: bool = True) -> Dict[str, Any]:
+        """Analyze a bookmark with AI services, with timeout and error handling"""
         
         print(f"🔍 Analyzing {post.platform} post: {post.post_id}")
 
@@ -110,32 +131,78 @@ class IntelligentContentAnalyzer:
         }
         
         # 1. Core Content Analysis
-        core_analysis = self._analyze_core_content(post)
-        analysis.update(core_analysis)
+        try:
+            core_analysis = self._analyze_core_content(post)
+            analysis.update(core_analysis)
+        except Exception as e:
+            print(f"⚠️ Core content analysis failed: {e}")
+            # Use basic analysis as fallback
+            core_analysis = self._basic_analysis(post, self.sentiment_analyzer.polarity_scores(post.content or ""))
+            analysis.update(core_analysis)
         
         # 2. Comment Analysis (Reddit only)
         if include_comments and post.platform == 'reddit':
-            comment_analysis = self._analyze_comments(post)
-            analysis['comment_insights'] = comment_analysis
+            try:
+                comment_analysis = self._analyze_comments(post)
+                analysis['comment_insights'] = comment_analysis
+            except Exception as e:
+                print(f"⚠️ Comment analysis failed: {e}")
+                analysis['comment_insights'] = []
         
         # 3. Media Analysis
         if include_media and post.media_urls:
-            media_analysis = self._analyze_media_content(post.media_urls)
-            analysis['media_insights'] = media_analysis
+            try:
+                media_analysis = self._analyze_media_content(post.media_urls)
+                analysis['media_insights'] = media_analysis
+            except Exception as e:
+                print(f"⚠️ Media analysis failed: {e}")
+                analysis['media_insights'] = {
+                    'total_media': len(post.media_urls),
+                    'analyzed_media': 0,
+                    'insights': []
+                }
         
         # 4. Advanced Value Scoring
-        value_score = self._calculate_intelligent_value_score(analysis, post)
-        analysis['intelligent_value_score'] = value_score
+        try:
+            value_score = self._calculate_intelligent_value_score(analysis, post)
+            analysis['intelligent_value_score'] = value_score
+        except Exception as e:
+            print(f"⚠️ Value scoring failed: {e}")
+            analysis['intelligent_value_score'] = 0.0
         
-        # 5. Generate Actionable Insights
-        actionable_insights = self._generate_actionable_insights(analysis, post)
-        analysis['actionable_insights'] = actionable_insights
+        # 5. Content Quality Score
+        try:
+            content_quality_score = self._calculate_content_quality_score(analysis, post)
+            analysis['content_quality_score'] = content_quality_score
+        except Exception as e:
+            print(f"⚠️ Quality scoring failed: {e}")
+            analysis['content_quality_score'] = 0.0
         
-        # 6. Learning Recommendations
-        learning_recs = self._generate_learning_recommendations(analysis, post)
-        analysis['learning_recommendations'] = learning_recs
+        # 6. Rewrite Candidate Assessment
+        try:
+            is_rewrite_candidate = self._determine_rewrite_candidate(analysis, post, content_quality_score)
+            analysis['is_rewrite_candidate'] = is_rewrite_candidate
+        except Exception as e:
+            print(f"⚠️ Rewrite candidate assessment failed: {e}")
+            analysis['is_rewrite_candidate'] = False
         
-        print(f"✅ Analysis complete - Value Score: {value_score}/10")
+        # 7. Generate Actionable Insights
+        try:
+            actionable_insights = self._generate_actionable_insights(analysis, post)
+            analysis['actionable_insights'] = actionable_insights
+        except Exception as e:
+            print(f"⚠️ Actionable insights generation failed: {e}")
+            analysis['actionable_insights'] = []
+        
+        # 8. Learning Recommendations
+        try:
+            learning_recs = self._generate_learning_recommendations(analysis, post)
+            analysis['learning_recommendations'] = learning_recs
+        except Exception as e:
+            print(f"⚠️ Learning recommendations generation failed: {e}")
+            analysis['learning_recommendations'] = []
+        
+        print(f"✅ Analysis complete - Value Score: {analysis.get('intelligent_value_score', 0.0)}/10")
         return analysis
 
     def _deterministic_analysis(self, post: SocialPost, include_comments: bool, include_media: bool) -> Dict[str, Any]:
@@ -179,8 +246,25 @@ class IntelligentContentAnalyzer:
             'ai_service': 'deterministic'
         }
 
-        value_score = self._calculate_intelligent_value_score(analysis, post)
-        analysis['intelligent_value_score'] = value_score
+        try:
+            value_score = self._calculate_intelligent_value_score(analysis, post)
+            analysis['intelligent_value_score'] = value_score
+        except Exception:
+            analysis['intelligent_value_score'] = 5.0
+        
+        # Add content quality score and rewrite candidate assessment
+        try:
+            content_quality_score = self._calculate_content_quality_score(analysis, post)
+            analysis['content_quality_score'] = content_quality_score
+        except Exception:
+            analysis['content_quality_score'] = 5.0
+        
+        try:
+            is_rewrite_candidate = self._determine_rewrite_candidate(analysis, post, content_quality_score)
+            analysis['is_rewrite_candidate'] = is_rewrite_candidate
+        except Exception:
+            analysis['is_rewrite_candidate'] = False
+        
         if include_comments and post.platform == 'reddit':
             analysis['comment_insights'] = []
         if include_media and post.media_urls:
@@ -189,8 +273,14 @@ class IntelligentContentAnalyzer:
                 'analyzed_media': 0,
                 'insights': []
             }
-        analysis['actionable_insights'] = self._generate_actionable_insights(analysis, post)
-        analysis['learning_recommendations'] = self._generate_learning_recommendations(analysis, post)
+        try:
+            analysis['actionable_insights'] = self._generate_actionable_insights(analysis, post)
+        except Exception:
+            analysis['actionable_insights'] = []
+        try:
+            analysis['learning_recommendations'] = self._generate_learning_recommendations(analysis, post)
+        except Exception:
+            analysis['learning_recommendations'] = []
         return analysis
     
     def _analyze_core_content(self, post: SocialPost) -> Dict[str, Any]:
@@ -221,7 +311,23 @@ class IntelligentContentAnalyzer:
         return self._basic_analysis(post, sentiment_scores)
     
     def _create_analysis_prompt(self, post: SocialPost) -> str:
-        """Create a comprehensive analysis prompt"""
+        """Create a comprehensive analysis prompt with improved categorization"""
+        
+        # Define specific categories to avoid generic "Technology" or "General"
+        categories = [
+            "AI & Machine Learning",
+            "Development Tools", 
+            "Crypto & Web3",
+            "Business & Startups",
+            "Content Creation",
+            "Automation & Productivity",
+            "Coding & Software Engineering",
+            "Data & Analytics",
+            "Design & UX",
+            "News & Trends",
+            "Learning & Education",
+            "Other"
+        ]
         
         return f"""
         Analyze this social media bookmark with deep intelligence and provide actionable insights:
@@ -234,10 +340,19 @@ class IntelligentContentAnalyzer:
         CREATED: {post.created_at}
         URL: {post.url}
 
+        CATEGORIZATION RULES:
+        - Choose ONE category from: {', '.join(categories)}
+        - Be SPECIFIC - never use generic "Technology" or "General"
+        - If about AI/ML/LLMs → "AI & Machine Learning"
+        - If about coding tools/IDEs → "Development Tools"
+        - If about crypto/blockchain → "Crypto & Web3"
+        - If about productivity/automation tools → "Automation & Productivity"
+        - NEVER use platform name (Twitter, Reddit) as category or subcategory
+
         Provide a JSON response with this EXACT structure:
         {{
-          "category": "Primary category (Technology, AI, Business, Learning, etc.)",
-          "subcategory": "Specific subcategory",
+          "category": "ONE category from the list above",
+          "subcategory": "Specific subcategory (e.g., 'AI Agents', 'LLMs', 'Trading Bots')",
           "content_type": "Type (Tutorial, News, Discussion, Tool, Resource, etc.)",
           "topics": ["topic1", "topic2", "topic3"],
           "key_concepts": ["concept1", "concept2", "concept3"],
@@ -291,51 +406,71 @@ class IntelligentContentAnalyzer:
             elif content.startswith('```'):
                 content = content[3:-3]
             
-            analysis = json.loads(content)
-            analysis['sentiment_scores'] = sentiment_scores
-            analysis['ai_service'] = 'mistral'
-            
-            return analysis
+            try:
+                analysis = json.loads(content)
+                # Ensure analysis is a dictionary
+                if not isinstance(analysis, dict):
+                    raise ValueError(f"Analysis result is not a dictionary: {type(analysis)}")
+                    
+                analysis['sentiment_scores'] = sentiment_scores
+                analysis['ai_service'] = 'mistral'
+                
+                return analysis
+            except (json.JSONDecodeError, ValueError) as e:
+                raise Exception(f"Failed to parse Mistral response as JSON: {e}")
         else:
             raise Exception(f"Mistral API error: {response.status_code}")
 
     def _analyze_with_ollama(self, prompt: str, sentiment_scores: Dict, service: Dict) -> Dict[str, Any]:
-        """Analyze content using local Ollama (Qwen)"""
-        url = f"{service['url']}/api/generate"
-        payload = {
-            "model": service['model'],
-            "prompt": f"Analyze this content and respond with ONLY valid JSON:\n\n{prompt}",
-            "stream": False,
-            "options": {
-                "temperature": 0.1,
-                "num_predict": 800  # Increased for longer responses
-            }
-        }
-
-        resp = requests.post(url, json=payload, timeout=60)
-        if resp.status_code != 200:
-            raise Exception(f"Ollama API error: {resp.status_code}")
-        
-        data = resp.json()
-        content = data.get('response', '').strip()
-        
-        # Check if content is empty
-        if not content:
-            raise Exception("Ollama returned empty response")
-        
-        # Clean JSON fences if any
-        if content.startswith('```json'):
-            content = content[7:-3]
-        elif content.startswith('```'):
-            content = content[3:-3]
-
+        """Analyze content using Ollama"""
         try:
-            analysis = json.loads(content)
-        except json.JSONDecodeError:
-            raise Exception(f"Ollama returned invalid JSON: {content[:100]}...")
-        analysis['sentiment_scores'] = sentiment_scores
-        analysis['ai_service'] = f"ollama:{service['model']}"
-        return analysis
+            url = f"{service['url']}/api/chat"
+            payload = {
+                "model": service['model'],
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": "You are an expert content analyst providing deep insights."
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                "stream": False,
+                "temperature": 0.7,
+                "top_p": 0.9
+            }
+            
+            # Add timeout to prevent hanging
+            resp = requests.post(url, json=payload, timeout=30)  # 30 second timeout
+            resp.raise_for_status()
+            
+            result = resp.json()
+            content = result["message"]["content"]
+            
+            # Parse the JSON response
+            try:
+                parsed = json.loads(content)
+                parsed['sentiment_scores'] = sentiment_scores
+                parsed['ai_service'] = 'ollama'
+                return parsed
+            except json.JSONDecodeError:
+                # If parsing fails, create a basic structure
+                return {
+                    'summary': content[:500],
+                    'key_concepts': [],
+                    'category': 'General',
+                    'sentiment_scores': sentiment_scores,
+                    'ai_service': 'ollama'
+                }
+                
+        except requests.exceptions.Timeout:
+            print("⚠️ Ollama request timed out")
+            raise Exception("Ollama analysis timed out")
+        except Exception as e:
+            print(f"⚠️ Ollama analysis failed: {e}")
+            raise
     
     def _analyze_with_gemini(self, prompt: str, sentiment_scores: Dict, service: Dict) -> Dict[str, Any]:
         """Analyze content using Google Gemini"""
@@ -356,11 +491,18 @@ class IntelligentContentAnalyzer:
         elif content.startswith('```'):
             content = content[3:-3]
         
-        analysis = json.loads(content)
-        analysis['sentiment_scores'] = sentiment_scores
-        analysis['ai_service'] = 'gemini'
-        
-        return analysis
+        try:
+            analysis = json.loads(content)
+            # Ensure analysis is a dictionary
+            if not isinstance(analysis, dict):
+                raise ValueError(f"Analysis result is not a dictionary: {type(analysis)}")
+                
+            analysis['sentiment_scores'] = sentiment_scores
+            analysis['ai_service'] = 'gemini'
+            
+            return analysis
+        except (json.JSONDecodeError, ValueError) as e:
+            raise Exception(f"Failed to parse Gemini response as JSON: {e}")
     
     def _analyze_comments(self, post: SocialPost) -> Dict[str, Any]:
         """Analyze Reddit comments to extract valuable insights"""
@@ -483,6 +625,132 @@ class IntelligentContentAnalyzer:
         
         # Cap the score at 10
         return min(score, 10.0)
+    
+    def _calculate_content_quality_score(self, analysis: Dict, post: SocialPost) -> float:
+        """
+        Calculate content quality score for social media reposting (0-10 scale)
+        
+        Optimized for content that works well on social media:
+        - Clarity and readability
+        - Engagement potential
+        - Information value
+        - Shareability factors
+        """
+        
+        quality_score = 0.0
+        content = post.content.lower()
+        original_content = post.content
+        
+        # Base content value (0-3 points)
+        content_length = len(original_content)
+        if 50 <= content_length <= 280:  # Twitter-optimal length
+            quality_score += 3.0
+        elif 280 < content_length <= 500:  # Good for LinkedIn/Facebook
+            quality_score += 2.5
+        elif content_length > 500:  # Long-form content
+            quality_score += 2.0
+        elif content_length < 50:  # Too short
+            quality_score += 0.5
+        
+        # Engagement indicators (0-2 points)
+        engagement_words = ['tip', 'hack', 'secret', 'amazing', 'incredible', 'must-know', 
+                           'game-changer', 'breakthrough', 'revolutionary', 'insider']
+        engagement_count = sum(1 for word in engagement_words if word in content)
+        quality_score += min(engagement_count * 0.5, 2.0)
+        
+        # Technical value (0-2 points)
+        tech_value_terms = ['ai', 'ml', 'python', 'javascript', 'react', 'api', 'database',
+                           'algorithm', 'framework', 'tool', 'software', 'code', 'dev']
+        tech_count = sum(1 for term in tech_value_terms if term in content)
+        quality_score += min(tech_count * 0.3, 2.0)
+        
+        # Structure and readability (0-1.5 points)
+        if any(indicator in content for indicator in ['1.', '2.', '3.', '•', '-', 'first', 'second']):
+            quality_score += 1.0
+        if '\n' in original_content:  # Has line breaks
+            quality_score += 0.5
+        
+        # Social media friendly elements (0-1.5 points)
+        if any(indicator in content for indicator in ['#', '@', 'http', 'link']):
+            quality_score += 0.5
+        if any(indicator in content for indicator in ['?', '!', 'what', 'how', 'why']):
+            quality_score += 0.5  # Questions/exclamations engage better
+        if any(emoji_indicator in original_content for emoji_indicator in ['🚀', '💡', '🔥', '✨', '⚡']):
+            quality_score += 0.5
+        
+        # Actual engagement metrics (0-1 point)
+        if hasattr(post, 'engagement') and post.engagement:
+            likes = post.engagement.get('likes', 0) or post.engagement.get('score', 0) or post.engagement.get('favorite_count', 0)
+            comments = post.engagement.get('replies', 0) or post.engagement.get('num_comments', 0) or post.engagement.get('reply_count', 0)
+            
+            if likes > 100 or comments > 20:
+                quality_score += 1.0
+            elif likes > 20 or comments > 5:
+                quality_score += 0.5
+        
+        return min(quality_score, 10.0)
+    
+    def _determine_rewrite_candidate(self, analysis: Dict, post: SocialPost, quality_score: float) -> bool:
+        """
+        Determine if content is a good candidate for rewriting and reposting to social media
+        
+        A post is a rewrite candidate if:
+        - It has good information but poor social media presentation
+        - It's too long for optimal social media engagement
+        - It lacks engaging elements but has valuable content
+        - It has potential but needs optimization for social platforms
+        """
+        
+        content = post.content
+        content_lower = content.lower()
+        content_length = len(content)
+        
+        # High-quality content that's too long for social media
+        if quality_score >= 6.0 and content_length > 500:
+            return True
+        
+        # Good technical content but lacks social media engagement elements
+        tech_terms = ['ai', 'ml', 'python', 'javascript', 'react', 'api', 'database',
+                     'algorithm', 'framework', 'tool', 'software', 'code', 'dev']
+        has_tech_content = sum(1 for term in tech_terms if term in content_lower) >= 2
+        
+        engagement_elements = ['#', '@', '?', '!', '🚀', '💡', '🔥', '✨', '⚡']
+        has_engagement_elements = any(element in content for element in engagement_elements)
+        
+        if has_tech_content and not has_engagement_elements and quality_score >= 4.0:
+            return True
+        
+        # Content with good structure but could be more engaging
+        has_structure = any(indicator in content_lower for indicator in ['1.', '2.', '3.', '•', '-', 'first', 'second'])
+        engagement_words = ['tip', 'hack', 'secret', 'amazing', 'incredible', 'must-know', 
+                           'game-changer', 'breakthrough', 'revolutionary', 'insider']
+        has_engagement_words = any(word in content_lower for word in engagement_words)
+        
+        if has_structure and not has_engagement_words and quality_score >= 5.0:
+            return True
+        
+        # Long posts with good content but poor social media optimization
+        if content_length > 800 and quality_score >= 5.0:
+            return True
+        
+        # Posts with valuable information but suboptimal length for social media
+        if content_length < 50 and quality_score >= 6.0:  # Too short but high quality
+            return True
+        
+        # Posts with good engagement potential but missing key elements
+        if quality_score >= 7.0 and not has_engagement_elements:
+            return True
+        
+        # Check for posts that performed well but could be optimized further
+        if hasattr(post, 'engagement') and post.engagement:
+            likes = post.engagement.get('likes', 0) or post.engagement.get('score', 0) or post.engagement.get('favorite_count', 0)
+            comments = post.engagement.get('replies', 0) or post.engagement.get('num_comments', 0) or post.engagement.get('reply_count', 0)
+            
+            # Good engagement but could be better with optimization
+            if (likes > 50 or comments > 10) and quality_score >= 6.0 and not has_engagement_elements:
+                return True
+        
+        return False
     
     def _generate_actionable_insights(self, analysis: Dict, post: SocialPost) -> List[str]:
         """Generate specific actionable insights from the analysis"""

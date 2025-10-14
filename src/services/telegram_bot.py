@@ -1,785 +1,2266 @@
-#!/usr/bin/env python3
-"""
-Telegram Bot for Prismind News Digests
-Sends news digests and allows on-demand content requests
-"""
+"""Telegram bot integration for PrisMind."""
 
-import os
-import sys
+import asyncio
+import html
+import json
 import logging
-from datetime import datetime
-from typing import List, Dict, Any
+import math
+import os
+import time
+from typing import Dict, List, Optional, Set
+
 from dotenv import load_dotenv
 
-# Load environment variables
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.constants import ParseMode
+from telegram.ext import Application, ApplicationBuilder, CommandHandler, ContextTypes, CallbackQueryHandler
+from datetime import time as dt_time
+
+# Local imports
+from src.scrape_state_manager import state_manager
+from src.services.new_database_manager import get_database_manager
+from src.services.intelligence_automation import IntelligenceAutomation
+from src.services.digest_generator import DigestGenerator
+from src.core.discovery.deep_discovery import DeepDiscovery
+from src.services.telegram_formatting import format_posts_list, format_post_stats
+from src.services.health_monitor import get_health_monitor
+from src.services.content_rewriter import get_rewriter
+from src.agents.github_research_agent import get_github_agent
+from src.agents.librarian_book_agent import get_librarian
+from src.utils.duplicate_detector import get_duplicate_detector
+
+# Import agent command handlers
+from src.services.telegram_bot_agents_extension import (
+    research_repo_command,
+    get_book_command,
+    rewrite_command,
+    personas_command,
+    library_command
+)
+
+
+LOGGER = logging.getLogger(__name__)
+
 load_dotenv()
 
-# Add project root to path
-sys.path.append('.')
 
-from news_digest_generator import NewsDigestGenerator
+def _parse_allowed_user_ids(raw: str) -> Set[int]:
+    allowed: Set[int] = set()
+    if not raw:
+        return allowed
+    for part in raw.replace(";", ",").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            allowed.add(int(part))
+        except ValueError:
+            LOGGER.warning("Ignoring invalid TELEGRAM_ALLOWED_USER_IDS entry: %s", part)
+    return allowed
 
-try:
-    from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-    from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
-except ImportError:
-    print("❌ python-telegram-bot not installed. Install with: pip install python-telegram-bot")
-    sys.exit(1)
 
-# Configure logging
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
-logger = logging.getLogger(__name__)
+def _load_access_controls() -> tuple[Set[int], int]:
+    allowed_ids = _parse_allowed_user_ids(os.getenv("TELEGRAM_ALLOWED_USER_IDS", ""))
+    try:
+        cooldown = int(os.getenv("TELEGRAM_COMMAND_COOLDOWN", "15"))
+    except ValueError:
+        cooldown = 15
+    return allowed_ids, max(0, cooldown)
 
-class PrismindTelegramBot:
-    def __init__(self):
-        self.token = os.getenv('TELEGRAM_BOT_TOKEN')
-        self.allowed_users = os.getenv('TELEGRAM_ALLOWED_USERS', '').split(',')
-        self.chat_id = os.getenv('TELEGRAM_CHAT_ID')
-        self.webhook_url = os.getenv('TELEGRAM_WEBHOOK_URL')
-        self.listen_host = os.getenv('TELEGRAM_WEBHOOK_LISTEN', '0.0.0.0')
-        self.listen_port = int(os.getenv('PORT', os.getenv('TELEGRAM_WEBHOOK_PORT', '8443')))
-        self.news_generator = NewsDigestGenerator()
-        
-        # Temporarily allow all users for testing
-        self.allowed_users = []
-        
-        if not self.token:
-            raise ValueError("TELEGRAM_BOT_TOKEN not found in .env file")
+
+ALLOWED_USER_IDS, COMMAND_COOLDOWN_SECONDS = _load_access_controls()
+_USER_LAST_COMMAND: Dict[int, float] = {}
+VALID_PLATFORMS = {"twitter", "reddit", "threads"}
+
+# Global automation instance
+_automation_instance = None
+
+
+def _get_bot_token() -> str:
+    # Load variables from .env if present
+    load_dotenv()
+    token: Optional[str] = os.getenv("TELEGRAM_BOT_TOKEN")
+    if not token:
+        raise RuntimeError(
+            "TELEGRAM_BOT_TOKEN is not set. Export it in your environment or .env."
+        )
+    return token
+
+
+async def _ensure_access(update: Update) -> bool:
+    """Verify allowlist and cooldown constraints for a command."""
+    message = update.effective_message
+    user = update.effective_user
+
+    if ALLOWED_USER_IDS and (not user or user.id not in ALLOWED_USER_IDS):
+        if message:
+            await message.reply_text("❌ You are not authorized to use this bot.")
+        LOGGER.warning("Unauthorized access attempt from user %s", getattr(user, "id", "unknown"))
+        return False
+
+    if not user:
+        return True
+
+    if COMMAND_COOLDOWN_SECONDS > 0:
+        now = time.time()
+        last = _USER_LAST_COMMAND.get(user.id, 0.0)
+        remaining = COMMAND_COOLDOWN_SECONDS - (now - last)
+        if remaining > 0:
+            if message:
+                await message.reply_text(
+                    f"⏳ Slow down — try again in {int(math.ceil(remaining))}s."
+                )
+            return False
+        _USER_LAST_COMMAND[user.id] = now
+
+    return True
+
+
+async def _cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _ensure_access(update):
+        return
+
+    # Modern welcome message with emojis
+    msg = (
+        "╔═══════════════════════════╗\n"
+        "║   🧠 <b>PrisMind AI</b>   ║\n"
+        "╚═══════════════════════════╝\n\n"
+        "✨ <b>Your Autonomous Intelligence Companion</b>\n\n"
+        "🎯 <b>Quick Start:</b>\n"
+        "Tap a button below to begin, or use commands\n\n"
+        "💡 <b>What I do:</b>\n"
+        "• 📥 Collect your bookmarks\n"
+        "• 🤖 Analyze with AI\n"
+        "• 🔬 Research topics automatically\n"
+        "• 📚 Curate personalized content\n"
+        "• 🌐 Discover related resources\n\n"
+        "Type /help for all commands"
+    )
     
-    async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /start command"""
-        user_id = str(update.effective_user.id)
+    # Create inline keyboard with main actions
+    keyboard = [
+        [
+            InlineKeyboardButton("📥 Collect", callback_data="action_collect"),
+            InlineKeyboardButton("📊 Status", callback_data="action_status")
+        ],
+        [
+            InlineKeyboardButton("🔬 Research", callback_data="action_research"),
+            InlineKeyboardButton("📚 Curate", callback_data="action_curate")
+        ],
+        [
+            InlineKeyboardButton("⭐ Recommend", callback_data="action_recommend"),
+            InlineKeyboardButton("📖 Latest", callback_data="action_latest")
+        ],
+        [
+            InlineKeyboardButton("❓ Help", callback_data="action_help"),
+            InlineKeyboardButton("⚙️ Settings", callback_data="action_env")
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text(msg, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
+
+
+async def _cmd_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show and manage profiles"""
+    if not await _ensure_access(update):
+        return
+    
+    try:
+        from src.core.discovery.profile_manager import ProfileManager
         
-        if self.allowed_users and user_id not in self.allowed_users:
-            await update.message.reply_text("❌ You are not authorized to use this bot.")
+        manager = ProfileManager()
+        
+        # If argument provided, switch profile
+        if context.args and len(context.args) > 0:
+            profile_id = context.args[0].lower()
+            
+            if manager.set_active_profile(profile_id):
+                profile = manager.get_active_profile()
+                await update.message.reply_text(
+                    f"✅ Switched to profile: {profile.get('emoji', '📋')} <b>{profile.get('name')}</b>",
+                    parse_mode=ParseMode.HTML
+                )
+            else:
+                await update.message.reply_text(f"❌ Profile '{profile_id}' not found")
             return
         
-        welcome_message = """
-🤖 **Welcome to Prismind News Bot!**
-
-I'm your AI assistant that curates the best content from your bookmarks.
-
-**Quick Actions:**
-        """
+        # Show current profile and list all
+        active = manager.get_active_profile()
+        all_profiles = manager.list_profiles()
         
-        # Create inline keyboard with buttons
-        keyboard = [
-            [
-                InlineKeyboardButton("📰 Daily Digest", callback_data="daily"),
-                InlineKeyboardButton("📊 Weekly Report", callback_data="weekly")
-            ],
-            [
-                InlineKeyboardButton("🔥 Top Posts", callback_data="top"),
-                InlineKeyboardButton("🔍 Search", callback_data="search")
-            ],
-            [
-                InlineKeyboardButton("🤖 AI News", callback_data="ai"),
-                InlineKeyboardButton("💻 Tech News", callback_data="tech")
-            ],
-            [
-                InlineKeyboardButton("📚 Help", callback_data="help")
-            ]
+        lines = [
+            "━━━━━━━━━━━━━━━━━━━━━━━━",
+            "👤 <b>YOUR PROFILES</b>",
+            "━━━━━━━━━━━━━━━━━━━━━━━━\n",
+            f"<b>Active:</b> {active.get('emoji', '📋')} {active.get('name')}\n",
+            "<b>Available Profiles:</b>"
         ]
         
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        for p in all_profiles:
+            active_mark = "✅" if p['id'] == active.get('id') else "  "
+            lines.append(
+                f"{active_mark} {p['emoji']} <b>{p['name']}</b> ({p['topic_count']} topics)"
+            )
+        
+        lines.append(
+            f"\n━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"💡 Switch: /profile [id]\n"
+            f"📊 Details: /profile_info [id]"
+        )
+        
+        await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
+        
+    except Exception as e:
+        await update.message.reply_text(f"Error: {e}")
+
+
+async def _cmd_topics(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show tracked topics for current profile"""
+    if not await _ensure_access(update):
+        return
+    
+    try:
+        from src.core.discovery.profile_manager import ProfileManager
+        
+        manager = ProfileManager()
+        summary = manager.get_summary()
+        
+        await update.message.reply_text(summary, parse_mode=ParseMode.HTML)
+        
+    except Exception as e:
+        await update.message.reply_text(f"Error showing topics: {e}")
+
+
+async def _cmd_discover_new(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """COMPREHENSIVE intelligence gathering from all sources"""
+    if not await _ensure_access(update):
+        return
+    
+    try:
+        from src.core.discovery.comprehensive_discovery import ComprehensiveDiscovery
+        
+        progress_msg = await update.message.reply_text(
+            "🚀 <b>COMPREHENSIVE DISCOVERY STARTED</b>\n\n"
+            "Searching across:\n"
+            "• GitHub trending repositories\n"
+            "• Reddit (10+ subreddits)\n"
+            "• RSS feeds (tech news)\n"
+            "• Research analysis\n"
+            "• AI curation\n\n"
+            "⏳ This may take 1-2 minutes...",
+            parse_mode=ParseMode.HTML
+        )
+        
+        # Run comprehensive discovery
+        discovery = ComprehensiveDiscovery()
+        report = await discovery.comprehensive_discovery(max_per_source=30)
+        
+        # Save discovered posts to database with source='discovered'
+        discovered = report.get("discovered_posts", [])
+        try:
+            db = get_database_manager()
+            saved_count = 0
+            
+            for item in discovered[:30]:  # Save top 30
+                # Handle both dict and object
+                post = item.get("post") if isinstance(item, dict) else item
+                if post and hasattr(post, 'post_id'):
+                    # Check if already exists
+                    existing = db.get_post_by_id(post.post_id)
+                    if not existing:
+                        # Mark as discovered content
+                        if hasattr(post, 'metadata'):
+                            if isinstance(post.metadata, dict):
+                                post.metadata['source'] = 'discovered'
+                            else:
+                                post.metadata = {'source': 'discovered'}
+                        
+                        db.add_post(post)
+                        saved_count += 1
+            
+            if saved_count > 0:
+                print(f"   💾 Saved {saved_count} discovered posts to database")
+        except Exception as e:
+            print(f"   ⚠️ Failed to save to database: {e}")
+        
+        # Build comprehensive report
+        curated = report.get("curated", {})
+        research = report.get("research", {})
+        sources = report.get("sources", {})
+        
+        lines = [
+            "╔═══════════════════════════╗",
+            "║ 🎯 <b>INTELLIGENCE REPORT</b> ║",
+            "╚═══════════════════════════╝\n",
+            f"📊 <b>Discovery Stats:</b>",
+            f"   Total found: {report.get('total_discovered', 0)}",
+            f"   High-quality: {report.get('high_quality', 0)}\n",
+            f"📦 <b>Sources:</b>"
+        ]
+        
+        for source, count in sources.items():
+            lines.append(f"   {source.title()}: {count}")
+        
+        lines.append(f"\n📚 <b>Curated Collections:</b>")
+        lines.append(f"   🔥 Must-read: {len(curated.get('must_read', []))}")
+        lines.append(f"   ⭐ Interesting: {len(curated.get('interesting', []))}")
+        
+        # Show trending topics
+        if 'trending_topics' in research:
+            lines.append(f"\n🔥 <b>Trending Topics:</b>")
+            for topic_name, data in research['trending_topics'][:3]:
+                lines.append(f"   • {topic_name}: {data['count']} mentions")
+        
+        # Store discovered posts temporarily for viewing
+        import json
+        context.user_data['discovered_posts'] = [
+            {
+                'post_id': item['post'].post_id,
+                'platform': item['post'].platform,
+                'author': item['post'].author,
+                'content': item['post'].content,
+                'url': item['post'].url,
+                'quality': item.get('quality_score', 0),
+                'topics': [t['topic_name'] for t in item.get('topics', [])[:2]]
+            }
+            for item in discovered[:20]  # Store top 20
+        ]
+        
+        # Show top 5 must-reads with buttons
+        lines.append(f"\n\n🔥 <b>TOP MUST-READS:</b>\n")
+        
+        keyboard_buttons = []
+        
+        for i, item in enumerate(curated.get('must_read', [])[:5], 1):
+            post = item["post"]
+            quality = item.get("quality_score", 0)
+            topics = item.get("topics", [])
+            ai_summary = item.get("ai_summary", "")
+            
+            topic_names = ", ".join([t["topic_name"] for t in topics[:2]])
+            
+            # Use AI summary if available, otherwise content preview
+            if ai_summary and len(ai_summary) > 20:
+                display = ai_summary
+            else:
+                display = post.content[:200].replace("\n", " ")
+                if len(post.content) > 200:
+                    display += "..."
+            
+            lines.append(
+                f"{i}. [{post.platform.upper()}] <b>{html.escape(post.author)}</b>\n"
+                f"   💡 {html.escape(display)}\n"
+                f"   📊 {quality:.2f} | 🎯 {topic_names}\n"
+            )
+            
+            # Add button to view full post
+            keyboard_buttons.append([
+                InlineKeyboardButton(f"📖 Read #{i}", callback_data=f"read_discovered_{i-1}"),
+                InlineKeyboardButton(f"🔗 Open", url=post.url) if post.url else None
+            ])
+        
+        # Filter out None buttons
+        keyboard_buttons = [[btn for btn in row if btn] for row in keyboard_buttons]
+        
+        # Show stats
+        stats = report.get("stats", {})
+        lines.append(
+            f"\n━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📈 Today: {stats.get('discovered_today', 0)}/{stats.get('max_daily', 50)}\n"
+            f"💡 Use /analyze to process all discoveries"
+        )
+        
+        await progress_msg.edit_text("\n".join(lines), parse_mode=ParseMode.HTML)
+        
+    except Exception as e:
+        LOGGER.exception("Active discovery failed")
+        await update.message.reply_text(f"Discovery error: {e}")
+
+
+async def _cmd_discover(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Run discovery on existing bookmarked posts"""
+    if not await _ensure_access(update):
+        return
+    
+    try:
+        from src.core.discovery.discovery_engine import DiscoveryEngine
+        from src.services.new_database_manager import get_database_manager
+        
+        await update.message.reply_text("🔍 Running autonomous discovery...")
+        
+        # Get recent posts
+        db = get_database_manager()
+        posts_data = db.get_posts(limit=100)
+        
+        # Convert to SocialPost objects
+        from src.core.extraction.social_extractor_base import SocialPost
+        from datetime import datetime
+        
+        posts = []
+        for p in posts_data:
+            try:
+                posts.append(SocialPost(
+                    post_id=p.get("id") or p.get("post_id"),
+                    platform=p.get("platform", "unknown"),
+                    author=p.get("author", "Unknown"),
+                    author_handle=p.get("author", "Unknown"),
+                    content=p.get("content", ""),
+                    url=p.get("url", ""),
+                    created_at=datetime.fromisoformat(p["created_at"]) if p.get("created_at") else datetime.now(),
+                    post_type=p.get("post_type", "post")
+                ))
+            except:
+                continue
+        
+        # Run discovery
+        engine = DiscoveryEngine()
+        
+        # Get value scores if available
+        value_scores = {p.get("id"): p.get("value_score", 0) for p in posts_data if p.get("value_score")}
+        
+        discovered = engine.discover_from_posts(posts, value_scores)
+        
+        # Show results
+        lines = [
+            "━━━━━━━━━━━━━━━━━━━━━━━━",
+            "✨ <b>DISCOVERY RESULTS</b>",
+            "━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        ]
+        
+        if discovered:
+            lines.append(f"Found <b>{len(discovered)}</b> high-quality posts:\n")
+            
+            for i, item in enumerate(discovered[:5], 1):
+                post = item["post"]
+                topics = item["topics"]
+                quality = item.get("quality_score", 0)
+                
+                topic_names = ", ".join([t["topic_name"] for t in topics[:2]])
+                content_preview = post.content[:80].replace("\n", " ")
+                
+                lines.append(
+                    f"{i}. {post.author}\n"
+                    f"   {content_preview}...\n"
+                    f"   📊 Quality: {quality:.2f} | 🎯 {topic_names}\n"
+                )
+            
+            if len(discovered) > 5:
+                lines.append(f"\n...and {len(discovered) - 5} more\n")
+        else:
+            lines.append("No high-quality posts found in recent content.")
+        
+        # Show stats
+        stats = engine.get_discovery_stats()
+        lines.append(
+            f"\n━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📈 Today: {stats['discovered_today']}/{stats['max_daily']}\n"
+            f"🎯 Remaining: {stats['remaining']}"
+        )
+        
+        await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
+        
+    except Exception as e:
+        LOGGER.exception("Discovery failed")
+        await update.message.reply_text(f"Discovery error: {e}")
+
+
+async def _cmd_automate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Control autonomous automation"""
+    if not await _ensure_access(update):
+        return
+    
+    global _automation_instance
+    
+    args = context.args or []
+    if not args:
+        await update.message.reply_text(
+            "🤖 <b>Automation Control</b>\n\n"
+            "Usage:\n"
+            "/automate start - Start autonomous scheduler\n"
+            "/automate stop - Stop scheduler\n"
+            "/automate status - Show status\n"
+            "/automate run [profile] - Run discovery now\n\n"
+            "Schedule:\n"
+            "• 6 AM: Work profile\n"
+            "• 10 AM: Startup profile\n"
+            "• 2 PM: Learning profile\n"
+            "• 6 PM: Trends profile\n"
+            "• 10 PM: Work prep",
+            parse_mode=ParseMode.HTML
+        )
+        return
+    
+    command = args[0].lower()
+    
+    if command == "start":
+        if _automation_instance and _automation_instance.scheduler.running:
+            await update.message.reply_text("✅ Scheduler already running!")
+            return
+        
+        _automation_instance = IntelligenceAutomation()
+        _automation_instance.start(mode="rotation")
         
         await update.message.reply_text(
-            welcome_message, 
-            parse_mode='Markdown',
-            reply_markup=reply_markup
+            "🚀 <b>Autonomous Scheduler Started!</b>\n\n"
+            "Discovery will run automatically:\n"
+            "• Every 4 hours\n"
+            "• Rotating through profiles\n"
+            "• Saving discoveries to database\n\n"
+            "Use /scheduler_status to monitor",
+            parse_mode=ParseMode.HTML
         )
     
-    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /help command"""
-        help_text = """
-📚 **Prismind News Bot Help**
-
-**Commands:**
-• `/daily` - Today's news digest
-• `/weekly` - This week's news digest  
-• `/tech` - Technology news
-• `/ai` - AI-related news
-• `/business` - Business news
-• `/top` - Top posts by value score
-• `/help` - Show this help
-
-**🔍 Natural Language Search Examples:**
-• "find me data about tensor charts"
-• "show me AI news from last week"
-• "what's new in machine learning?"
-• "find posts about cryptocurrency"
-• "show me the best tech posts"
-• "find content about Python programming"
-• "what are the top posts about blockchain?"
-
-**How it works:**
-1. Your bookmarked posts are analyzed by AI
-2. Content is categorized and scored
-3. I format it into readable news articles
-4. You get curated digests on demand
-5. Smart search finds relevant content
-
-**Value Scores:**
-⭐ 8-10: Must-read content
-⭐ 6-7: Worth checking out
-⭐ 4-5: Interesting but not urgent
-⭐ 1-3: Basic information
-        """
-        
-        await update.message.reply_text(help_text, parse_mode='Markdown')
-    
-    async def chat_id_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /id command - return chat and user IDs"""
-        try:
-            chat_id = update.effective_chat.id if update.effective_chat else None
-            user_id = update.effective_user.id if update.effective_user else None
-            await update.message.reply_text(f"Chat ID: {chat_id}\nYour User ID: {user_id}")
-        except Exception:
-            await update.message.reply_text("❌ Could not retrieve IDs here. Try DMing @userinfobot.")
-    
-    def search_posts(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
-        """Search posts using natural language query"""
-        try:
-            # Get all posts
-            all_posts = self.news_generator.db.get_posts(limit=1000)
-            
-            # Convert query to lowercase for matching
-            query_lower = query.lower()
-            
-            # Define search patterns
-            search_patterns = {
-                'tensor': ['tensor', 'tensorflow', 'pytorch', 'machine learning', 'ml', 'ai'],
-                'charts': ['chart', 'graph', 'visualization', 'plot', 'data viz'],
-                'crypto': ['crypto', 'cryptocurrency', 'bitcoin', 'ethereum', 'blockchain'],
-                'ai': ['ai', 'artificial intelligence', 'machine learning', 'ml', 'neural'],
-                'python': ['python', 'programming', 'code', 'developer'],
-                'tech': ['tech', 'technology', 'software', 'startup'],
-                'business': ['business', 'startup', 'entrepreneur', 'company'],
-                'last week': ['recent', 'new', 'latest'],
-                'best': ['top', 'best', 'high value', 'high score']
-            }
-            
-            # Find matching posts
-            matching_posts = []
-            
-            for post in all_posts:
-                title = (post.get('title') or '').lower()
-                content = (post.get('content') or '').lower()
-                ai_summary = (post.get('ai_summary') or '').lower()
-                category = (post.get('category') or '').lower()
-                
-                # Check if query matches any part of the post
-                score = 0
-                
-                # Direct keyword matching
-                if query_lower in title:
-                    score += 10
-                if query_lower in content:
-                    score += 5
-                if query_lower in ai_summary:
-                    score += 8
-                if query_lower in category:
-                    score += 7
-                
-                # Pattern matching
-                for pattern_key, pattern_words in search_patterns.items():
-                    if pattern_key in query_lower:
-                        for word in pattern_words:
-                            if word in title or word in content or word in ai_summary:
-                                score += 3
-                
-                # Time-based filtering
-                if 'last week' in query_lower or 'recent' in query_lower:
-                    created_at = post.get('created_at')
-                    if created_at:
-                        try:
-                            if isinstance(created_at, str):
-                                created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
-                            if (datetime.now() - created_at).days <= 7:
-                                score += 2
-                        except:
-                            pass
-                
-                # Value score boosting
-                if 'best' in query_lower or 'top' in query_lower:
-                    value_score = post.get('value_score', 0) or 0
-                    score += value_score * 0.5
-                
-                if score > 0:
-                    matching_posts.append((post, score))
-            
-            # Sort by relevance score
-            matching_posts.sort(key=lambda x: x[1], reverse=True)
-            
-            # Return top results
-            return [post for post, score in matching_posts[:limit]]
-            
-        except Exception as e:
-            logger.error(f"Error searching posts: {e}")
-            return []
-    
-    async def button_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle button callbacks"""
-        query = update.callback_query
-        await query.answer()
-        
-        user_id = str(update.effective_user.id)
-        if self.allowed_users and user_id not in self.allowed_users:
-            await query.edit_message_text("❌ You are not authorized to use this bot.")
+    elif command == "stop":
+        if not _automation_instance or not _automation_instance.scheduler.running:
+            await update.message.reply_text("⚠️ Scheduler not running")
             return
         
-        data = query.data
-        
-        try:
-            if data == "daily":
-                await query.edit_message_text("📰 Generating daily digest...")
-                digest = self.news_generator.generate_daily_digest()
-                # Get the actual posts for button generation
-                recent_posts = self.news_generator.get_recent_posts(days=1, limit=5)
-                await self.send_formatted_digest(query, digest, "Daily Digest", recent_posts)
-                
-            elif data == "weekly":
-                await query.edit_message_text("📊 Generating weekly report...")
-                digest = self.news_generator.generate_weekly_digest()
-                await self.send_formatted_digest(query, digest, "Weekly Report")
-                
-            elif data == "top":
-                await query.edit_message_text("🔥 Getting top posts...")
-                top_posts = self.news_generator.get_top_posts(limit=5)
-                await self.send_formatted_posts(query, top_posts, "Top Posts")
-                
-            elif data == "ai":
-                await query.edit_message_text("🤖 Getting AI news...")
-                digest = self.news_generator.generate_category_digest("AI")
-                await self.send_formatted_digest(query, digest, "AI News")
-                
-            elif data == "tech":
-                await query.edit_message_text("💻 Getting tech news...")
-                digest = self.news_generator.generate_category_digest("Technology")
-                await self.send_formatted_digest(query, digest, "Tech News")
-                
-            elif data == "search":
-                await query.edit_message_text(
-                    "🔍 **Search Your Bookmarks**\n\n"
-                    "Just type what you're looking for:\n"
-                    "• 'find me data about tensor charts'\n"
-                    "• 'show me AI news'\n"
-                    "• 'what's new in productivity?'\n"
-                    "• 'find posts about cryptocurrency'",
-                    parse_mode='Markdown'
-                )
-                
-            elif data == "help":
-                await self.show_help(query)
-                
-            elif data.startswith("read_post_"):
-                post_id = data.replace("read_post_", "")
-                await self.show_post_details(query, post_id)
-                
-            elif data == "back_to_menu":
-                await self.show_main_menu(query)
-                
-        except Exception as e:
-            logger.error(f"Error handling button callback: {e}")
-            await query.edit_message_text("❌ Error processing request. Please try again.")
+        _automation_instance.stop()
+        await update.message.reply_text("🛑 Scheduler stopped")
     
-    async def send_formatted_digest(self, query, digest: str, title: str, posts: List[Dict] = None):
-        """Send a formatted digest with post buttons"""
-        try:
-            # Create simple numbered buttons based on the digest content
-            keyboard = []
-            
-            # If we have posts data, use that for button count
-            if posts:
-                post_count = len(posts)
-                print(f"DEBUG: Using posts data, found {post_count} posts")
-            else:
-                # Count the number of posts in the digest (lines starting with 🔥, 💡, or 📝)
-                lines = digest.split('\n')
-                post_count = 0
-                for line in lines:
-                    # Look for lines that start with emoji and have a number (like "🔥 **1.**")
-                    if line.strip().startswith(('🔥', '💡', '📝')) and ('**' in line and any(char.isdigit() for char in line)):
-                        post_count += 1
-                        print(f"DEBUG: Found post line: {line.strip()}")
-                
-                print(f"DEBUG: Found {post_count} posts in digest")
-            
-            # Create buttons for each post
-            for i in range(1, min(post_count + 1, 6)):  # Max 5 buttons
-                keyboard.append([InlineKeyboardButton(f"📖 Read Post {i}", callback_data=f"read_post_{i}")])
-            
-            keyboard.append([InlineKeyboardButton("🔙 Back to Menu", callback_data="back_to_menu")])
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            print(f"DEBUG: Created {len(keyboard)-1} post buttons")
-            
-            await query.edit_message_text(
-                f"📰 **{title}**\n\n{digest}",
-                parse_mode='Markdown',
-                reply_markup=reply_markup
-            )
-            
-        except Exception as e:
-            logger.error(f"Error sending formatted digest: {e}")
-            print(f"DEBUG: Exception in send_formatted_digest: {e}")
-            # Fallback to simple format
-            keyboard = [[InlineKeyboardButton("🔙 Back to Menu", callback_data="back_to_menu")]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await query.edit_message_text(
-                f"📰 **{title}**\n\n{digest}",
-                parse_mode='Markdown',
-                reply_markup=reply_markup
-            )
+    elif command == "status":
+        await _cmd_scheduler_status(update, context)
     
-    async def send_formatted_posts(self, query, posts: List[Dict], title: str):
-        """Send formatted posts with individual buttons"""
-        if not posts:
-            await query.edit_message_text(
-                f"❌ No {title.lower()} found.",
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("🔙 Back to Menu", callback_data="back_to_menu")
-                ]])
-            )
-            return
+    elif command == "run":
+        profile_id = args[1] if len(args) > 1 else "work"
         
-        # Create main message with post list
-        message = f"🔥 **{title}**\n\n"
-        
-        keyboard = []
-        for i, post in enumerate(posts[:5], 1):
-            title_text = post.get('title', 'No title')[:40] + "..." if len(post.get('title', '')) > 40 else post.get('title', 'No title')
-            message += f"**{i}.** {title_text}\n"
-            keyboard.append([InlineKeyboardButton(f"📖 Read Post {i}", callback_data=f"read_post_{post.get('id')}")])
-        
-        keyboard.append([InlineKeyboardButton("🔙 Back to Menu", callback_data="back_to_menu")])
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await query.edit_message_text(message, parse_mode='Markdown', reply_markup=reply_markup)
-    
-    def _build_post_buttons(self, posts: List[Dict]) -> InlineKeyboardMarkup:
-        """Build inline keyboard with numbered Read Post buttons and Back button"""
-        keyboard: List[List[InlineKeyboardButton]] = []
-        post_count = min(len(posts or []), 5)
-        for i in range(1, post_count + 1):
-            keyboard.append([InlineKeyboardButton(f"📖 Read Post {i}", callback_data=f"read_post_{i}")])
-        keyboard.append([InlineKeyboardButton("🔙 Back to Menu", callback_data="back_to_menu")])
-        return InlineKeyboardMarkup(keyboard)
-    
-    async def show_help(self, query):
-        """Show help with buttons"""
-        help_text = """
-📚 **How to Use Prismind Bot**
-
-**Quick Actions:**
-• Use buttons for instant access
-• Type natural language queries
-• Get personalized digests
-
-**Examples:**
-• "find me data about tensor charts"
-• "show me AI news from last week"
-• "what's new in machine learning?"
-
-**Value Scores:**
-🔥 8-10: Must-read content
-💡 6-7: Worth checking out
-📝 4-5: Interesting but not urgent
-        """
-        
-        keyboard = [[InlineKeyboardButton("🔙 Back to Menu", callback_data="back_to_menu")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await query.edit_message_text(help_text, parse_mode='Markdown', reply_markup=reply_markup)
-    
-    async def show_post_details(self, query, post_id: str):
-        """Show detailed post information"""
-        try:
-            # Try to get post by ID, if that fails, get recent posts and find by index
-            try:
-                post = self.news_generator.db.get_post_by_id(post_id)
-            except:
-                # Fallback: get recent posts and find by index
-                recent_posts = self.news_generator.get_recent_posts(days=7, limit=10)
-                try:
-                    index = int(post_id) - 1
-                    if 0 <= index < len(recent_posts):
-                        post = recent_posts[index]
-                    else:
-                        post = None
-                except:
-                    post = None
-            
-            if not post:
-                await query.edit_message_text(
-                    "❌ Post not found.",
-                    reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton("🔙 Back to Menu", callback_data="back_to_menu")
-                    ]])
-                )
-                return
-            
-            # Format post details
-            title = post.get('title', 'No title')
-            content = post.get('content', 'No content')
-            ai_summary = post.get('ai_summary', '')
-            category = post.get('category', 'General')
-            value_score = post.get('value_score', 0)
-            author = post.get('author', 'Unknown')
-            url = post.get('url', '')
-            
-            # Use AI summary if available
-            summary = ai_summary if ai_summary else content[:300] + "..." if len(content) > 300 else content
-            
-            # Create detailed post view
-            post_text = f"""
-📰 **{title}**
-
-{summary}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-👤 **Author:** {author}
-🏷️ **Category:** {category}
-⭐ **Value Score:** {value_score}/10
-🔗 **Source:** [Read Full Post]({url})
-            """
-            
-            # Create keyboard with back button
-            keyboard = [
-                [InlineKeyboardButton("🔗 Open Original", url=url)],
-                [InlineKeyboardButton("🔙 Back to Menu", callback_data="back_to_menu")]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            await query.edit_message_text(
-                post_text,
-                parse_mode='Markdown',
-                reply_markup=reply_markup
-            )
-            
-        except Exception as e:
-            logger.error(f"Error showing post details: {e}")
-            await query.edit_message_text(
-                "❌ Error loading post details.",
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("🔙 Back to Menu", callback_data="back_to_menu")
-                ]])
-            )
-    
-    async def show_main_menu(self, query):
-        """Show main menu with buttons"""
-        welcome_message = """
-🤖 **Welcome to Prismind News Bot!**
-
-I'm your AI assistant that curates the best content from your bookmarks.
-
-**Quick Actions:**
-        """
-        
-        # Create inline keyboard with buttons
-        keyboard = [
-            [
-                InlineKeyboardButton("📰 Daily Digest", callback_data="daily"),
-                InlineKeyboardButton("📊 Weekly Report", callback_data="weekly")
-            ],
-            [
-                InlineKeyboardButton("🔥 Top Posts", callback_data="top"),
-                InlineKeyboardButton("🔍 Search", callback_data="search")
-            ],
-            [
-                InlineKeyboardButton("🤖 AI News", callback_data="ai"),
-                InlineKeyboardButton("💻 Tech News", callback_data="tech")
-            ],
-            [
-                InlineKeyboardButton("📚 Help", callback_data="help")
-            ]
-        ]
-        
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await query.edit_message_text(
-            welcome_message, 
-            parse_mode='Markdown',
-            reply_markup=reply_markup
+        msg = await update.message.reply_text(
+            f"🔄 Running discovery for {profile_id} profile..."
         )
-    
-    async def handle_search_query(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle natural language search queries"""
-        user_id = str(update.effective_user.id)
         
-        if self.allowed_users and user_id not in self.allowed_users:
-            await update.message.reply_text("❌ You are not authorized to use this bot.")
-            return
+        automation = IntelligenceAutomation()
+        result = await automation.scheduled_discovery(profile_id)
         
-        query = update.message.text.strip()
-        
-        # Skip if it's a command
-        if query.startswith('/'):
-            return
-        
-        await update.message.reply_text(f"🔍 Searching for: '{query}'...")
-        
-        try:
-            # Search for relevant posts
-            matching_posts = self.search_posts(query, limit=5)
-            
-            if not matching_posts:
-                await update.message.reply_text(
-                    f"❌ No posts found matching '{query}'.\n\n"
-                    "💡 Try different keywords or use commands like:\n"
-                    "• /daily - Today's digest\n"
-                    "• /tech - Technology news\n"
-                    "• /top - Top posts"
-                )
-                return
-            
-            # Format results
-            results = f"🔍 **Search Results for: '{query}'**\n\n"
-            results += f"📊 Found {len(matching_posts)} relevant posts:\n\n"
-            
-            for i, post in enumerate(matching_posts, 1):
-                title = post.get('title', 'No title')
-                ai_summary = post.get('ai_summary', '')
-                value_score = post.get('value_score', 0)
-                category = post.get('category', 'General')
-                url = post.get('url', '')
-                author = post.get('author', 'Unknown')
-                
-                # Use AI summary if available, otherwise use content
-                summary = ai_summary if ai_summary else post.get('content', '')[:150] + "..."
-                
-                results += f"**{i}.** {title}\n"
-                results += f"📝 {summary}\n"
-                results += f"⭐ {value_score}/10 | {category} | 👤 {author}\n"
-                results += f"🔗 [Read More]({url})\n\n"
-            
-            # Split long messages
-            if len(results) > 3000:
-                parts = self._split_message(results, 3000)
-                for i, part in enumerate(parts):
-                    if i == 0:
-                        await update.message.reply_text(part, parse_mode='Markdown')
-                    else:
-                        await update.message.reply_text(f"🔍 Search Results (Part {i+1})\n\n{part}", parse_mode='Markdown')
-            else:
-                await update.message.reply_text(results, parse_mode='Markdown')
-                
-        except Exception as e:
-            logger.error(f"Error handling search query: {e}")
-            await update.message.reply_text("❌ Error searching posts. Please try again.")
-    
-    async def daily_digest(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /daily command"""
-        user_id = str(update.effective_user.id)
-        
-        if self.allowed_users and user_id not in self.allowed_users:
-            await update.message.reply_text("❌ You are not authorized to use this bot.")
-            return
-        
-        await update.message.reply_text("📰 Generating daily digest...")
-        
-        try:
-            digest = self.news_generator.generate_daily_digest()
-            # Use recent posts to build buttons
-            recent_posts = self.news_generator.get_recent_posts(days=1, limit=5)
-            reply_markup = self._build_post_buttons(recent_posts)
-            await update.message.reply_text(digest, parse_mode='Markdown', reply_markup=reply_markup)
-                
-        except Exception as e:
-            logger.error(f"Error generating daily digest: {e}")
-            await update.message.reply_text("❌ Error generating daily digest. Please try again.")
-    
-    async def weekly_digest(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /weekly command"""
-        user_id = str(update.effective_user.id)
-        
-        if self.allowed_users and user_id not in self.allowed_users:
-            await update.message.reply_text("❌ You are not authorized to use this bot.")
-            return
-        
-        await update.message.reply_text("📰 Generating weekly digest...")
-        
-        try:
-            digest = self.news_generator.generate_weekly_digest()
-            recent_posts = self.news_generator.get_recent_posts(days=7, limit=5)
-            reply_markup = self._build_post_buttons(recent_posts)
-            await update.message.reply_text(digest, parse_mode='Markdown', reply_markup=reply_markup)
-                
-        except Exception as e:
-            logger.error(f"Error generating weekly digest: {e}")
-            await update.message.reply_text("❌ Error generating weekly digest. Please try again.")
-    
-    async def category_digest(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle category commands like /tech, /ai, etc."""
-        user_id = str(update.effective_user.id)
-        
-        if self.allowed_users and user_id not in self.allowed_users:
-            await update.message.reply_text("❌ You are not authorized to use this bot.")
-            return
-        
-        command = update.message.text.lower().strip('/')
-        category_map = {
-            'tech': 'Technology',
-            'ai': 'AI',
-            'business': 'Business',
-            'general': 'General'
-        }
-        
-        category = category_map.get(command, command.title())
-        
-        await update.message.reply_text(f"📰 Generating {category} digest...")
-        
-        try:
-            digest = self.news_generator.generate_category_digest(category)
-            category_posts = self.news_generator.get_posts_by_category(category, limit=5)
-            reply_markup = self._build_post_buttons(category_posts)
-            await update.message.reply_text(digest, parse_mode='Markdown', reply_markup=reply_markup)
-                
-        except Exception as e:
-            logger.error(f"Error generating {category} digest: {e}")
-            await update.message.reply_text(f"❌ Error generating {category} digest. Please try again.")
-    
-    async def top_posts(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /top command"""
-        user_id = str(update.effective_user.id)
-        
-        if self.allowed_users and user_id not in self.allowed_users:
-            await update.message.reply_text("❌ You are not authorized to use this bot.")
-            return
-        
-        await update.message.reply_text("🏆 Getting top posts...")
-        
-        try:
-            top_posts = self.news_generator.get_top_posts(limit=5)
-            if not top_posts:
-                await update.message.reply_text("❌ No posts found.")
-                return
-            # Build a short header and attach buttons to read posts
-            header = "🏆 **Top Posts by Value Score**\n\nHere are the highlights:"
-            reply_markup = self._build_post_buttons(top_posts)
-            await update.message.reply_text(header, parse_mode='Markdown', reply_markup=reply_markup)
-                
-        except Exception as e:
-            logger.error(f"Error getting top posts: {e}")
-            await update.message.reply_text("❌ Error getting top posts. Please try again.")
-    
-    def _split_message(self, message: str, max_length: int) -> list:
-        """Split a long message into parts"""
-        parts = []
-        current_part = ""
-        
-        lines = message.split('\n')
-        
-        for line in lines:
-            if len(current_part + line + '\n') <= max_length:
-                current_part += line + '\n'
-            else:
-                if current_part:
-                    parts.append(current_part.strip())
-                current_part = line + '\n'
-        
-        if current_part:
-            parts.append(current_part.strip())
-        
-        return parts
-    
-    async def send_daily_digest_to_chat(self):
-        """Send daily digest to configured chat"""
-        if not self.chat_id:
-            logger.warning("TELEGRAM_CHAT_ID not configured")
-            return
-        
-        try:
-            digest = self.news_generator.generate_daily_digest()
-            
-            # Create bot application
-            application = Application.builder().token(self.token).build()
-            
-            # Split long messages
-            if len(digest) > 4000:
-                parts = self._split_message(digest, 4000)
-                for i, part in enumerate(parts):
-                    if i == 0:
-                        await application.bot.send_message(
-                            chat_id=self.chat_id,
-                            text=part,
-                            parse_mode='Markdown'
-                        )
-                    else:
-                        await application.bot.send_message(
-                            chat_id=self.chat_id,
-                            text=f"📰 Daily Digest (Part {i+1})\n\n{part}",
-                            parse_mode='Markdown'
-                        )
-            else:
-                await application.bot.send_message(
-                    chat_id=self.chat_id,
-                    text=digest,
-                    parse_mode='Markdown'
-                )
-            
-            logger.info("Daily digest sent successfully")
-            
-        except Exception as e:
-            logger.error(f"Error sending daily digest: {e}")
-    
-    def run_bot(self):
-        """Run the Telegram bot"""
-        # Create application
-        application = Application.builder().token(self.token).build()
-        
-        # Add command handlers
-        application.add_handler(CommandHandler("start", self.start))
-        application.add_handler(CommandHandler("help", self.help_command))
-        application.add_handler(CommandHandler("id", self.chat_id_command))
-        application.add_handler(CommandHandler("daily", self.daily_digest))
-        application.add_handler(CommandHandler("weekly", self.weekly_digest))
-        application.add_handler(CommandHandler("top", self.top_posts))
-        
-        # Add category handlers
-        application.add_handler(CommandHandler("tech", self.category_digest))
-        application.add_handler(CommandHandler("ai", self.category_digest))
-        application.add_handler(CommandHandler("business", self.category_digest))
-        application.add_handler(CommandHandler("general", self.category_digest))
-        
-        # Add callback query handler for buttons
-        application.add_handler(CallbackQueryHandler(self.button_callback))
-        
-        # Add message handler for natural language search
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_search_query))
-        
-        # Start the bot
-        if self.webhook_url:
-            print("🤖 Starting Prismind Telegram Bot (webhook mode)...")
-            print(f"🌐 Webhook URL: {self.webhook_url}")
-            application.run_webhook(
-                listen=self.listen_host,
-                port=self.listen_port,
-                url_path=self.token,
-                webhook_url=f"{self.webhook_url}/{self.token}",
-                drop_pending_updates=True
+        if result["status"] == "success":
+            await msg.edit_text(
+                f"✅ <b>Discovery Complete</b>\n\n"
+                f"Profile: {result['profile']}\n"
+                f"Discovered: {result['discovered']}\n"
+                f"High-quality: {result['high_quality']}\n"
+                f"Saved: {result['saved']}\n"
+                f"Avg quality: {result['avg_quality']:.2f}",
+                parse_mode=ParseMode.HTML
             )
         else:
-            print("🤖 Starting Prismind Telegram Bot (polling mode)...")
-            print("📱 Bot is ready! Use /start to begin.")
-            print("🔍 You can now ask questions like 'find me data about tensor charts'")
-            application.run_polling(drop_pending_updates=True)
+            await msg.edit_text(f"❌ Error: {result['error']}")
 
-def main():
-    """Main function to run the bot"""
+
+async def _cmd_scheduler_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show scheduler status"""
+    if not await _ensure_access(update):
+        return
+    
+    global _automation_instance
+    
+    if not _automation_instance:
+        await update.message.reply_text(
+            "⚪ <b>Scheduler Status: Not Started</b>\n\n"
+            "Use /automate start to begin",
+            parse_mode=ParseMode.HTML
+        )
+        return
+    
+    status = _automation_instance.get_status()
+    metrics = status["metrics"]
+    jobs = status["scheduled_jobs"]
+    
+    lines = [
+        "🤖 <b>Scheduler Status</b>",
+        "━━━━━━━━━━━━━━━━━━━━━━━━\n",
+        f"Status: {'🟢 Running' if status['running'] else '🔴 Stopped'}",
+        f"Total runs: {metrics['total_runs']}",
+        f"Successful: {metrics['successful_runs']}",
+        f"Failed: {metrics['failed_runs']}",
+        f"Discoveries: {metrics['total_discoveries']}",
+        f"Avg quality: {metrics['avg_quality']:.2f}\n"
+    ]
+    
+    if metrics['last_run']:
+        lines.append(f"Last run: {metrics['last_run']}\n")
+    
+    if jobs:
+        lines.append("<b>Scheduled Jobs:</b>")
+        for job in jobs[:5]:
+            lines.append(f"• {job['name']}")
+            if job['next_run']:
+                lines.append(f"  Next: {job['next_run']}")
+    
+    await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
+
+
+async def _cmd_collections(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show thematic collections"""
+    if not await _ensure_access(update):
+        return
+    
+    msg = await update.message.reply_text("📚 Curating collections...")
+    
     try:
-        bot = PrismindTelegramBot()
-        bot.run_bot()
+        db = get_database_manager()
+        librarian = EnhancedLibrarianAgent(db)
+        
+        # Get recent posts
+        posts = db.get_posts(limit=100)
+        
+        # Convert to format librarian expects
+        post_items = [
+            {
+                "post": post,
+                "quality_score": post.quality_score if hasattr(post, 'quality_score') else 0.5,
+                "topics": []
+            }
+            for post in posts
+        ]
+        
+        # Curate
+        curated = await librarian.curate_content(post_items)
+        
+        lines = [
+            "📚 <b>THEMATIC COLLECTIONS</b>",
+            "━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        ]
+        
+        # Show collections
+        if curated["collections"]:
+            for name, items in curated["collections"].items():
+                emoji = {
+                    "ai_breakthroughs": "🧠",
+                    "startup_stories": "🚀",
+                    "dev_tools": "🛠️",
+                    "learning_resources": "📚",
+                    "industry_news": "📈"
+                }.get(name, "📦")
+                
+                display_name = name.replace("_", " ").title()
+                lines.append(f"{emoji} <b>{display_name}</b>: {len(items)} items")
+        else:
+            lines.append("No collections yet. Run /discover_new first!")
+        
+        lines.append(f"\n📊 <b>By Format:</b>")
+        for format_type, items in curated["by_format"].items():
+            lines.append(f"• {format_type}: {len(items)}")
+        
+        lines.append(f"\n🎯 <b>Curation Stats:</b>")
+        lines.append(f"Must-read: {len(curated['must_read'])}")
+        lines.append(f"Interesting: {len(curated['interesting'])}")
+        lines.append(f"Quick reads: {len(curated['quick_reads'])}")
+        lines.append(f"Deep dives: {len(curated['deep_dives'])}")
+        
+        await msg.edit_text("\n".join(lines), parse_mode=ParseMode.HTML)
+        
     except Exception as e:
-        print(f"❌ Error starting bot: {e}")
-        print("\n💡 Make sure to set up your .env file with:")
-        print("   TELEGRAM_BOT_TOKEN=your_bot_token")
-        print("   TELEGRAM_ALLOWED_USERS=user_id1,user_id2")
-        print("   TELEGRAM_CHAT_ID=your_chat_id")
+        await msg.edit_text(f"❌ Error: {e}")
+
+
+async def _cmd_reading_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Create or view reading lists"""
+    if not await _ensure_access(update):
+        return
+    
+    args = context.args or []
+    
+    if not args:
+        await update.message.reply_text(
+            "📖 <b>Reading Lists</b>\n\n"
+            "Usage:\n"
+            "/reading_list create [name] - Create new list\n"
+            "/reading_list show - Show all lists\n"
+            "/reading_list ai - AI & ML reading list\n"
+            "/reading_list startup - Startup reading list",
+            parse_mode=ParseMode.HTML
+        )
+        return
+    
+    command = args[0].lower()
+    
+    if command == "ai":
+        # Create AI reading list
+        msg = await update.message.reply_text("📚 Curating AI reading list...")
+        
+        db = get_database_manager()
+        librarian = EnhancedLibrarianAgent(db)
+        
+        # Get AI-related posts
+        posts = db.get_posts(limit=100)
+        ai_posts = [
+            {"post": p, "quality_score": 0.7}
+            for p in posts
+            if hasattr(p, 'content') and any(
+                word in p.content.lower()
+                for word in ['ai', 'machine learning', 'llm', 'gpt', 'claude', 'neural']
+            )
+        ]
+        
+        reading_list = await librarian.create_reading_list(
+            "AI & Machine Learning",
+            ai_posts[:20],
+            "Essential AI and ML content"
+        )
+        
+        await msg.edit_text(
+            f"📖 <b>Reading List Created</b>\n\n"
+            f"Name: {reading_list['name']}\n"
+            f"Items: {reading_list['progress']['total']}\n"
+            f"Status: Ready to read\n\n"
+            f"Use /latest to view items",
+            parse_mode=ParseMode.HTML
+        )
+    
+    else:
+        await update.message.reply_text("Feature coming soon!")
+
+
+async def _cmd_digest(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Generate thematic digest"""
+    if not await _ensure_access(update):
+        return
+    
+    args = context.args or []
+    theme = " ".join(args) if args else "This Week in Tech"
+    
+    msg = await update.message.reply_text(f"📬 Generating digest: {theme}...")
+    
+    try:
+        db = get_database_manager()
+        librarian = EnhancedLibrarianAgent(db)
+        
+        # Get recent posts
+        posts = db.get_posts(limit=50)
+        post_items = [
+            {
+                "post": post,
+                "quality_score": post.quality_score if hasattr(post, 'quality_score') else 0.5,
+                "topics": []
+            }
+            for post in posts
+        ]
+        
+        # Generate digest
+        digest = await librarian.create_thematic_digest(theme, post_items)
+        
+        # Send as text (might be long)
+        await msg.edit_text(
+            f"<pre>{digest}</pre>",
+            parse_mode=ParseMode.HTML
+        )
+        
+    except Exception as e:
+        await msg.edit_text(f"❌ Error: {e}")
+
+
+async def _cmd_morning_digest(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Generate and send morning digest"""
+    if not await _ensure_access(update):
+        return
+    
+    msg = await update.message.reply_text("☀️ Generating morning digest...")
+    
+    try:
+        digest_gen = DigestGenerator()
+        
+        # Get profile from args (optional)
+        profile = context.args[0] if context.args else None
+        
+        # Generate digest
+        digest = digest_gen.generate_morning_digest(profile)
+        
+        # Format for Telegram
+        telegram_text = digest_gen.format_for_telegram(digest)
+        
+        await msg.edit_text(
+            telegram_text,
+            parse_mode=ParseMode.HTML
+        )
+        
+    except Exception as e:
+        LOGGER.exception("Morning digest failed")
+        await msg.edit_text(f"❌ Error: {e}")
+
+
+async def _cmd_evening_summary(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Generate and send evening summary"""
+    if not await _ensure_access(update):
+        return
+    
+    msg = await update.message.reply_text("🌙 Generating evening summary...")
+    
+    try:
+        digest_gen = DigestGenerator()
+        
+        # Generate summary
+        summary = digest_gen.generate_evening_summary()
+        
+        # Format for Telegram
+        telegram_text = digest_gen.format_for_telegram(summary)
+        
+        await msg.edit_text(
+            telegram_text,
+            parse_mode=ParseMode.HTML
+        )
+        
+    except Exception as e:
+        LOGGER.exception("Evening summary failed")
+        await msg.edit_text(f"❌ Error: {e}")
+
+
+async def _cmd_health(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show system health status"""
+    if not await _ensure_access(update):
+        return
+    
+    msg = await update.message.reply_text("🏥 Checking system health...")
+    
+    try:
+        monitor = get_health_monitor()
+        health = monitor.get_system_health()
+        
+        # Format for Telegram
+        lines = [
+            "🏥 <b>SYSTEM HEALTH</b>",
+            "━━━━━━━━━━━━━━━━━━━━━━━━\n",
+            f"Status: {health['status'].upper()}",
+            f"Uptime: {health['uptime']}\n",
+            "<b>Components:</b>"
+        ]
+        
+        for name, comp in health["components"].items():
+            emoji = "✅" if comp["status"] == "healthy" else "⚠️"
+            lines.append(f"{emoji} {name.replace('_', ' ').title()}")
+        
+        perf = health["performance"]
+        lines.append(f"\n<b>Performance:</b>")
+        lines.append(f"CPU: {perf['cpu']['percent']}%")
+        lines.append(f"Memory: {perf['memory']['percent']}%")
+        lines.append(f"Disk: {perf['disk']['percent']}% used")
+        
+        db = health["database"]
+        if db["status"] == "healthy":
+            lines.append(f"\n<b>Database:</b>")
+            lines.append(f"Total: {db['total_posts']} posts")
+            lines.append(f"Last 24h: {db['last_24h']} new")
+        
+        if health["alerts"]:
+            lines.append(f"\n⚠️ <b>Alerts:</b>")
+            for alert in health["alerts"]:
+                lines.append(f"• {alert}")
+        
+        await msg.edit_text("\n".join(lines), parse_mode=ParseMode.HTML)
+        
+    except Exception as e:
+        await msg.edit_text(f"❌ Health check error: {e}")
+
+
+async def _cmd_deep_research(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Run deep research on a topic (10-15 minutes)"""
+    if not await _ensure_access(update):
+        return
+    
+    args = context.args or []
+    
+    if not args:
+        await update.message.reply_text(
+            "🔬 <b>Deep Research Mode</b>\n\n"
+            "Usage: /research [topic]\n\n"
+            "Examples:\n"
+            "• /research AI Agents\n"
+            "• /research Startup Funding\n"
+            "• /research React 19\n\n"
+            "⏱️  Deep research takes 10-15 minutes\n"
+            "   for thorough multi-source analysis",
+            parse_mode=ParseMode.HTML
+        )
+        return
+    
+    topic = " ".join(args)
+    
+    msg = await update.message.reply_text(
+        f"🔬 <b>Starting Deep Research: {topic}</b>\n\n"
+        f"⏱️  This will take 10-15 minutes...\n\n"
+        f"📊 Phase 1: Multi-source gathering (5 min)\n"
+        f"🧠 Phase 2: Context analysis (5 min)\n"
+        f"📝 Phase 3: Briefing synthesis (5 min)\n\n"
+        f"I'll send updates as we progress...",
+        parse_mode=ParseMode.HTML
+    )
+    
+    try:
+        # Create deep discovery instance
+        deep = DeepDiscovery()
+        
+        # Send progress update
+        await msg.edit_text(
+            f"🔬 <b>Deep Research: {topic}</b>\n\n"
+            f"📊 Gathering sources (2-3 min)...",
+            parse_mode=ParseMode.HTML
+        )
+        
+        # Run research (this takes time!)
+        briefing = deep.research_topic(topic, profile_id="work")
+        
+        # Format results for Telegram
+        lines = [
+            f"🔬 <b>Deep Research: {topic}</b>",
+            "━━━━━━━━━━━━━━━━━━━━━━━━\n",
+            f"⏱️  Duration: {briefing['duration_seconds']:.0f}s",
+            f"📊 Sources: {briefing['total_sources']}",
+            f"⭐ High Quality: {briefing['high_quality']}\n",
+            "<b>Summary:</b>",
+            briefing['summary'] + "\n"
+        ]
+        
+        # Add context
+        if briefing.get('context'):
+            ctx = briefing['context']
+            lines.append("<b>Context:</b>")
+            lines.append(f"• Sentiment: {ctx['sentiment']}")
+            lines.append(f"• Why it matters: {ctx['why_this_matters']}\n")
+        
+        # Add trends
+        if briefing.get('trends'):
+            trends = briefing['trends']
+            lines.append("<b>Trends:</b>")
+            lines.append(f"• Direction: {trends['direction']}")
+            lines.append(f"• Momentum: {trends['momentum']}")
+            lines.append(f"• {trends['prediction']}\n")
+        
+        # Add experts
+        if briefing.get('experts') and len(briefing['experts']) > 0:
+            lines.append("<b>Key Voices:</b>")
+            for expert in briefing['experts'][:3]:
+                lines.append(f"• {expert['author']} ({expert['posts']} posts)")
+        
+        lines.append(f"\n━━━━━━━━━━━━━━━━━━━━━━━━")
+        lines.append("Use /latest to view discovered posts")
+        
+        await msg.edit_text("\n".join(lines), parse_mode=ParseMode.HTML)
+        
+    except Exception as e:
+        LOGGER.exception("Deep research failed")
+        await msg.edit_text(
+            f"❌ Research error: {e}\n\n"
+            f"Try /discover_new for quick mode or a simpler topic"
+        )
+
+
+async def _cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _ensure_access(update):
+        return
+
+    help_msg = (
+        "━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "📖 <b>COMMAND REFERENCE</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        
+        "┌─ 📥 <b>COLLECTION</b>\n"
+        "├ /collect → Full autonomous pipeline\n"
+        "├ /status → View statistics\n"
+        "└ /latest [N] [platform] → Browse posts\n\n"
+        
+        "┌─ 🧠 <b>INTELLIGENCE</b>\n"
+        "├ /analyze [N] → AI analysis\n"
+        "├ /ask <query> → Research question\n"
+        "├ /research [N] → Auto-research topics\n"
+        "├ /recommend → Top content\n"
+        "└ /curate → Personalized library\n\n"
+        
+        "┌─ 📊 <b>INSIGHTS</b>\n"
+        "└ /insight <id> → Detailed analysis\n\n"
+        
+        "┌─ ⚙️ <b>SYSTEM</b>\n"
+        "├ /env → Configuration\n"
+        "├ /schedule daily <HH:MM> → Schedule daily collection\n"
+        "├ /schedule off → Disable scheduled collection\n"
+        "└ /help → This message\n\n"
+        
+        "━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "💫 <b>AUTONOMOUS FEATURES</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "✓ Auto-analyzes new content\n"
+        "✓ Researches high-value topics\n"
+        "✓ Discovers related resources\n"
+        "✓ Learns your preferences\n"
+        "✓ Curates smart collections\n\n"
+        
+        "🎯 <i>Tap /start for quick actions</i>"
+    )
+    
+    keyboard = [
+        [InlineKeyboardButton("🏠 Home", callback_data="action_start")],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text(help_msg, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
+
+
+async def _cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _ensure_access(update):
+        return
+    try:
+        stats = state_manager.get_scraping_stats()
+        total = stats.get('total_posts', 0)
+        
+        lines = [
+            "━━━━━━━━━━━━━━━━━━━━━━━━",
+            "📊 <b>SYSTEM STATISTICS</b>",
+            "━━━━━━━━━━━━━━━━━━━━━━━━\n",
+            f"🗄️ <b>Total Content:</b> {total:,} posts\n"
+        ]
+        
+        # Platform breakdown with emojis
+        platform_emojis = {
+            "twitter": "🐦",
+            "reddit": "🤖",
+            "threads": "🧵"
+        }
+        
+        lines.append("<b>Platform Breakdown:</b>")
+        for platform_stat in stats.get("platform_stats", []):
+            platform = platform_stat.get("platform", "-")
+            count = platform_stat.get("total_posts_scraped", 0)
+            emoji = platform_emojis.get(platform.lower(), "📌")
+            percentage = (count / total * 100) if total > 0 else 0
+            bar_length = int(percentage / 10)
+            bar = "▰" * bar_length + "▱" * (10 - bar_length)
+            lines.append(f"{emoji} <b>{platform.title()}</b>: {count:,} posts")
+            lines.append(f"   {bar} {percentage:.1f}%\n")
+        
+        lines.append("━━━━━━━━━━━━━━━━━━━━━━━━")
+        lines.append("<i>Use /latest to browse content</i>")
+        
+        text = "\n".join(lines)
+        
+        keyboard = [
+            [
+                InlineKeyboardButton("📥 Collect More", callback_data="action_collect"),
+                InlineKeyboardButton("📖 Latest", callback_data="action_latest")
+            ],
+            [InlineKeyboardButton("🏠 Home", callback_data="action_start")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
+    except Exception as exc:  # pylint: disable=broad-except
+        LOGGER.exception("Failed to get status: %s", exc)
+        await update.message.reply_text(f"❌ Status error: {exc}")
+
+
+async def _cmd_collect(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Trigger the multi-platform collection orchestrator and report results."""
+    if not await _ensure_access(update):
+        return
+
+    message = update.effective_message
+    if not message:
+        return
+        
+    # Show animated progress message
+    progress_msg = await message.reply_text(
+        "╔═══════════════════════════╗\n"
+        "║  🚀 <b>COLLECTION STARTED</b>  ║\n"
+        "╚═══════════════════════════╝\n\n"
+        "⏳ <i>Starting collection...</i>",
+        parse_mode=ParseMode.HTML
+    )
+    
+    # Track progress
+    import time
+    start_time = time.time()
+    platform_status = {'twitter': '⏳', 'reddit': '⏳', 'threads': '⏳'}
+    platform_counts = {'twitter': 0, 'reddit': 0, 'threads': 0}
+    
+    async def update_progress(platform: str, msg: str, counts: dict):
+        """Update progress message with live status"""
+        try:
+            elapsed = int(time.time() - start_time)
+            
+            # Update status emoji
+            if 'Collected' in msg or 'done' in msg.lower():
+                platform_status[platform] = '✅'
+            elif 'Error' in msg:
+                platform_status[platform] = '❌'
+            else:
+                platform_status[platform] = '🔄'
+            
+            # Update counts
+            platform_counts.update(counts)
+            
+            # Build message
+            lines = [
+                "╔═══════════════════════════╗",
+                "║  🚀 <b>COLLECTION RUNNING</b> ║",
+                "╚═══════════════════════════╝\n",
+                f"⏱️ <b>Time:</b> {elapsed}s\n"
+            ]
+            
+            for plat in ['twitter', 'reddit', 'threads']:
+                emoji = platform_status[plat]
+                count = platform_counts.get(plat, 0)
+                lines.append(f"{emoji} <b>{plat.title()}:</b> {count} posts")
+            
+            lines.append(f"\n💬 <i>{msg}</i>")
+            
+            await progress_msg.edit_text("\n".join(lines), parse_mode=ParseMode.HTML)
+        except Exception:
+            pass  # Ignore edit errors
+    
+    try:
+        # Use new orchestrator API
+        from src.pipeline.orchestrator import get_orchestrator
+        orch = get_orchestrator()
+        # Only bookmark platforms via /collect; RSS is discovery mode, not part of /collect
+        results = await orch.collect_all(platforms=["twitter", "reddit", "threads"])
+        total = results.get("total", 0)
+        twitter_count = results.get("twitter", 0)
+        reddit_count = results.get("reddit", 0)
+        threads_count = results.get("threads", 0)
+        errors = results.get("errors", [])
+        intelligence = results.get("intelligence", {})
+
+        lines = [
+            "╔═══════════════════════════╗",
+            "║  ✅ <b>COLLECTION COMPLETE</b> ║",
+            "╚═══════════════════════════╝\n",
+            f"📊 <b>Total New Content:</b> {total} items\n",
+            "<b>Platform Breakdown:</b>"
+        ]
+        
+        # Platform results with emojis
+        if twitter_count > 0:
+            lines.append(f"🐦 <b>Twitter:</b> {twitter_count} posts")
+        if reddit_count > 0:
+            lines.append(f"🤖 <b>Reddit:</b> {reddit_count} posts")
+        if threads_count > 0:
+            lines.append(f"🧵 <b>Threads:</b> {threads_count} posts")
+        
+        if total == 0:
+            lines.append("\n<i>No new content found</i>")
+        
+        # Intelligence results
+        if intelligence:
+            analyzed = intelligence.get("analyzed", 0)
+            researched = intelligence.get("researched", 0)
+            lines.append(f"\n🧠 <b>Intelligence:</b>")
+            if analyzed > 0:
+                lines.append(f"  • {analyzed} items analyzed with AI")
+            if researched > 0:
+                lines.append(f"  • {researched} topics researched")
+        
+        if errors:
+            lines.append(f"\n⚠️ <b>Errors ({len(errors)}):</b>")
+            for err in errors[:3]:
+                lines.append(f"  • {html.escape(str(err)[:60])}")
+            if len(errors) > 3:
+                lines.append(f"  <i>... and {len(errors) - 3} more</i>")
+        
+        lines.append("\n━━━━━━━━━━━━━━━━━━━━━━━━")
+        lines.append("💡 <i>Use /latest to browse content</i>")
+        
+        keyboard = [
+            [
+                InlineKeyboardButton("📖 Browse", callback_data="action_latest"),
+                InlineKeyboardButton("⭐ Recommend", callback_data="action_recommend")
+            ],
+            [
+                InlineKeyboardButton("🔬 Research", callback_data="action_research"),
+                InlineKeyboardButton("📚 Curate", callback_data="action_curate")
+            ],
+            [InlineKeyboardButton("🏠 Home", callback_data="action_start")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await progress_msg.edit_text("\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=reply_markup)
+
+        # Per-platform summaries in a digestible news format
+        try:
+            feed = await orch.build_news_feed(limit=30)
+            platforms = [p for p in ("twitter", "reddit", "threads") if results.get(p, 0) > 0]
+            for platform in platforms:
+                items = [i for i in feed if (i.get("platform") or "").lower() == platform]
+                if not items:
+                    continue
+                header = f"Here is the summary for {platform.capitalize()}:"
+                parts = [header, ""]
+                for idx, it in enumerate(items[:5], start=1):
+                    title = it.get("title") or "Untitled"
+                    url = it.get("url") or ""
+                    summary = it.get("summary") or ""
+                    # Build compact bullet with title and link; summary optional
+                    line = f"{idx}. <a href=\"{html.escape(url)}\">{html.escape(title)}</a>"
+                    if summary:
+                        line += f"\n   <i>{html.escape(summary[:180])}</i>"
+                    parts.append(line)
+                text = "\n\n".join(parts)
+                await message.reply_text(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+        except Exception:
+            # Non-fatal; skip summaries if any error occurs
+            pass
+        
+    except Exception as exc:  # pylint: disable=broad-except
+        LOGGER.exception("Collection failed: %s", exc)
+        await message.reply_text(
+            "━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "❌ <b>COLLECTION ERROR</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"<code>{html.escape(str(exc))}</code>\n\n"
+            "<i>Try again or contact support</i>",
+            parse_mode=ParseMode.HTML
+        )
+
+
+async def _job_collect(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Background job to run collection and send a brief summary."""
+    chat_id = context.job.chat_id if context.job else None
+    try:
+        from src.services.collection.collection_orchestrator import run_full_collection
+        results = await run_full_collection()
+        total = results.get("total", 0)
+        twitter_count = results.get("twitter", 0)
+        reddit_count = results.get("reddit", 0)
+        threads_count = results.get("threads", 0)
+        msg = (
+            "🗓️ Scheduled collection complete\n\n"
+            f"Total: <b>{total}</b>\n"
+            f"🐦 Twitter: {twitter_count} | 🤖 Reddit: {reddit_count} | 🧵 Threads: {threads_count}"
+        )
+        if chat_id:
+            await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode=ParseMode.HTML)
+    except Exception as exc:  # pylint: disable=broad-except
+        if chat_id:
+            await context.bot.send_message(chat_id=chat_id, text=f"Scheduled collection error: {exc}")
+
+
+async def _cmd_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Schedule or cancel automated daily collection.
+    Usage:
+      /schedule daily HH:MM   -> run once per day at that time (server time)
+      /schedule off           -> cancel existing scheduled job
+    """
+    if not await _ensure_access(update):
+        return
+
+    message = update.effective_message
+    args = context.args or []
+    if not args:
+        await message.reply_text("Usage: /schedule daily <HH:MM> or /schedule off")
+        return
+
+    # Cancel
+    if args[0].lower() == "off":
+        removed = 0
+        for job in list(context.job_queue.jobs()):
+            if job.chat_id == update.effective_chat.id:
+                job.schedule_removal()
+                removed += 1
+        await message.reply_text("🛑 Scheduling disabled" if removed else "No schedule to disable.")
+        return
+
+    # Daily schedule
+    if args[0].lower() == "daily":
+        if len(args) < 2 or ":" not in args[1]:
+            await message.reply_text("Usage: /schedule daily <HH:MM>")
+            return
+        try:
+            hh, mm = args[1].split(":", 1)
+            hh_i, mm_i = int(hh), int(mm)
+            hh_i = max(0, min(23, hh_i))
+            mm_i = max(0, min(59, mm_i))
+            run_time = dt_time(hour=hh_i, minute=mm_i)
+        except Exception:
+            await message.reply_text("Time must be in HH:MM format, e.g., 09:00")
+            return
+
+        for job in list(context.job_queue.jobs()):
+            if job.chat_id == update.effective_chat.id:
+                job.schedule_removal()
+
+        context.job_queue.run_daily(_job_collect, run_time, chat_id=update.effective_chat.id)
+        await message.reply_text(f"✅ Scheduled daily collection at {args[1]}")
+        return
+
+    await message.reply_text("Unknown schedule command. Use /schedule daily <HH:MM> or /schedule off")
+
+
+async def _cmd_analyze(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Run a quick analysis sweep over the most recent posts and summarize."""
+    if not await _ensure_access(update):
+        return
+
+    message = update.effective_message
+    args = context.args or []
+    limit = 10
+    platform = None
+
+    for arg in args:
+        lowered = arg.lower()
+        if lowered in VALID_PLATFORMS:
+            platform = lowered
+        else:
+            try:
+                limit = int(arg)
+            except ValueError:
+                if message:
+                    await message.reply_text(
+                        "Usage: /analyze [count] [platform] — platform options: twitter, reddit, threads"
+                    )
+                return
+
+    limit = max(1, min(50, limit))
+
+    if message:
+        await message.reply_text("Analyzing recent posts…")
+    try:
+        # Lazy import to keep bot light
+        from src.services.analysis.post_analyzer import analyze_and_store_post, log
+
+        db = get_database_manager()
+        platforms_filter = [platform] if platform else None
+        # Prefer unanalyzed posts first; fallback to recent posts
+        try:
+            unanalyzed = db.get_unanalyzed_posts(limit=limit, platforms=platforms_filter)  # type: ignore[attr-defined]
+        except Exception:
+            unanalyzed = []
+        posts = unanalyzed or db.get_posts(limit=limit, platforms=platforms_filter)
+
+        if not posts:
+            if message:
+                await message.reply_text("No posts available for analysis.")
+            return
+
+        analyzed = 0
+        errors: List[str] = []
+        for post in posts[:limit]:
+            post_id = post.get("post_id") or post.get("id") or "unknown"
+            try:
+                success = await analyze_and_store_post(db, post, supabase_manager=None)
+                if success:
+                    analyzed += 1
+                else:
+                    errors.append(f"{post_id}: storage failed")
+            except Exception as inner_exc:  # pylint: disable=broad-except
+                LOGGER.warning("Analyze failed for post %s: %s", post_id, inner_exc)
+                errors.append(f"{post_id}: {inner_exc}")
+
+        attempted = min(limit, len(posts))
+        lines = [f"Analysis complete. Processed <b>{analyzed}</b> of {attempted} posts."]
+        if platform:
+            lines.append(f"Platform: <b>{platform.title()}</b>")
+        if errors:
+            lines.append("Errors:")
+            for err in errors[:5]:
+                lines.append(f"- {html.escape(err)}")
+            if len(errors) > 5:
+                lines.append(f"- …and {len(errors) - 5} more errors.")
+        if message:
+            await message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
+        try:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="🔔 Analysis completed.",
+            )
+        except Exception:
+            pass
+    except Exception as exc:  # pylint: disable=broad-except
+        LOGGER.exception("Analysis failed: %s", exc)
+        await update.message.reply_text(f"Analysis error: {exc}")
+
+
+async def _cmd_env(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Report presence (not values) of required environment variables."""
+    if not await _ensure_access(update):
+        return
+    load_dotenv()
+    keys = [
+        "TELEGRAM_BOT_TOKEN",
+        "TWITTER_USERNAME",
+        "REDDIT_CLIENT_ID",
+        "REDDIT_CLIENT_SECRET",
+        "REDDIT_USER_AGENT",
+        "REDDIT_USERNAME",
+        "REDDIT_PASSWORD",
+        "REDDIT_ACCESS_TOKEN",
+        "THREADS_USERNAME",
+        "THREADS_PASSWORD",
+    ]
+    presence = {k: bool(os.getenv(k)) for k in keys}
+    lines = ["🔧 <b>Env vars detected</b>"]
+    for k, v in presence.items():
+        status = "✅" if v else "❌"
+        lines.append(f"{status} {k}")
+    await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
+
+
+async def _cmd_latest(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show recent posts as rich Telegram cards. Usage: /latest [limit] [platform]"""
+    if not await _ensure_access(update):
+        return
+    try:
+        args = context.args or []
+        limit = 5  # Default to 5 for rich cards
+        platform = None
+        if args:
+            try:
+                limit = max(1, min(10, int(args[0])))  # Max 10 for rich display
+                if len(args) > 1:
+                    platform = args[1].lower()
+            except ValueError:
+                platform = args[0].lower()
+                if len(args) > 1:
+                    try:
+                        limit = max(1, min(10, int(args[1])))
+                    except ValueError:
+                        pass
+
+        if platform and platform not in VALID_PLATFORMS:
+            await update.effective_message.reply_text(
+                "Unknown platform. Use one of: twitter, reddit, threads."
+            )
+            return
+
+        db = get_database_manager()
+        platforms = [platform] if platform else None
+        posts = db.get_posts(limit=limit, platforms=platforms)
+        if not posts:
+            await update.message.reply_text("📭 No recent posts found.")
+            return
+
+        # Format posts with enhanced GitHub display
+        from datetime import datetime
+        today = datetime.now().strftime("%d.%m.%Y")
+        
+        header = f"<b>Latest Posts</b> — {today}\n━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        formatted = format_posts_list(posts)
+        footer = f"\n━━━━━━━━━━━━━━━━━━━━━━━━\n{format_post_stats(posts)}"
+        
+        message_text = header + formatted + footer
+        await update.message.reply_text(message_text, parse_mode=ParseMode.HTML)
+
+    except Exception as exc:  # pylint: disable=broad-except
+        LOGGER.exception("Latest failed: %s", exc)
+        await update.message.reply_text(f"Latest error: {exc}")
+
+
+async def _send_posts_feed(message, posts: list, platform_filter: str = None):
+    """Send all posts in one message as a clean, professional feed"""
+    
+    from datetime import datetime
+    
+    # Get current date for header
+    today = datetime.now().strftime("%d.%m.%Y")
+    
+    # Clean header
+    lines = [
+        f"<b>Latest Posts</b> — {today}",
+        "━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    ]
+    
+    for i, post in enumerate(posts, 1):
+        platform = post.get("platform", "unknown").lower()
+        author = post.get("author") or "Unknown"
+        raw_content = post.get("content") or post.get("title") or ""
+        url = post.get("url", "")
+        value_score = post.get("value_score", 0)
+        key_concepts = post.get("key_concepts") or []
+        
+        # Check for existing AI summary
+        ai_summary = post.get("ai_summary") or post.get("content_summary")
+        insights = post.get("insights") or post.get("actionable_insights")
+        
+        # Parse key_concepts if JSON string
+        if isinstance(key_concepts, str):
+            try:
+                import json as json_lib
+                key_concepts = json_lib.loads(key_concepts)
+            except:
+                key_concepts = []
+        
+        # Simple platform indicator
+        platform_label = {"twitter": "Twitter", "reddit": "Reddit", "threads": "Threads"}.get(platform, platform.title())
+        
+        # Header: Number, Platform, Author
+        lines.append(f"<b>{i}.</b> {platform_label} • {html.escape(author)}")
+        
+        # Clean up content and create readable display
+        display_text = None
+        
+        # Check for AI summary first (make sure it's a string)
+        if ai_summary and isinstance(ai_summary, str):
+            ai_summary = ai_summary.strip()
+            if len(ai_summary) > 10 and not ai_summary.startswith('{') and not ai_summary.startswith('```'):
+                display_text = ai_summary
+        
+        # Try insights if no summary
+        if not display_text and insights and isinstance(insights, str):
+            insights = insights.strip()
+            if len(insights) > 10 and not insights.startswith('{') and not insights.startswith('```'):
+                display_text = f"💡 {insights}"
+        
+        # Fall back to raw content if no good summary
+        if not display_text and raw_content:
+            # Skip if content looks like JSON analysis
+            if raw_content.startswith('```json') or raw_content.startswith('{'):
+                display_text = "<i>Content analysis available - use /insight for details</i>"
+            else:
+                # Clean up the content
+                clean_content = raw_content.replace('\n\n', ' ').replace('\n', ' ').strip()
+                # Remove URLs from display
+                import re
+                clean_content = re.sub(r'https?://\S+', '', clean_content).strip()
+                
+                if len(clean_content) > 250:
+                    # Find a good break point at sentence end
+                    break_at = clean_content[:250].rfind('. ')
+                    if break_at > 100:
+                        clean_content = clean_content[:break_at + 1]
+                    else:
+                        clean_content = clean_content[:247] + "..."
+                display_text = clean_content
+        
+        # Display the text
+        if not display_text or len(display_text.strip()) < 5:
+            lines.append("<i>No preview available</i>")
+        else:
+            if len(display_text) > 280:
+                display_text = display_text[:277] + "..."
+            lines.append(html.escape(display_text))
+        
+        # Value score - only show if high
+        if value_score and value_score > 0.7:
+            score_text = f"Value: {value_score:.1f}"
+            lines.append(f"<i>{score_text}</i>")
+        
+        # Tags - clean, minimal
+        if key_concepts and isinstance(key_concepts, list) and len(key_concepts) > 0:
+            tags = " ".join([f"#{str(c).replace(' ', '_')}" for c in key_concepts[:2]])
+            lines.append(f"<i>{tags}</i>")
+        
+        # URL at the end
+        if url:
+            lines.append(f"<a href='{url}'>View Post</a>")
+        
+        lines.append("")  # Space between posts
+    
+    # Footer
+    lines.append("━━━━━━━━━━━━━━━━━━━━━━━━")
+    lines.append(f"Total: <b>{len(posts)}</b> posts")
+    
+    # Simple action buttons
+    keyboard = [
+        [
+            InlineKeyboardButton("🔄 Refresh", callback_data="action_latest"),
+            InlineKeyboardButton("📥 Collect New", callback_data="action_collect")
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    try:
+        await message.reply_text(
+            "\n".join(lines),
+            parse_mode=ParseMode.HTML,
+            reply_markup=reply_markup,
+            disable_web_page_preview=True
+        )
+    except Exception as e:
+        # Fallback to simple format
+        simple_lines = [f"{i}. {p.get('author', 'Unknown')}: {(p.get('content') or '')[:80]}..." for i, p in enumerate(posts, 1)]
+        await message.reply_text("\n\n".join(simple_lines), disable_web_page_preview=True)
+
+
+async def _cmd_insight(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Render an AI insight card for a specific post."""
+    if not await _ensure_access(update):
+        return
+
+    args = context.args or []
+    if not args:
+        await update.effective_message.reply_text("Usage: /insight <post_id>")
+        return
+
+    post_id = args[0]
+    try:
+        db = get_database_manager()
+        post = db.get_post_by_id(post_id)
+        if not post:
+            await update.effective_message.reply_text(f"No post found with ID {post_id}.")
+            return
+
+        title = post.get("title") or (post.get("content") or "").split("\n")[0][:120] or "Untitled"
+        platform = (post.get("platform") or "unknown").title()
+        author = post.get("author") or "Unknown"
+        created_at = post.get("created_at") or post.get("created_timestamp") or "Unknown"
+        url = post.get("url") or ""
+        value_score = post.get("value_score")
+        quality_score = post.get("quality_score")
+        summary = post.get("content_summary") or post.get("ai_summary") or "No summary available."
+        if summary and len(summary) > 600:
+            summary = summary[:597] + "…"
+
+        key_concepts = post.get("key_concepts") or []
+        if isinstance(key_concepts, str):
+            key_concepts = [key_concepts]
+
+        tags = post.get("tags") or []
+        if isinstance(tags, str):
+            tags = [tags]
+
+        insights = post.get("insights") or []
+        action_items = post.get("action_items") or []
+        recommendations = post.get("recommendations") or []
+        sentiment_info = post.get("sentiment_analysis") or {}
+        if isinstance(sentiment_info, str):
+            try:
+                sentiment_info = json.loads(sentiment_info)
+            except Exception:
+                sentiment_info = {}
+        sentiment_label = "Unknown"
+        if isinstance(sentiment_info, dict):
+            sentiment_label = sentiment_info.get("label") or sentiment_info.get("sentiment") or sentiment_info.get("overall") or sentiment_label
+            sentiment_score = sentiment_info.get("score")
+        else:
+            sentiment_score = None
+
+        lines = [
+            "🔍 <b>AI Insight</b>",
+            f"<b>Title:</b> {html.escape(title)}",
+            f"<b>Platform:</b> {html.escape(platform)}",
+            f"<b>Author:</b> {html.escape(author)}",
+            f"<b>Created:</b> {html.escape(str(created_at))}"
+        ]
+
+        if url:
+            lines.append(f"<b>Link:</b> {html.escape(url)}")
+
+        lines.append(
+            f"<b>Value score:</b> {value_score if value_score is not None else 'N/A'} | "
+            f"<b>Quality score:</b> {quality_score if quality_score is not None else 'N/A'}"
+        )
+
+        if sentiment_label:
+            sentiment_text = sentiment_label
+            if sentiment_score is not None:
+                sentiment_text += f" ({sentiment_score:.2f})"
+            lines.append(f"<b>Sentiment:</b> {html.escape(sentiment_text)}")
+
+        if summary:
+            lines.append(f"<b>Summary:</b> {html.escape(summary)}")
+
+        if key_concepts:
+            lines.append("<b>Key concepts:</b> " + ", ".join(html.escape(str(c)) for c in key_concepts[:6]))
+
+        if tags:
+            lines.append("<b>Tags:</b> " + ", ".join(f"#{html.escape(str(t))}" for t in tags[:8]))
+
+        if insights:
+            lines.append("<b>Insights:</b>")
+            for insight in insights[:5]:
+                lines.append(f"• {html.escape(str(insight))}")
+
+        if action_items:
+            lines.append("<b>Action items:</b>")
+            for action in action_items[:5]:
+                lines.append(f"• {html.escape(str(action))}")
+
+        if recommendations:
+            lines.append("<b>Recommendations:</b>")
+            for rec in recommendations[:5]:
+                lines.append(f"• {html.escape(str(rec))}")
+
+        await update.effective_message.reply_text(
+            "\n".join(lines),
+            parse_mode=ParseMode.HTML,
+            disable_web_page_preview=True,
+        )
+    except Exception as exc:  # pylint: disable=broad-except
+        LOGGER.exception("Insight failed: %s", exc)
+        await update.effective_message.reply_text(f"Insight error: {exc}")
+
+
+async def _cmd_ask(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Research a query using AI agents. Usage: /ask <your question>"""
+    if not await _ensure_access(update):
+        return
+    
+    args = context.args or []
+    if not args:
+        await update.effective_message.reply_text(
+            "Usage: /ask <your question>\n\n"
+            "Example: /ask best practices for prompt engineering"
+        )
+        return
+    
+    query = " ".join(args)
+    message = update.effective_message
+    
+    try:
+        await message.reply_text(f"🔍 Researching: {html.escape(query)}...", parse_mode=ParseMode.HTML)
+        
+        # Lazy import research agent
+        from src.agents.enhanced_research_agent import EnhancedResearchAgent
+        
+        # Perform research
+        agent = EnhancedResearchAgent()
+        result = await agent.research(query)
+        
+        if not result:
+            await message.reply_text("❌ Research returned no results. Try rephrasing your query.")
+            return
+        
+        # Format response
+        lines = [
+            "🔬 <b>Research Results</b>",
+            f"<b>Query:</b> {html.escape(query)}",
+            ""
+        ]
+        
+        # Add summary if available
+        if isinstance(result, dict):
+            summary = result.get("summary") or result.get("synthesis") or ""
+            sources = result.get("sources") or []
+            
+            if summary:
+                lines.append(f"<b>Summary:</b>")
+                # Truncate if too long
+                if len(summary) > 800:
+                    summary = summary[:797] + "..."
+                lines.append(html.escape(summary))
+                lines.append("")
+            
+            if sources:
+                lines.append(f"<b>Sources ({len(sources)}):</b>")
+                for i, source in enumerate(sources[:5], 1):
+                    if isinstance(source, dict):
+                        title = source.get("title", "Unknown")
+                        url = source.get("url", "")
+                        lines.append(f"{i}. {html.escape(title)}")
+                        if url:
+                            lines.append(f"   {html.escape(url)}")
+                    else:
+                        lines.append(f"{i}. {html.escape(str(source))}")
+                
+                if len(sources) > 5:
+                    lines.append(f"... and {len(sources) - 5} more sources")
+        else:
+            # Fallback for string results
+            result_str = str(result)
+            if len(result_str) > 1000:
+                result_str = result_str[:997] + "..."
+            lines.append(html.escape(result_str))
+        
+        await message.reply_text(
+            "\n".join(lines),
+            parse_mode=ParseMode.HTML,
+            disable_web_page_preview=True
+        )
+        
+    except Exception as exc:  # pylint: disable=broad-except
+        LOGGER.exception("Research failed: %s", exc)
+        await message.reply_text(f"❌ Research error: {exc}")
+
+
+async def _cmd_recommend(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Get content recommendations based on quality/value scores. Usage: /recommend [platform] [count]"""
+    if not await _ensure_access(update):
+        return
+    
+    args = context.args or []
+    platform = None
+    limit = 10
+    
+    # Parse arguments
+    for arg in args:
+        lowered = arg.lower()
+        if lowered in VALID_PLATFORMS:
+            platform = lowered
+        else:
+            try:
+                limit = max(1, min(20, int(arg)))
+            except ValueError:
+                pass
+    
+    message = update.effective_message
+    
+    try:
+        await message.reply_text("🎯 Finding top recommendations...")
+        
+        db = get_database_manager()
+        
+        # Query high-value posts
+        # Get more than needed so we can filter and sort
+        posts = db.get_posts(
+            limit=limit * 3,
+            platforms=[platform] if platform else None
+        )
+        
+        if not posts:
+            await message.reply_text("No posts found for recommendations.")
+            return
+        
+        # Filter and sort by value_score (high to low)
+        scored_posts = [
+            p for p in posts 
+            if p.get("value_score") is not None and p.get("value_score") > 6
+        ]
+        scored_posts.sort(key=lambda x: x.get("value_score", 0), reverse=True)
+        
+        # Take top N
+        top_posts = scored_posts[:limit]
+        
+        if not top_posts:
+            await message.reply_text(
+                f"No high-value posts found (value score > 6).\n"
+                f"Try collecting more content or check existing posts."
+            )
+            return
+        
+        # Format recommendations
+        lines = [
+            "⭐ <b>Top Recommendations</b>",
+            f"Found {len(top_posts)} high-value posts" + (f" on {platform.title()}" if platform else ""),
+            ""
+        ]
+        
+        for i, post in enumerate(top_posts, 1):
+            title = post.get("title") or (post.get("content") or "").split("\n")[0][:80] or "Untitled"
+            author = post.get("author") or "Unknown"
+            plat = (post.get("platform") or "?").title()
+            value = post.get("value_score", 0)
+            quality = post.get("quality_score", 0)
+            url = post.get("url") or ""
+            
+            lines.append(
+                f"{i}. <b>{html.escape(title)}</b>\n"
+                f"   {plat} by {html.escape(author)}\n"
+                f"   ⭐ Value: {value:.1f}/10 | Quality: {quality:.1f}/10"
+            )
+            if url:
+                lines.append(f"   🔗 {html.escape(url)}")
+            lines.append("")
+        
+        lines.append(f"💡 Tip: Use /insight <post_id> to see detailed analysis")
+        
+        await message.reply_text(
+            "\n".join(lines),
+            parse_mode=ParseMode.HTML,
+            disable_web_page_preview=True
+        )
+        
+    except Exception as exc:  # pylint: disable=broad-except
+        LOGGER.exception("Recommend failed: %s", exc)
+        await message.reply_text(f"❌ Recommendation error: {exc}")
+
+
+async def _cmd_research(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Run autonomous research on high-value content. Usage: /research [limit]"""
+    if not await _ensure_access(update):
+        return
+    
+    args = context.args or []
+    limit = 5
+    
+    if args:
+        try:
+            limit = max(1, min(10, int(args[0])))
+        except ValueError:
+            pass
+    
+    message = update.effective_message
+    
+    try:
+        await message.reply_text(
+            f"🔬 Running autonomous research on up to {limit} high-value posts...\n"
+            f"This will take a few minutes."
+        )
+        
+        # Lazy import
+        from src.agents.autonomous_research_orchestrator import get_research_orchestrator
+        
+        orchestrator = get_research_orchestrator()
+        results = await orchestrator.auto_research_recent(limit=limit)
+        
+        researched = results.get("researched", 0)
+        total = results.get("total", 0)
+        
+        lines = [
+            "🔬 <b>Autonomous Research Complete</b>",
+            f"Researched: <b>{researched}</b> out of {total} posts",
+            ""
+        ]
+        
+        if researched > 0:
+            lines.append("Topics researched:")
+            for result in results.get("results", [])[:5]:
+                if result.get("success"):
+                    topics = result.get("result", {}).get("topics", [])
+                    if topics:
+                        lines.append(f"• {', '.join(topics[:3])}")
+            
+            lines.append("")
+            lines.append("💡 Use /latest to see updated posts with research insights")
+        else:
+            lines.append("No posts needed research at this time.")
+            lines.append("High-value posts (score >= 7) are automatically researched.")
+        
+        await message.reply_text(
+            "\n".join(lines),
+            parse_mode=ParseMode.HTML
+        )
+        
+    except Exception as exc:  # pylint: disable=broad-except
+        LOGGER.exception("Research failed: %s", exc)
+        await message.reply_text(f"❌ Research error: {exc}")
+
+
+async def _cmd_curate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Get curated reading list and content organization. Usage: /curate"""
+    if not await _ensure_access(update):
+        return
+    
+    message = update.effective_message
+    
+    try:
+        await message.reply_text("📚 Curating your personalized content...")
+        
+        # Lazy import
+        from src.agents.librarian_agent import get_librarian_agent
+        
+        librarian = get_librarian_agent()
+        
+        # Organize content
+        organization = librarian.organize_content(limit=50)
+        
+        # Get reading list
+        reading_list = librarian.curate_reading_list()
+        
+        lines = [
+            "📚 <b>Content Curation</b>",
+            ""
+        ]
+        
+        # Show categories
+        categories = organization.get("categories", {})
+        if categories:
+            lines.append(f"<b>Categories ({len(categories)}):</b>")
+            for category, posts in sorted(categories.items(), key=lambda x: len(x[1]), reverse=True)[:5]:
+                lines.append(f"• {category}: {len(posts)} posts")
+            lines.append("")
+        
+        # Show patterns
+        patterns = organization.get("patterns", {})
+        trending = patterns.get("trending_topics", [])
+        if trending:
+            lines.append("<b>Trending Topics:</b>")
+            for topic, count in trending[:5]:
+                lines.append(f"• {html.escape(str(topic))}: {count}x")
+            lines.append("")
+        
+        # Show reading list
+        if reading_list:
+            lines.append(f"<b>Curated Reading List ({len(reading_list)} items):</b>")
+            for i, item in enumerate(reading_list[:5], 1):
+                post = item["post"]
+                score = item["curation_score"]
+                title = post.get("title") or (post.get("content") or "").split("\n")[0][:60]
+                lines.append(f"{i}. {html.escape(title)} (score: {score:.1f})")
+            
+            if len(reading_list) > 5:
+                lines.append(f"... and {len(reading_list) - 5} more items")
+        
+        lines.append("")
+        lines.append("💡 Use /latest to browse all content")
+        
+        await message.reply_text(
+            "\n".join(lines),
+            parse_mode=ParseMode.HTML
+        )
+        
+    except Exception as exc:  # pylint: disable=broad-except
+        LOGGER.exception("Curate failed: %s", exc)
+        await message.reply_text(f"❌ Curation error: {exc}")
+
+
+async def _cmd_publish(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Publish analyzed content to social media. Usage: /publish <post_id> <platform>"""
+    if not await _ensure_access(update):
+        return
+    
+    args = context.args or []
+    if len(args) < 2:
+        await update.effective_message.reply_text(
+            "Usage: /publish <post_id> <platform>\n\n"
+            "Platforms: twitter, telegram, threads\n"
+            "Example: /publish abc123 twitter"
+        )
+        return
+    
+    post_id = args[0]
+    platform = args[1].lower()
+    message = update.effective_message
+    
+    try:
+        # Get post from database
+        db = get_database_manager()
+        post = db.get_post_by_id(post_id)
+        
+        if not post:
+            await message.reply_text(f"❌ Post not found: {post_id}")
+            return
+        
+        # Get or generate content to publish
+        content = post.get("content") or post.get("title", "")
+        
+        if not content:
+            await message.reply_text("❌ Post has no content to publish")
+            return
+        
+        # Lazy import posting service
+        from src.services.posting_service import get_posting_service
+        
+        await message.reply_text(f"📤 Publishing to {platform.title()}...")
+        
+        posting_service = get_posting_service()
+        result = posting_service.publish(platform, content)
+        
+        if result.get("success"):
+            await message.reply_text(
+                f"✅ <b>Published Successfully</b>\n\n"
+                f"Platform: {platform.title()}\n"
+                f"Post ID: {post_id}\n"
+                f"Timestamp: {result.get('timestamp', 'N/A')}",
+                parse_mode=ParseMode.HTML
+            )
+        else:
+            error = result.get("error", "Unknown error")
+            await message.reply_text(
+                f"❌ <b>Publishing Failed</b>\n\n"
+                f"Platform: {platform.title()}\n"
+                f"Error: {html.escape(error)}",
+                parse_mode=ParseMode.HTML
+            )
+    
+    except Exception as exc:  # pylint: disable=broad-except
+        LOGGER.exception("Publish failed: %s", exc)
+        await message.reply_text(f"❌ Publish error: {exc}")
+
+
+async def _cmd_transform(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Transform content for a specific platform/persona. Usage: /transform <post_id> <persona> <platform>"""
+    if not await _ensure_access(update):
+        return
+    
+    args = context.args or []
+    if len(args) < 3:
+        await update.effective_message.reply_text(
+            "Usage: /transform <post_id> <persona> <platform>\n\n"
+            "Personas: skeptical_builder, technical_teacher, storyteller\n"
+            "Platforms: twitter, telegram, threads\n"
+            "Example: /transform abc123 skeptical_builder twitter"
+        )
+        return
+    
+    post_id = args[0]
+    persona = args[1]
+    platform = args[2].lower()
+    message = update.effective_message
+    
+    try:
+        # Get post from database
+        db = get_database_manager()
+        post = db.get_post_by_id(post_id)
+        
+        if not post:
+            await message.reply_text(f"❌ Post not found: {post_id}")
+            return
+        
+        content = post.get("content") or post.get("title", "")
+        
+        if not content:
+            await message.reply_text("❌ Post has no content to transform")
+            return
+        
+        await message.reply_text(f"🎭 Transforming content for {persona} on {platform}...")
+        
+        # Here you would call transformation service from mimesis
+        # For now, just return a placeholder
+        transformed = f"[{persona}] {content[:200]}"
+        
+        await message.reply_text(
+            f"✨ <b>Transformed Content</b>\n\n"
+            f"<b>Persona:</b> {persona}\n"
+            f"<b>Platform:</b> {platform.title()}\n\n"
+            f"<code>{html.escape(transformed)}</code>\n\n"
+            f"💡 Use /publish {post_id} {platform} to post this",
+            parse_mode=ParseMode.HTML
+        )
+    
+    except Exception as exc:  # pylint: disable=broad-except
+        LOGGER.exception("Transform failed: %s", exc)
+        await message.reply_text(f"❌ Transform error: {exc}")
+
+
+async def _handle_read_discovered(update: Update, context: ContextTypes.DEFAULT_TYPE, index: int) -> None:
+    """Show full content of a discovered post"""
+    query = update.callback_query
+    await query.answer()
+    
+    discovered_posts = context.user_data.get('discovered_posts', [])
+    
+    if 0 <= index < len(discovered_posts):
+        post = discovered_posts[index]
+        
+        # Build full post display
+        lines = [
+            "━━━━━━━━━━━━━━━━━━━━━━━━",
+            f"📖 <b>DISCOVERED POST #{index + 1}</b>",
+            "━━━━━━━━━━━━━━━━━━━━━━━━\n",
+            f"🔸 <b>Platform:</b> {post['platform'].upper()}",
+            f"👤 <b>Author:</b> {html.escape(post['author'])}",
+            f"📊 <b>Quality:</b> {post['quality']:.2f}",
+            f"🎯 <b>Topics:</b> {', '.join(post['topics'])}\n",
+            f"📝 <b>Content:</b>",
+            html.escape(post['content'][:2000])  # Show up to 2000 chars
+        ]
+        
+        if len(post['content']) > 2000:
+            lines.append("\n<i>... (content truncated)</i>")
+        
+        # Add buttons
+        keyboard = [
+            [InlineKeyboardButton("🔗 Open Full Post", url=post['url'])] if post['url'] else [],
+            [
+                InlineKeyboardButton("⬅️ Back", callback_data="back_to_report"),
+                InlineKeyboardButton("💾 Save", callback_data=f"save_discovered_{index}")
+            ]
+        ]
+        keyboard = [row for row in keyboard if row]  # Filter empty rows
+        
+        await query.edit_message_text(
+            "\n".join(lines),
+            parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    else:
+        await query.edit_message_text("Post not found. Please run /discover_new again.")
+
+
+async def _handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle inline keyboard button presses"""
+    query = update.callback_query
+    await query.answer()
+    
+    # Create fake update with the message from callback
+    fake_update = Update(
+        update_id=update.update_id,
+        message=query.message
+    )
+    
+    action = query.data
+    
+    # Handle discovered post viewing
+    if action.startswith("read_discovered_"):
+        index = int(action.split("_")[-1])
+        await _handle_read_discovered(update, context, index)
+        return
+    
+    # Map actions to command handlers
+    action_map = {
+        "action_start": _cmd_start,
+        "action_help": _cmd_help,
+        "action_status": _cmd_status,
+        "action_collect": _cmd_collect,
+        "action_latest": _cmd_latest,
+        "action_recommend": _cmd_recommend,
+        "action_research": _cmd_research,
+        "action_curate": _cmd_curate,
+        "action_env": _cmd_env
+    }
+    
+    if action in action_map:
+        # Show loading indicator
+        try:
+            await query.edit_message_text(
+                "⏳ <i>Processing...</i>",
+                parse_mode=ParseMode.HTML
+            )
+        except Exception:
+            pass
+        
+        # Execute the command
+        await action_map[action](fake_update, context)
+    else:
+        await query.edit_message_text("❌ Unknown action")
+
+
+def build_application() -> Application:
+    token = _get_bot_token()
+    app: Application = ApplicationBuilder().token(token).build()
+
+    # Command handlers
+    # Core commands
+    app.add_handler(CommandHandler("start", _cmd_start))
+    app.add_handler(CommandHandler("help", _cmd_help))
+    
+    # Automation commands
+    app.add_handler(CommandHandler("automate", _cmd_automate))
+    app.add_handler(CommandHandler("scheduler_status", _cmd_scheduler_status))
+    
+    # NEW: Agent commands
+    app.add_handler(CommandHandler("research_repo", research_repo_command))
+    app.add_handler(CommandHandler("get_book", get_book_command))
+    app.add_handler(CommandHandler("rewrite", rewrite_command))
+    app.add_handler(CommandHandler("personas", personas_command))
+    app.add_handler(CommandHandler("library", library_command))
+    
+    # Autonomous discovery (PHASE 5)
+    #     app.add_handler(CommandHandler("autonomous", _cmd_autonomous))
+    # MISSING:     app.add_handler(CommandHandler("daily_digest", _cmd_daily_digest))
+    
+    # Librarian commands
+    app.add_handler(CommandHandler("collections", _cmd_collections))
+    app.add_handler(CommandHandler("reading_list", _cmd_reading_list))
+    app.add_handler(CommandHandler("digest", _cmd_digest))
+    
+    # Digest commands
+    app.add_handler(CommandHandler("morning", _cmd_morning_digest))
+    app.add_handler(CommandHandler("evening", _cmd_evening_summary))
+    
+    # Deep research command
+    app.add_handler(CommandHandler("research", _cmd_deep_research))
+    
+    # Health monitoring command
+    app.add_handler(CommandHandler("health", _cmd_health))
+    app.add_handler(CommandHandler("status", _cmd_status))
+    app.add_handler(CommandHandler("collect", _cmd_collect))
+    app.add_handler(CommandHandler("analyze", _cmd_analyze))
+    app.add_handler(CommandHandler("env", _cmd_env))
+    app.add_handler(CommandHandler("latest", _cmd_latest))
+    app.add_handler(CommandHandler("insight", _cmd_insight))
+    app.add_handler(CommandHandler("ask", _cmd_ask))
+    app.add_handler(CommandHandler("recommend", _cmd_recommend))
+    app.add_handler(CommandHandler("research", _cmd_research))
+    app.add_handler(CommandHandler("curate", _cmd_curate))
+    app.add_handler(CommandHandler("schedule", _cmd_schedule))
+    app.add_handler(CommandHandler("publish", _cmd_publish))
+    app.add_handler(CommandHandler("transform", _cmd_transform))
+    app.add_handler(CommandHandler("profile", _cmd_profile))
+    app.add_handler(CommandHandler("topics", _cmd_topics))
+    app.add_handler(CommandHandler("discover", _cmd_discover))
+    app.add_handler(CommandHandler("discover_new", _cmd_discover_new))
+    
+    # Callback query handler for inline keyboard buttons
+    app.add_handler(CallbackQueryHandler(_handle_callback))
+
+    return app
+
+
+def run_bot() -> None:
+    app = build_application()
+    LOGGER.info("Starting PrisMind Telegram bot...")
+    # Use single polling loop to avoid multiple updater conflicts
+    app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
+
 
 if __name__ == "__main__":
-    main()
+    logging.basicConfig(level=logging.INFO)
+    run_bot()
+
+

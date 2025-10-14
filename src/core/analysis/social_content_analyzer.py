@@ -8,7 +8,7 @@ import google.generativeai as genai
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'extraction'))
-from social_extractor_base import SocialPost
+from src.core.extraction.social_extractor_base import SocialPost
 
 
 class SocialContentAnalyzer:

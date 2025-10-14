@@ -1,0 +1,101 @@
+{
+  "cookies": [
+    {
+      "name": "__cf_bm",
+      "value": "VmzLbiaB5H95PNFnoPHpYCMAstI7ZlWShENcog_8Xls-1758609824-1.0.1.1-kNeAvV_BYG5i77s6BoqkJ5UdqBoFzadBnYxHrp4ja2lJdUg9ndU.emiawsXr3k_Od.oS2fvSz1NlJKxeRSy.l.k8P_usSUv6ZKIyKK1KP8s",
+      "domain": ".x.com",
+      "path": "/"
+    },
+    {
+      "name": "__cuid",
+      "value": "d12e6bdac0d44923b94495165387b19c",
+      "domain": ".x.com",
+      "path": "/"
+    },
+    {
+      "name": "auth_token",
+      "value": "ce9ee320b5b52ed71b26a59d5a35cf3df9919d2d",
+      "domain": ".x.com",
+      "path": "/"
+    },
+    {
+      "name": "ct0",
+      "value": "991270a4181a619aecf31ea329fb9e71af0d6f7f94e8a49ba5c57d83824fa2e1cebfc06241cd4be1efd3b8e98d6ad0a22c18348ce44009bf6858cdd81244af0df1091fd5b578800a6ae48566ab8fba5d",
+      "domain": ".x.com",
+      "path": "/"
+    },
+    {
+      "name": "d_prefs",
+      "value": "MjoxLGNvbnNlbnRfdmVyc2lvbjoyLHRleHRfdmVyc2lvbjoxMDAw",
+      "domain": ".x.com",
+      "path": "/"
+    },
+    {
+      "name": "first_ref",
+      "value": "https%3A%2F%2Fx.com%2Fi%2Fbookmarks",
+      "domain": ".x.com",
+      "path": "/"
+    },
+    {
+      "name": "guest_id",
+      "value": "v1%3A175664999579773253",
+      "domain": ".x.com",
+      "path": "/"
+    },
+    {
+      "name": "guest_id_ads",
+      "value": "v1%3A175664999579773253",
+      "domain": ".x.com",
+      "path": "/"
+    },
+    {
+      "name": "guest_id_marketing",
+      "value": "v1%3A175664999579773253",
+      "domain": ".x.com",
+      "path": "/"
+    },
+    {
+      "name": "kdt",
+      "value": "2ClqIT20t1ZYBxyFmeR6PFYYpKZFganWpTTMW0Al",
+      "domain": ".x.com",
+      "path": "/"
+    },
+    {
+      "name": "lang",
+      "value": "en",
+      "domain": ".x.com",
+      "path": "/"
+    },
+    {
+      "name": "ok_default",
+      "value": "{\"_expire\":{}}",
+      "domain": ".x.com",
+      "path": "/"
+    },
+    {
+      "name": "ok_global",
+      "value": "{\"_expire\":{}}",
+      "domain": ".x.com",
+      "path": "/"
+    },
+    {
+      "name": "ok_okg",
+      "value": "{\"_expire\":{},\"currentMedia\":\"xl\"}",
+      "domain": ".x.com",
+      "path": "/"
+    },
+    {
+      "name": "personalization_id",
+      "value": "\"v1_Mog66D/Gd9M5/RyFlMw3cw==\"",
+      "domain": ".x.com",
+      "path": "/"
+    },
+    {
+      "name": "twid",
+      "value": "u%3D1623727730356371459",
+      "domain": ".x.com",
+      "path": "/"
+    }
+  ],
+  "csrf_token": "991270a4181a619aecf31ea329fb9e71af0d6f7f94e8a49ba5c57d83824fa2e1cebfc06241cd4be1efd3b8e98d6ad0a22c18348ce44009bf6858cdd81244af0df1091fd5b578800a6ae48566ab8fba5d"
+}

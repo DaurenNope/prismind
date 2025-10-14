@@ -1,0 +1,19 @@
+{
+  "telegram_channels": {
+    "technical": [
+      "openai",
+      "anthropic"
+    ],
+    "builder": [
+      "ycombinator"
+    ],
+    "trendsetter": [
+      "yoheinakajima"
+    ]
+  },
+  "rss_feeds": {
+    "technical": [],
+    "builder": [],
+    "trendsetter": []
+  }
+}

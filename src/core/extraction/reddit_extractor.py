@@ -5,22 +5,41 @@ import dns.resolver
 import urllib3
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple, Any, Union
+import os
+import asyncio
+from pathlib import Path
 
 import praw
 import prawcore
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+from playwright.async_api import async_playwright, Browser, Page
 
 from .social_extractor_base import SocialExtractorBase, SocialPost
+try:
+    # Optional universal fallback
+    from src.core.collection import UniversalCollector  # type: ignore
+except Exception:
+    UniversalCollector = None  # type: ignore
 
 # Disable SSL warnings for self-signed certificates
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 class RedditExtractor(SocialExtractorBase):
-    """Extract saved posts and comments from Reddit"""
-    
-    def __init__(self, client_id: str, client_secret: str, user_agent: str, username: str = None, password: str = None, access_token: str = None, refresh_token: str = None):
+    """Extract saved posts and comments from Reddit with universal fallback"""
+
+    def __init__(
+        self,
+        client_id: str,
+        client_secret: str,
+        user_agent: str,
+        username: str = None,
+        password: str = None,
+        access_token: str = None,
+        refresh_token: str = None,
+        enable_screenshots: bool = False,
+    ):
         super().__init__()
         self.client_id = client_id
         self.client_secret = client_secret
@@ -31,136 +50,156 @@ class RedditExtractor(SocialExtractorBase):
         self.refresh_token = refresh_token
         self.reddit = None
         self.read_only_mode = not (username and password) and not access_token
-        
+        self.enable_screenshots = enable_screenshots
+
+        # Initialize universal collector for fallback (optional)
+        self.universal_collector = UniversalCollector() if UniversalCollector else None
+
+        # Screenshot configuration
+        self.screenshot_dir = Path("screenshots/reddit")
+        if self.enable_screenshots:
+            self.screenshot_dir.mkdir(parents=True, exist_ok=True)
+
         # Known Reddit IPs
         self.reddit_ips = {
-            'oauth.reddit.com': '151.101.1.140',
-            'www.reddit.com': '151.101.1.140',
-            'api.reddit.com': '151.101.1.140',
-            'reddit.com': '151.101.1.140'
+            "oauth.reddit.com": "151.101.1.140",
+            "www.reddit.com": "151.101.1.140",
+            "api.reddit.com": "151.101.1.140",
+            "reddit.com": "151.101.1.140",
         }
-        
+
         # Configure session with retries and custom resolver
         self.session = self._create_retry_session()
-        
+
         # Patch socket.getaddrinfo to use our IP mapping
         self.original_getaddrinfo = socket.getaddrinfo
         socket.getaddrinfo = self._patched_getaddrinfo
-        
+
     def _patched_getaddrinfo(self, *args):
         """Patch getaddrinfo to use our IP mapping."""
         host = args[0]
         if host in self.reddit_ips:
             # Return the IP address directly for Reddit domains
-            return [(socket.AF_INET, socket.SOCK_STREAM, 6, '', (self.reddit_ips[host], args[1] if len(args) > 1 else 80))]
+            return [
+                (
+                    socket.AF_INET,
+                    socket.SOCK_STREAM,
+                    6,
+                    "",
+                    (self.reddit_ips[host], args[1] if len(args) > 1 else 80),
+                )
+            ]
         # Fall back to original getaddrinfo for other domains
         return self.original_getaddrinfo(*args)
-        
+
     def _create_retry_session(self, retries=5, backoff_factor=1.0) -> requests.Session:
         """Create a requests session with retry logic and improved timeouts."""
         session = requests.Session()
-        
+
         # More aggressive retry configuration
         retry = Retry(
             total=retries,
             backoff_factor=backoff_factor,
             status_forcelist=[500, 502, 503, 504, 403, 429, 408, 407],
-            allowed_methods=frozenset(['GET', 'POST', 'PUT', 'DELETE']),
-            respect_retry_after_header=True
+            allowed_methods=frozenset(["GET", "POST", "PUT", "DELETE"]),
+            respect_retry_after_header=True,
         )
-        
+
         # Configure connection pooling
         adapter = HTTPAdapter(
-            max_retries=retry,
-            pool_connections=10,
-            pool_maxsize=10,
-            pool_block=False
+            max_retries=retry, pool_connections=10, pool_maxsize=10, pool_block=False
         )
-        
+
         # Mount the adapter with retry logic
-        session.mount('http://', adapter)
-        session.mount('https://', adapter)
-        
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
+
         # Set default timeout and disable SSL verification
         session.verify = False
         session.timeout = (20, 45)  # Increased timeouts: 20s connect, 45s read
-        
+
         # Add default headers
-        session.headers.update({
-            'User-Agent': self.user_agent,
-            'Accept': 'application/json',
-            'Accept-Encoding': 'gzip, deflate',
-            'Host': 'oauth.reddit.com'  # Always use oauth.reddit.com as host header
-        })
-        
+        session.headers.update(
+            {
+                "User-Agent": self.user_agent,
+                "Accept": "application/json",
+                "Accept-Encoding": "gzip, deflate",
+                "Host": "oauth.reddit.com",  # Always use oauth.reddit.com as host header
+            }
+        )
+
         return session
-        
+
     def _resolve_reddit_domains(self) -> Dict[str, str]:
         """Resolve Reddit domains using Google's public DNS."""
         domains = {
-            'www': 'www.reddit.com',
-            'oauth': 'oauth.reddit.com',
-            'api': 'api.reddit.com'
+            "www": "www.reddit.com",
+            "oauth": "oauth.reddit.com",
+            "api": "api.reddit.com",
         }
-        
+
         resolved = {}
         for name, domain in domains.items():
             try:
                 # Use Google's public DNS
                 resolver = dns.resolver.Resolver()
-                resolver.nameservers = ['8.8.8.8', '8.8.4.4']  # Google's public DNS
-                
+                resolver.nameservers = ["8.8.8.8", "8.8.4.4"]  # Google's public DNS
+
                 # Get A records
-                answers = resolver.resolve(domain, 'A')
+                answers = resolver.resolve(domain, "A")
                 ips = [str(ip) for ip in answers]
                 resolved[domain] = ips[0]  # Use first IP
                 print(f"✅ Resolved {domain} to {ips[0]}")
-                
+
             except Exception as e:
                 print(f"❌ Failed to resolve {domain}: {e}")
-                
+
         return resolved
-        
+
     def _test_reddit_connection(self) -> Tuple[bool, str]:
         """Test connection to Reddit's API endpoints."""
         # First try to resolve domains
         resolved_ips = self._resolve_reddit_domains()
-        
+
         # Prepare endpoints to test
         endpoints = []
-        
+
         # Add direct IPs if we resolved them
-        if 'www.reddit.com' in resolved_ips:
+        if "www.reddit.com" in resolved_ips:
             endpoints.append(f"https://{resolved_ips['www.reddit.com']}")
-        if 'oauth.reddit.com' in resolved_ips:
+        if "oauth.reddit.com" in resolved_ips:
             endpoints.append(f"https://{resolved_ips['oauth.reddit.com']}")
-            
+
         # Always try the standard domains as fallback
-        endpoints.extend([
-            'https://www.reddit.com',
-            'https://oauth.reddit.com',
-            'https://api.reddit.com',
-            'https://151.101.1.140',  # Known Reddit IPs as last resort
-            'https://151.101.129.140'
-        ])
-        
+        endpoints.extend(
+            [
+                "https://www.reddit.com",
+                "https://oauth.reddit.com",
+                "https://api.reddit.com",
+                "https://151.101.1.140",  # Known Reddit IPs as last resort
+                "https://151.101.129.140",
+            ]
+        )
+
         # Remove duplicates while preserving order
         seen = set()
         endpoints = [url for url in endpoints if not (url in seen or seen.add(url))]
-        
+
         print("🔍 Testing Reddit endpoints:", ", ".join(endpoints))
-        
+
         for url in endpoints:
             try:
                 # Skip IP addresses in the Host header to avoid SSL errors
                 host_header = None
-                if url.startswith('https://') and not url[8:].startswith(tuple('0123456789')):
-                    host_header = url[8:].split('/')[0]
-                
+                if url.startswith("https://") and not url[8:].startswith(
+                    tuple("0123456789")
+                ):
+                    host_header = url[8:].split("/")[0]
+
                 response = self.session.get(
-                    url, 
+                    url,
                     timeout=10,
-                    headers={'Host': host_header} if host_header else {}
+                    headers={"Host": host_header} if host_header else {},
                 )
                 if response.status_code == 200:
                     return True, f"Successfully connected to {url}"
@@ -170,33 +209,32 @@ class RedditExtractor(SocialExtractorBase):
             except requests.exceptions.RequestException as e:
                 print(f"⚠️ Connection error with {url}: {e}")
                 continue
-                
+
         return False, "Failed to connect to any Reddit endpoint"
-    
+
     def authenticate(self) -> bool:
         """Authenticate with Reddit API with enhanced error handling and retries."""
         max_retries = 5  # Increased max retries
         retry_delay = 3  # Increased initial delay to 3 seconds
-        
+
         for attempt in range(max_retries):
             try:
                 # Try OAuth2 first if we have a refresh token
                 if self.refresh_token:
                     try:
-                        print(f"🔑 Attempt {attempt + 1}/{max_retries}: OAuth2 authentication...")
+                        print(
+                            f"🔑 Attempt {attempt + 1}/{max_retries}: OAuth2 authentication..."
+                        )
                         self.reddit = praw.Reddit(
                             client_id=self.client_id,
                             client_secret=self.client_secret,
                             refresh_token=self.refresh_token,
                             user_agent=self.user_agent,
-                            requestor_kwargs={
-                                'session': self.session,
-                                'timeout': 30
-                            },
-                            api_url='https://151.101.1.140/api/v1',
-                            oauth_url='https://151.101.1.140/api/v1/access_token',
-                            reddit_url='https://151.101.1.140',
-                            check_for_async=False
+                            requestor_kwargs={"session": self.session, "timeout": 30},
+                            api_url="https://151.101.1.140/api/v1",
+                            oauth_url="https://151.101.1.140/api/v1/access_token",
+                            reddit_url="https://151.101.1.140",
+                            check_for_async=False,
                         )
                         # Test the connection with a simple API call
                         self.reddit.user.me()
@@ -207,46 +245,51 @@ class RedditExtractor(SocialExtractorBase):
                         if "invalid_grant" in str(e).lower():
                             print("⚠️ Refresh token may be invalid or expired")
                             break  # No point in retrying with invalid token
-                
+
                 # Fall back to password auth if username/password are provided
                 if self.username and self.password:
                     try:
-                        print(f"🔑 Attempt {attempt + 1}/{max_retries}: Password authentication...")
+                        print(
+                            f"🔑 Attempt {attempt + 1}/{max_retries}: Password authentication..."
+                        )
                         self.reddit = praw.Reddit(
                             client_id=self.client_id,
                             client_secret=self.client_secret,
                             username=self.username,
                             password=self.password,
                             user_agent=self.user_agent,
-                            requestor_kwargs={
-                                'session': self.session,
-                                'timeout': 30
-                            },
-                            check_for_async=False
+                            requestor_kwargs={"session": self.session, "timeout": 30},
+                            check_for_async=False,
                         )
                         # Test the connection with a simple API call
                         self.reddit.user.me()
-                        self.read_only_mode = False  # Set read_only_mode to False after successful auth
+                        self.read_only_mode = (
+                            False  # Set read_only_mode to False after successful auth
+                        )
                         print("✅ Password authentication successful")
                         return True
                     except Exception as e:
-                        print(f"⚠️ Password authentication attempt {attempt + 1} failed: {e}")
-                
+                        print(
+                            f"⚠️ Password authentication attempt {attempt + 1} failed: {e}"
+                        )
+
                 # If we get here, all auth methods have been tried and failed
                 if attempt < max_retries - 1:
                     print(f"🔄 Waiting {retry_delay} seconds before retry...")
                     time.sleep(retry_delay)
                     retry_delay *= 2  # Exponential backoff
-                
+
             except Exception as e:
-                print(f"⚠️ Unexpected error during authentication attempt {attempt + 1}: {e}")
+                print(
+                    f"⚠️ Unexpected error during authentication attempt {attempt + 1}: {e}"
+                )
                 if attempt == max_retries - 1:
                     print("❌ All authentication attempts failed")
-        
+
         # If all else fails, try read-only mode
         print("⚠️ Falling back to read-only mode...")
         return self._fallback_to_readonly()
-    
+
     def _fallback_to_readonly(self) -> bool:
         """Fallback to read-only mode when OAuth fails"""
         try:
@@ -258,14 +301,14 @@ class RedditExtractor(SocialExtractorBase):
                     client_secret=self.client_secret,
                     user_agent=self.user_agent,
                     requestor_kwargs={
-                        'session': self.session,
-                        'api_url': 'https://151.101.1.140/api/v1',
-                        'oauth_url': 'https://151.101.1.140/api/v1/access_token',
-                        'reddit_url': 'https://151.101.1.140',
-                        'ratelimit_seconds': 5,
-                        'min_delay': 1.0
+                        "session": self.session,
+                        "api_url": "https://151.101.1.140/api/v1",
+                        "oauth_url": "https://151.101.1.140/api/v1/access_token",
+                        "reddit_url": "https://151.101.1.140",
+                        "ratelimit_seconds": 5,
+                        "min_delay": 1.0,
                     },
-                    check_for_async=False
+                    check_for_async=False,
                 )
                 # Test with a simple API call
                 subreddit = self.reddit.subreddit("test")
@@ -273,42 +316,52 @@ class RedditExtractor(SocialExtractorBase):
                 print("✅ Reddit read-only authentication successful with direct IP")
                 return True
             except Exception as direct_ip_error:
-                print(f"⚠️ Direct IP connection failed, trying standard endpoint: {direct_ip_error}")
+                print(
+                    f"⚠️ Direct IP connection failed, trying standard endpoint: {direct_ip_error}"
+                )
                 # Fall back to standard endpoint
                 self.reddit = praw.Reddit(
                     client_id=self.client_id,
                     client_secret=self.client_secret,
                     user_agent=self.user_agent,
-                    check_for_async=False
+                    check_for_async=False,
                 )
                 subreddit = self.reddit.subreddit("test")
                 subreddit.display_name
-                print("✅ Reddit read-only authentication successful with standard endpoint")
+                print(
+                    "✅ Reddit read-only authentication successful with standard endpoint"
+                )
                 return True
         except Exception as e:
             print(f"❌ Reddit read-only auth failed: {e}")
             return False
-    
-    def get_saved_posts(self, limit: int = 100, max_retries: int = 3, after: str = None, existing_ids: set = None) -> List[SocialPost]:
+
+    def get_saved_posts(
+        self,
+        limit: int = 100,
+        max_retries: int = 3,
+        after: str = None,
+        existing_ids: set = None,
+    ) -> List[SocialPost]:
         """Get saved posts and comments from Reddit with retries and pagination.
-        
+
         Args:
             limit: Maximum number of posts to return
             max_retries: Maximum number of retry attempts
             after: Fullname of the next data block to return (for pagination)
             existing_ids: Set of post IDs that already exist in the database
-            
+
         Returns:
             Tuple of (List[SocialPost], str): List of new posts and the 'after' token for pagination
         """
         print(f"🔍 Starting get_saved_posts with limit={limit}, after={after}")
-        
+
         if not self.reddit:
             print("⚠️ Reddit client not initialized, attempting to authenticate...")
             if not self.authenticate():
                 print("❌ Authentication failed and no read-only access available")
                 return [], None
-        
+
         try:
             # Test authentication by getting current user info
             me = self.reddit.user.me()
@@ -319,18 +372,22 @@ class RedditExtractor(SocialExtractorBase):
             return [], None
 
         posts = []
-        params = {'limit': min(limit, 100)}  # Ensure we don't exceed Reddit's limit of 100
+        params = {
+            "limit": min(limit, 100)
+        }  # Ensure we don't exceed Reddit's limit of 100
         if after and isinstance(after, str):
             print(f"🔗 Resuming from after: {after}")
-            params['after'] = after
-            
+            params["after"] = after
+
         for attempt in range(max_retries):
             try:
                 saved_items = []
                 next_after = None
-                
+
                 if self.read_only_mode:
-                    print("⚠️ In read-only mode, fetching popular posts instead of saved ones")
+                    print(
+                        "⚠️ In read-only mode, fetching popular posts instead of saved ones"
+                    )
                     saved = self.reddit.subreddit("all").hot(limit=limit, params=params)
                     saved_items = list(saved)
                     print(f"ℹ️ Fetched {len(saved_items)} popular posts")
@@ -340,118 +397,181 @@ class RedditExtractor(SocialExtractorBase):
                         saved = self.reddit.user.me().saved(limit=limit, params=params)
                         saved_items = list(saved)
                         print(f"✅ Fetched {len(saved_items)} saved items")
-                        if hasattr(saved, 'after'):
+                        if hasattr(saved, "after"):
                             next_after = saved.after
                             print(f"➡️ Next page token: {next_after}")
                     except Exception as e:
                         print(f"❌ Error fetching saved posts: {e}")
                         saved_items = []
-                    
+
                 # Log details about the first few items
                 for i, item in enumerate(saved_items[:3]):  # Log first 3 items
                     try:
-                        item_id = getattr(item, 'id', 'N/A')
-                        item_name = getattr(item, 'name', 'N/A')
-                        item_title = getattr(item, 'title', 'N/A')
-                        if item_title != 'N/A':
-                            item_title = item_title[:50] + '...' if len(str(item_title)) > 50 else item_title
-                        print(f"📝 Item {i+1}: ID={item_id}, Name={item_name}, Title={item_title}")
+                        item_id = getattr(item, "id", "N/A")
+                        item_name = getattr(item, "name", "N/A")
+                        item_title = getattr(item, "title", "N/A")
+                        if item_title != "N/A":
+                            item_title = (
+                                item_title[:50] + "..."
+                                if len(str(item_title)) > 50
+                                else item_title
+                            )
+                        print(
+                            f"📝 Item {i + 1}: ID={item_id}, Name={item_name}, Title={item_title}"
+                        )
                     except Exception as e:
                         print(f"⚠️ Error logging item {i}: {e}")
-                
-                # If we have existing_ids, filter out posts we've already seen
-                if existing_ids is not None and saved_items:
-                    before_filter = len(saved_items)
-                    filtered_items = []
-                    existing_base_ids = {str(id_) for id_ in existing_ids}
+
+                # Check if first item is already in existing_ids - if so, we can skip everything
+                if existing_ids and saved_items:
+                    first_item = saved_items[0]
+                    first_id = str(getattr(first_item, "id", "")).replace("t3_", "")
                     
-                    print(f"🔍 Checking against {len(existing_base_ids)} existing posts...")
-                    print(f"📝 First few existing IDs: {list(existing_base_ids)[:3]}...")
+                    if first_id and first_id in {str(id_).replace("t3_", "") for id_ in existing_ids}:
+                        print(f"🛑 First post {first_id} already exists - nothing new to collect!")
+                        return [], None
+                    
+                    # Otherwise, filter and STOP at first duplicate
+                    filtered_items = []
+                    existing_base_ids = {str(id_).replace("t3_", "").replace("reddit_", "") for id_ in existing_ids}
                     
                     for item in saved_items:
                         try:
-                            # Try different ways to get the ID
-                            item_id = getattr(item, 'id', None)
-                            item_name = getattr(item, 'name', None)
+                            item_id = str(getattr(item, "id", "")).replace("t3_", "")
                             
-                            # Clean up the IDs for comparison
-                            clean_item_id = str(item_id) if item_id else ''
-                            clean_item_name = str(item_name).replace('t3_', '') if item_name else ''
+                            if item_id and item_id in existing_base_ids:
+                                print(f"🛑 Hit existing post {item_id} - stopping collection")
+                                break  # STOP here, don't process more
                             
-                            # Debug log the item being checked
-                            debug_info = f"Item ID: {clean_item_id}, Name: {clean_item_name}"
-                            if hasattr(item, 'title'):
-                                debug_info += f", Title: {getattr(item, 'title', 'No title')}"
-                            print(f"🔍 Checking item: {debug_info}")
-                            
-                            # Only filter if we have a valid ID to compare
-                            if clean_item_id and clean_item_id in existing_base_ids:
-                                print(f"ℹ️ Filtered out duplicate by ID: {clean_item_id}")
-                                continue
-                                
-                            if clean_item_name and clean_item_name in existing_base_ids:
-                                print(f"ℹ️ Filtered out duplicate by name: {clean_item_name}")
-                                continue
-                                
                             filtered_items.append(item)
-                            print(f"✅ Added new item to processing queue: {clean_item_id or clean_item_name}")
-                            
-                        except Exception as e:
-                            print(f"⚠️ Error processing item: {e}")
-                            import traceback
-                            traceback.print_exc()
+                        except Exception:
                             continue
                     
                     saved_items = filtered_items
-                    print(f"ℹ️ Kept {len(saved_items)} new posts after filtering (from {before_filter} total)")
-                
+                    print(f"✅ Found {len(saved_items)} new posts")
+
                 # Convert items to SocialPost objects
-                print(f"🔄 Converting {len(saved_items)} items to SocialPost objects...")
+                print(
+                    f"🔄 Converting {len(saved_items)} items to SocialPost objects..."
+                )
                 for idx, item in enumerate(saved_items, 1):
                     try:
-                        item_id = getattr(item, 'id', 'unknown')
-                        print(f"🔄 Converting item {idx}/{len(saved_items)} (ID: {item_id})...")
-                        
-                        # Debug print the item's attributes
-                        if hasattr(item, 'title'):
-                            print(f"   Title: {getattr(item, 'title', 'No title')}")
-                        if hasattr(item, 'author'):
-                            print(f"   Author: {getattr(item.author, 'name', 'Unknown')}")
-                        
-                        post = self._convert_reddit_item(item, is_saved=not self.read_only_mode)
+                        item_id = getattr(item, "id", "unknown")
+                        # Only log every 10th item to speed up
+                        if idx % 10 == 0 or idx == 1:
+                            print(
+                                f"🔄 Converting item {idx}/{len(saved_items)} (ID: {item_id})..."
+                            )
+
+                        post = self._convert_reddit_item(
+                            item, is_saved=not self.read_only_mode
+                        )
                         if post:
                             posts.append(post)
-                            print(f"✅ Successfully converted post {idx}/{len(saved_items)} (ID: {item_id})")
-                        else:
-                            print(f"⚠️ Conversion returned None for item {idx} (ID: {item_id})")
-                            
+                        elif idx % 10 == 0:
+                            print(
+                                f"⚠️ Conversion returned None for item {idx} (ID: {item_id})"
+                            )
+
                     except Exception as e:
                         print(f"⚠️ Error converting item {idx} (ID: {item_id}): {e}")
                         import traceback
+
                         traceback.print_exc()
                         continue
-                        
-                print(f"✅ Retrieved {len(posts)} items from Reddit" + (" (read-only mode)" if self.read_only_mode else ""))
+
+                print(
+                    f"✅ Retrieved {len(posts)} items from Reddit"
+                    + (" (read-only mode)" if self.read_only_mode else "")
+                )
                 return posts, next_after  # Return both posts and next_after token
-                
+
             except Exception as e:
-                print(f"❌ Error during Reddit API call (attempt {attempt + 1}/{max_retries}): {e}")
+                print(
+                    f"❌ Error during Reddit API call (attempt {attempt + 1}/{max_retries}): {e}"
+                )
                 if attempt < max_retries - 1:
                     wait_time = 2 ** (attempt + 1)  # Exponential backoff
                     print(f"🔄 Waiting {wait_time} seconds before retry...")
                     time.sleep(wait_time)
-        
+
         print("❌ All retry attempts failed")
+
+        # Try universal fallback if Reddit API completely fails
+        print("🔄 Attempting universal fallback for Reddit content...")
+        try:
+            if not self.universal_collector:
+                print("⚠️ UniversalCollector not available; skipping fallback")
+                return [], None
+            fallback_posts = []
+            # Try to scrape some popular Reddit URLs as fallback
+            reddit_urls = [
+                "https://www.reddit.com/r/popular/",
+                "https://www.reddit.com/r/all/",
+                "https://www.reddit.com/r/programming/",
+                "https://www.reddit.com/r/technology/",
+            ]
+
+            for url in reddit_urls[:2]:  # Limit to 2 URLs to avoid overwhelming
+                try:
+                    print(f"🌐 Trying universal scraping for: {url}")
+                    result = self.universal_collector.collect_content(
+                        url, validate_content=True
+                    )
+
+                    if result and result.get("success") and result.get("content"):
+                        # Convert universal collector result to SocialPost format
+                        content = result["content"]
+                        post = SocialPost(
+                            id=f"reddit_fallback_{hash(url)}",
+                            platform="reddit",
+                            content=content.get("text", ""),
+                            author="reddit_fallback",
+                            created_at=datetime.now(),
+                            url=url,
+                            title=content.get("title", "Reddit Fallback Content"),
+                            engagement_metrics={"likes": 0, "shares": 0, "comments": 0},
+                            metadata={
+                                "collection_method": "universal_fallback",
+                                "original_platform": "reddit",
+                                "fallback_reason": "reddit_api_failed",
+                            },
+                        )
+                        fallback_posts.append(post)
+                        print(f"✅ Successfully scraped fallback content from {url}")
+
+                        if len(fallback_posts) >= min(
+                            limit, 10
+                        ):  # Limit fallback posts
+                            break
+
+                except Exception as fallback_error:
+                    print(f"⚠️ Universal fallback failed for {url}: {fallback_error}")
+                    continue
+
+            if fallback_posts:
+                print(f"✅ Universal fallback retrieved {len(fallback_posts)} posts")
+                return fallback_posts, None
+            else:
+                print("❌ Universal fallback also failed")
+
+        except Exception as e:
+            print(f"❌ Error during universal fallback: {e}")
+
         return [], None  # Return empty list and None for next_after on failure
-    
-    def get_liked_posts(self, limit: int = 100, max_retries: int = 3) -> List[SocialPost]:
+
+    def get_liked_posts(
+        self, limit: int = 100, max_retries: int = 3
+    ) -> List[SocialPost]:
         """Get upvoted posts from Reddit with retries."""
         if not self.reddit:
             if not self.authenticate():
                 raise Exception("Authentication with Reddit failed")
 
         if self.read_only_mode:
-            print("⚠️ Cannot access liked posts in read-only mode. Returning empty list.")
+            print(
+                "⚠️ Cannot access liked posts in read-only mode. Returning empty list."
+            )
             return []
 
         posts = []
@@ -463,7 +583,7 @@ class RedditExtractor(SocialExtractorBase):
                     if post:
                         posts.append(post)
                 print(f"✅ Retrieved {len(posts)} upvoted items from Reddit")
-                return posts # Success
+                return posts  # Success
             except prawcore.exceptions.PrawcoreException as e:
                 print(f"❌ Reddit API error on attempt {attempt + 1}: {e}")
                 if attempt >= max_retries - 1:
@@ -472,168 +592,234 @@ class RedditExtractor(SocialExtractorBase):
                 time.sleep(2 * (attempt + 1))
             except Exception as e:
                 print(f"❌ An unexpected error occurred: {e}")
-                break # Don't retry on unexpected errors
+                break  # Don't retry on unexpected errors
         return posts
-    
-    def get_top_comments(self, submission_id: str, limit: int = 5) -> List[Dict]:
-        """Get top valuable comments for a Reddit submission"""
+
+    def get_top_comments(self, submission_id: str, limit: int = 10) -> List[Dict]:
+        """Get top valuable comments for a Reddit submission with enhanced filtering"""
         try:
             submission = self.reddit.submission(id=submission_id)
             submission.comments.replace_more(limit=0)
-            
+
             # Get top-level comments sorted by score
             top_comments = []
-            all_comments = submission.comments.list()[:50]  # Get more to filter from
-            
-            # Sort by score and filter valuable ones
-            for comment in sorted(all_comments, key=lambda x: getattr(x, 'score', 0), reverse=True):
-                if (hasattr(comment, 'body') and 
-                    comment.body not in ['[deleted]', '[removed]'] and
-                    len(comment.body.strip()) > 30 and  # Meaningful length
-                    getattr(comment, 'score', 0) > 2):  # Some engagement
-                    
-                    top_comments.append({
-                        'author': str(comment.author) if comment.author else 'Unknown',
-                        'content': comment.body,
-                        'score': getattr(comment, 'score', 0),
-                        'created_at': datetime.fromtimestamp(comment.created_utc).isoformat(),
-                        'is_op': getattr(comment, 'is_submitter', False),
-                        'depth': getattr(comment, 'depth', 0),
-                        'url': f"https://reddit.com{comment.permalink}"
-                    })
-                    
-                    if len(top_comments) >= limit:
-                        break
-            
-            return top_comments
-            
+            all_comments = submission.comments.list()[
+                :100
+            ]  # Increased from 50 to 100 for better selection
+
+            # Sort by score and filter valuable ones with enhanced criteria
+            for comment in sorted(
+                all_comments, key=lambda x: getattr(x, "score", 0), reverse=True
+            ):
+                if (
+                    hasattr(comment, "body")
+                    and comment.body not in ["[deleted]", "[removed]"]
+                    and len(comment.body.strip())
+                    > 20  # Reduced from 30 to 20 for more inclusivity
+                    and getattr(comment, "score", 0) > 1
+                ):  # Reduced from 2 to 1 for more inclusivity
+                    # Enhanced value scoring
+                    comment_score = getattr(comment, "score", 0)
+                    is_op = getattr(comment, "is_submitter", False)
+                    has_awards = (
+                        hasattr(comment, "all_awardings")
+                        and len(comment.all_awardings) > 0
+                    )
+                    is_long_form = len(comment.body) > 200  # Detailed responses
+                    has_links = "http" in comment.body.lower()  # Contains references
+
+                    # Prioritize valuable comments
+                    value_multiplier = 1
+                    if is_op:
+                        value_multiplier += 2  # OP responses are valuable
+                    if has_awards:
+                        value_multiplier += 1  # Awarded comments
+                    if is_long_form:
+                        value_multiplier += 0.5  # Detailed responses
+                    if has_links:
+                        value_multiplier += 0.5  # Comments with references
+
+                    effective_score = comment_score * value_multiplier
+
+                    top_comments.append(
+                        {
+                            "author": str(comment.author)
+                            if comment.author
+                            else "Unknown",
+                            "content": comment.body,
+                            "score": comment_score,
+                            "effective_score": effective_score,
+                            "created_at": datetime.fromtimestamp(
+                                comment.created_utc
+                            ).isoformat(),
+                            "is_op": is_op,
+                            "has_awards": has_awards,
+                            "depth": getattr(comment, "depth", 0),
+                            "url": f"https://reddit.com{comment.permalink}",
+                            "comment_length": len(comment.body),
+                            "has_links": has_links,
+                        }
+                    )
+
+            # Sort by effective score and return top comments
+            top_comments.sort(key=lambda x: x["effective_score"], reverse=True)
+            return top_comments[:limit]
+
         except Exception as e:
             print(f"❌ Error extracting comments for {submission_id}: {e}")
             return []
-    
+
     def _convert_reddit_item(self, item, is_saved: bool = True) -> SocialPost:
         """Convert Reddit submission or comment to SocialPost"""
         try:
             # Handle both submissions (posts) and comments
             if isinstance(item, praw.models.Submission):  # It's a submission
                 # Extract top comments immediately during scraping
-                top_comments = self.get_top_comments(item.id, limit=5)
-                
+                top_comments = self.get_top_comments(
+                    item.id, limit=10
+                )  # Increased from 5 to 10
+
                 # Build enhanced content with valuable comments
-                enhanced_content = f"{item.title}\n\n{item.selftext}" if item.selftext else item.title
-                
+                enhanced_content = (
+                    f"{item.title}\n\n{item.selftext}" if item.selftext else item.title
+                )
+
                 if top_comments:
                     enhanced_content += "\n\n=== TOP VALUABLE COMMENTS ===\n"
                     for i, comment in enumerate(top_comments, 1):
                         enhanced_content += f"\n💬 Comment {i} (Score: {comment['score']}) by {comment['author']}:\n"
                         enhanced_content += f"{comment['content']}\n"
-                
+
+                        # Add comment metadata for analysis
+                        if comment.get("is_op"):
+                            enhanced_content += "   [OP Response]\n"
+                        if comment["score"] > 50:
+                            enhanced_content += "   [High Engagement]\n"
+
                 # Ensure we have a valid URL
-                url = f"https://reddit.com{item.permalink}" if hasattr(item, 'permalink') and item.permalink else 'https://reddit.com'
-                
+                url = (
+                    f"https://reddit.com{item.permalink}"
+                    if hasattr(item, "permalink") and item.permalink
+                    else "https://reddit.com"
+                )
+
                 return SocialPost(
-                    platform='reddit',
-                    post_id=item.id if hasattr(item, 'id') else 'unknown_id',
-                    author=str(item.author) if hasattr(item, 'author') and item.author else '[deleted]',
-                    author_handle=f"u/{item.author}" if hasattr(item, 'author') and item.author else '[deleted]',
+                    platform="reddit",
+                    post_id=item.id if hasattr(item, "id") else "unknown_id",
+                    author=str(item.author)
+                    if hasattr(item, "author") and item.author
+                    else "[deleted]",
+                    author_handle=f"u/{item.author}"
+                    if hasattr(item, "author") and item.author
+                    else "[deleted]",
                     content=enhanced_content,
-                    created_at=datetime.fromtimestamp(item.created_utc) if hasattr(item, 'created_utc') else datetime.utcnow(),
+                    created_at=datetime.fromtimestamp(item.created_utc)
+                    if hasattr(item, "created_utc")
+                    else datetime.utcnow(),
                     url=f"https://reddit.com{item.permalink}",
-                    post_type='post',
+                    post_type="post_with_comments" if top_comments else "post",
                     media_urls=self._extract_media_urls(item),
                     hashtags=[],  # Reddit doesn't have hashtags
                     mentions=[],  # Could parse mentions from text
                     engagement={
-                        'score': item.score,
-                        'upvote_ratio': getattr(item, 'upvote_ratio', 0),
-                        'num_comments': item.num_comments
-                    },
-                    is_saved=is_saved,
-                    saved_at=datetime.now() if is_saved else None,
-                    folder_category=f"r/{item.subreddit.display_name}" if hasattr(item, 'subreddit') and item.subreddit else 'Unknown'
-                )
-            elif isinstance(item, praw.models.Comment):  # It's a comment
-                # Ensure we have a valid URL
-                comment_url = f"https://reddit.com{item.permalink}" if hasattr(item, 'permalink') and item.permalink else 'https://reddit.com'
-                
-                return SocialPost(
-                    platform='reddit_comment',
-                    post_id=f"{item.id}" if hasattr(item, 'id') else 'unknown_comment_id',
-                    author=str(item.author) if hasattr(item, 'author') and item.author else '[deleted]',
-                    author_handle=f"u/{item.author}" if hasattr(item, 'author') and item.author else '[deleted]',
-                    content=getattr(item, 'body', '[No content]'),
-                    created_at=datetime.fromtimestamp(item.created_utc) if hasattr(item, 'created_utc') else datetime.utcnow(),
-                    url=comment_url,
-                    post_type='comment',
-                    media_urls=self._extract_media_from_comment(item),
-                    hashtags=[],
-                    mentions=[],
-                    engagement={
-                        'score': item.score,
-                        'replies': len(item.replies) if hasattr(item.replies, '__len__') else 0
+                        "score": item.score,
+                        "upvote_ratio": getattr(item, "upvote_ratio", 0),
+                        "num_comments": item.num_comments,
+                        "valuable_comments_count": len(top_comments),
                     },
                     is_saved=is_saved,
                     saved_at=datetime.now() if is_saved else None,
                     folder_category=f"r/{item.subreddit.display_name}"
+                    if hasattr(item, "subreddit") and item.subreddit
+                    else "Unknown",
                 )
-                
+            elif isinstance(item, praw.models.Comment):  # It's a comment
+                # Ensure we have a valid URL
+                comment_url = (
+                    f"https://reddit.com{item.permalink}"
+                    if hasattr(item, "permalink") and item.permalink
+                    else "https://reddit.com"
+                )
+
+                return SocialPost(
+                    platform="reddit_comment",
+                    post_id=f"{item.id}"
+                    if hasattr(item, "id")
+                    else "unknown_comment_id",
+                    author=str(item.author)
+                    if hasattr(item, "author") and item.author
+                    else "[deleted]",
+                    author_handle=f"u/{item.author}"
+                    if hasattr(item, "author") and item.author
+                    else "[deleted]",
+                    content=getattr(item, "body", "[No content]"),
+                    created_at=datetime.fromtimestamp(item.created_utc)
+                    if hasattr(item, "created_utc")
+                    else datetime.utcnow(),
+                    url=comment_url,
+                    post_type="comment",
+                    media_urls=self._extract_media_from_comment(item),
+                    hashtags=[],
+                    mentions=[],
+                    engagement={
+                        "score": item.score,
+                        "replies": len(item.replies)
+                        if hasattr(item.replies, "__len__")
+                        else 0,
+                    },
+                    is_saved=is_saved,
+                    saved_at=datetime.now() if is_saved else None,
+                    folder_category=f"r/{item.subreddit.display_name}",
+                )
+
         except Exception as e:
             print(f"❌ Error converting Reddit item: {e}")
             return None
-    
+
     def _extract_media_urls(self, submission: praw.models.Submission) -> List[str]:
-        """Extract media URLs from a Reddit submission, including galleries, videos, and images."""
-        if not submission or not hasattr(submission, 'id'):
+        """Extract media URLs from a Reddit submission - FAST VERSION (no gallery fetches)"""
+        if not submission or not hasattr(submission, "id"):
             return []
-            
-        media_urls = set()  # Use a set to avoid duplicates
+
+        media_urls = set()
 
         try:
-            # 1. Direct URL for image/gif
-            if hasattr(submission, 'url') and submission.url and isinstance(submission.url, str):
-                if any(submission.url.lower().endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.gif']):
+            # 1. Direct URL for image/gif (fast)
+            if (
+                hasattr(submission, "url")
+                and submission.url
+                and isinstance(submission.url, str)
+            ):
+                if any(
+                    submission.url.lower().endswith(ext)
+                    for ext in [".jpg", ".jpeg", ".png", ".gif"]
+                ):
                     media_urls.add(submission.url)
-            
-            # 2. Reddit Video
-            if hasattr(submission, 'is_video') and submission.is_video:
-                if hasattr(submission, 'media') and submission.media and isinstance(submission.media, dict):
-                    video_data = submission.media.get('reddit_video', {})
-                    if isinstance(video_data, dict) and 'fallback_url' in video_data:
-                        fallback_url = video_data['fallback_url']
-                        if isinstance(fallback_url, str):
-                            media_urls.add(fallback_url)
 
-            # 3. Reddit Gallery
-            if hasattr(submission, 'is_gallery') and submission.is_gallery:
-                if hasattr(submission, 'media_metadata') and submission.media_metadata:
-                    for item in submission.media_metadata.values():
-                        if not isinstance(item, dict):
-                            continue
-                        if item.get('status') == 'valid' and 's' in item and isinstance(item['s'], dict):
-                            media_url = item['s'].get('u')
-                            if isinstance(media_url, str):
-                                media_urls.add(media_url.replace('&amp;', '&'))
+            # 2. Thumbnail (always available, fast)
+            if hasattr(submission, "thumbnail") and submission.thumbnail:
+                thumb = submission.thumbnail
+                if thumb and thumb != "self" and thumb != "default":
+                    media_urls.add(thumb)
 
-            # 4. Embedded Media (e.g., YouTube, Gfycat)
-            if hasattr(submission, 'media') and submission.media and isinstance(submission.media, dict):
-                oembed = submission.media.get('oembed')
-                if oembed and isinstance(oembed, dict):
-                    thumbnail = oembed.get('thumbnail_url')
-                    if isinstance(thumbnail, str):
-                        media_urls.add(thumbnail)
-
-            # 5. Preview images (for link posts)
-            if hasattr(submission, 'preview') and submission.preview and 'images' in submission.preview:
-                for image in submission.preview['images']:
+            # 3. Preview images (fast, no fetch needed)
+            if (
+                hasattr(submission, "preview")
+                and submission.preview
+                and "images" in submission.preview
+            ):
+                for image in submission.preview["images"][:2]:  # Limit to first 2 images
                     if not isinstance(image, dict):
                         continue
-                    source = image.get('source', {})
+                    source = image.get("source", {})
                     if not isinstance(source, dict):
                         continue
-                    source_url = source.get('url')
+                    source_url = source.get("url")
                     if isinstance(source_url, str):
-                        media_urls.add(source_url.replace('&amp;', '&'))
+                        media_urls.add(source_url.replace("&amp;", "&"))
 
+            # Skip gallery and video checks that trigger fetches
+                    
         except Exception as e:
             print(f"⚠️ Error extracting media URLs: {e}")
 
@@ -641,21 +827,76 @@ class RedditExtractor(SocialExtractorBase):
 
     def _extract_media_from_comment(self, comment: praw.models.Comment) -> List[str]:
         """Extract media URLs from a Reddit comment (usually GIFs or images)."""
-        if not comment or not hasattr(comment, 'id'):
+        if not comment or not hasattr(comment, "id"):
             return []
-            
+
         media_urls = set()
-        
+
         try:
-            if hasattr(comment, 'media_metadata') and comment.media_metadata:
+            if hasattr(comment, "media_metadata") and comment.media_metadata:
                 for item in comment.media_metadata.values():
-                    if not isinstance(item, dict):
-                        continue
-                    if item.get('status') == 'valid' and 's' in item and isinstance(item['s'], dict):
-                        media_url = item['s'].get('u')
-                        if isinstance(media_url, str):
-                            media_urls.add(media_url.replace('&amp;', '&'))
+                    if "s" in item and "u" in item["s"]:
+                        media_urls.add(item["s"]["u"].replace("&amp;", "&"))
         except Exception as e:
-            print(f"⚠️ Error extracting media from comment: {e}")
-            
+            print(f"⚠️ Error extracting comment media: {e}")
+
         return list(media_urls)
+
+    async def _capture_reddit_screenshot(
+        self, post_url: str, post_id: str
+    ) -> Optional[str]:
+        """Capture a screenshot of a Reddit post using Playwright."""
+        if not self.enable_screenshots:
+            return None
+
+        try:
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                context = await browser.new_context(
+                    viewport={"width": 1200, "height": 800},
+                    user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                )
+                page = await context.new_page()
+
+                # Navigate to the Reddit post
+                await page.goto(post_url, wait_until="networkidle")
+
+                # Wait for the main post content to load
+                await page.wait_for_selector(
+                    '[data-testid="post-content"]', timeout=10000
+                )
+
+                # Try to find and click "Show more" or expand buttons if they exist
+                try:
+                    show_more_buttons = await page.query_selector_all(
+                        'button:has-text("Show more")'
+                    )
+                    for button in show_more_buttons:
+                        if await button.is_visible():
+                            await button.click()
+                            await page.wait_for_timeout(1000)
+                except Exception:
+                    pass
+
+                # Focus on the main post content area
+                post_element = await page.query_selector('[data-testid="post-content"]')
+                if not post_element:
+                    # Fallback selector
+                    post_element = await page.query_selector('[data-click-id="body"]')
+
+                if post_element:
+                    # Take screenshot of just the post content
+                    screenshot_path = self.screenshot_dir / f"{post_id}.png"
+                    await post_element.screenshot(path=str(screenshot_path))
+                    print(f"📸 Screenshot saved: {screenshot_path}")
+                    return str(screenshot_path)
+                else:
+                    # Take full page screenshot as fallback
+                    screenshot_path = self.screenshot_dir / f"{post_id}_full.png"
+                    await page.screenshot(path=str(screenshot_path), full_page=True)
+                    print(f"📸 Full page screenshot saved: {screenshot_path}")
+                    return str(screenshot_path)
+
+        except Exception as e:
+            print(f"⚠️ Error capturing screenshot for {post_id}: {e}")
+            return None

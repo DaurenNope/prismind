@@ -1,0 +1,62 @@
+╔════════════════════════════════════════════════════════════════╗
+║                  PRISMIND QUICK REFERENCE                      ║
+╚════════════════════════════════════════════════════════════════╝
+
+🚀 START BOT:
+    ./start_bot.sh
+
+📱 TELEGRAM COMMANDS:
+    /start      - Initialize bot
+    /collect    - Collect bookmarks from all platforms
+    /latest [N] - Show N recent posts (default 5)
+    /status     - System statistics
+    /help       - Show all commands
+
+🔧 TROUBLESHOOTING:
+
+Problem: ModuleNotFoundError
+Solution: ./start_bot.sh (handles PYTHONPATH automatically)
+
+Problem: Still showing "Unknown • Unknown"
+Solution: 
+    rm prismind.db
+    ./start_bot.sh
+    # Then /collect in Telegram
+
+Problem: No new bookmarks collected
+Solution:
+    - Make sure you have NEW bookmarks on Twitter/Reddit
+    - Check credentials in .env
+    - Check logs: tail -f logs/telegram_bot.log
+
+Problem: Bot won't start
+Solution:
+    - Check .env has TELEGRAM_BOT_TOKEN
+    - Activate venv: source .venv311/bin/activate
+    - Install deps: pip install -r requirements.txt
+
+📁 FILES:
+    start_bot.sh        - Start the bot (USE THIS)
+    TEST_NOW.md         - Detailed test instructions
+    FIX_PLAN.md         - What was fixed
+    FIXES_COMPLETE_2025.md - Full report
+    docs/QUICK_START.md - Setup guide
+
+🧪 VERIFY FIX:
+    python verify_fix.py
+
+📊 CHECK DATABASE:
+    sqlite3 prismind.db "SELECT platform, author, content FROM posts LIMIT 3;"
+
+🎯 SUCCESS LOOKS LIKE:
+    /latest shows:
+    ✅ 🐦 Twitter • @username
+       Actual tweet text...
+    
+    NOT:
+    ❌ 📄 Unknown • Unknown
+       No content...
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Made with 🧠 by professionals who get shit done.
