@@ -596,10 +596,33 @@ class ThreadsExtractor(SocialExtractorBase):
             await page.goto(url, timeout=30000)
             await page.wait_for_timeout(3000)  # Wait for content to load
             
-            # Try to extract real content using various selectors
+            # BEST METHOD: Extract from meta tags (most reliable!)
             content = ""
             author = "Unknown Author"
             author_handle = "unknown"
+            
+            # Try to get content from meta description (most reliable)
+            try:
+                meta_desc = await page.query_selector('meta[name="description"]')
+                if meta_desc:
+                    content = await meta_desc.get_attribute('content')
+                    if content:
+                        content = content.strip()
+                        logging.info(f"✅ Extracted content from meta tag: {content[:50]}...")
+            except Exception as e:
+                logging.debug(f"Meta description extraction failed: {e}")
+            
+            # Fallback: try og:description
+            if not content or len(content) < 10:
+                try:
+                    og_desc = await page.query_selector('meta[property="og:description"]')
+                    if og_desc:
+                        content = await og_desc.get_attribute('content')
+                        if content:
+                            content = content.strip()
+                            logging.info(f"✅ Extracted content from og:description: {content[:50]}...")
+                except Exception as e:
+                    logging.debug(f"OG description extraction failed: {e}")
             created_at = datetime.now(timezone.utc)
             engagement = {}
             media_urls = []
