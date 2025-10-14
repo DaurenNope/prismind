@@ -605,7 +605,11 @@ async def collect_threads_bookmarks(
 
         # Collect saved posts
         log("Fetching Threads saved posts...")
-        saved_posts = await extractor.get_saved_posts()
+        saved_posts = await extractor.get_saved_posts(
+            username=threads_username,
+            password=threads_password,
+            limit=50  # Collect up to 50 saved posts
+        )
 
         if not saved_posts:
             log("No Threads saved posts found", "info")
