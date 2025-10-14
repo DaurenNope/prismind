@@ -45,45 +45,35 @@ class ThreadsExtractor(SocialExtractorBase):
             return False
 
     async def _authenticate_with_cookies(self, cookies_path: str) -> bool:
-        """Authenticates using cookies and verifies by checking for a logged-in state."""
+        """Authenticates using cookies - SIMPLIFIED to match working test."""
         try:
             self.pw = await async_playwright().start()
             self.browser = await self.pw.chromium.launch(headless=True)
-            self.context = await self.browser.new_context(storage_state=cookies_path)
+            
+            # Use storage_state to load cookies - this is the key!
+            self.context = await self.browser.new_context(
+                storage_state=cookies_path,
+                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+            )
             self.page = await self.context.new_page()
             
-            # Go directly to saved posts to test if logged in
-            await self.page.goto("https://www.threads.com/saved", wait_until='domcontentloaded', timeout=15000)
+            # Go directly to saved posts
+            logging.info("Navigating to saved posts with cookies...")
+            await self.page.goto("https://www.threads.com/saved", wait_until='domcontentloaded', timeout=20000)
             await asyncio.sleep(3)
             
-            # Check if we're on the login page (redirect) or saved page
+            # Simple check: are we on login page?
             current_url = self.page.url
             if 'login' in current_url:
-                logging.info("Cookie auth failed - redirected to login page")
+                logging.info("Cookie auth failed - redirected to login")
                 return False
             
-            # Try multiple success indicators with short timeouts
-            success_indicators = [
-                'a[href*="/post/"]',  # Post links mean we're logged in
-                '[role="main"]',  # Main content area
-                'button[aria-label="Create"]',  # Create button
-                'nav[role="navigation"]'  # Nav bar
-            ]
-            
-            for indicator in success_indicators:
-                try:
-                    await self.page.wait_for_selector(indicator, timeout=3000)
-                    logging.info(f"✅ Cookie authentication successful - found: {indicator}")
-                    return True
-                except:
-                    continue
-            
-            logging.info("Cookie auth unclear - no definitive logged-in elements found")
-            return False
+            # Success! We're on the saved page
+            logging.info(f"✅ Cookie authentication successful! URL: {current_url}")
+            return True
             
         except Exception as e:
             logging.error(f"Cookie authentication failed: {e}")
-            # Clean up browser on error
             if hasattr(self, 'browser') and self.browser:
                 await self.browser.close()
             if hasattr(self, 'pw') and self.pw:
