@@ -186,7 +186,18 @@ class IntelligentContentAnalyzer:
                     'insights': []
                 }
         
+        # Ensure analysis is always a dict (safety check)
+        if not isinstance(analysis, dict):
+            print(f"⚠️ Analysis is not a dict (type: {type(analysis)}), creating fallback dict")
+            analysis = {
+                'post_id': post.post_id,
+                'platform': post.platform,
+                'analyzed_at': datetime.now().isoformat(),
+                'analysis_version': 'fallback'
+            }
+        
         # 4. Advanced Value Scoring
+        content_quality_score = 0.0  # Initialize before use
         try:
             value_score = self._calculate_intelligent_value_score(analysis, post)
             analysis['intelligent_value_score'] = value_score
@@ -201,6 +212,7 @@ class IntelligentContentAnalyzer:
         except Exception as e:
             print(f"⚠️ Quality scoring failed: {e}")
             analysis['content_quality_score'] = 0.0
+            content_quality_score = 0.0  # Ensure it's set even on error
         
         # 6. Rewrite Candidate Assessment
         try:
@@ -225,6 +237,25 @@ class IntelligentContentAnalyzer:
         except Exception as e:
             print(f"⚠️ Learning recommendations generation failed: {e}")
             analysis['learning_recommendations'] = []
+        
+        # 9. Persona Matching (match analyzed post to personas)
+        try:
+            from src.services.persona_matcher import get_persona_matcher
+            
+            matcher = get_persona_matcher()
+            persona_recommendations = matcher.get_recommended_personas(analysis)
+            
+            analysis['recommended_personas'] = persona_recommendations.get('recommended_personas', [])
+            analysis['persona_match_scores'] = persona_recommendations.get('persona_match_scores', {})
+            analysis['persona_candidacy'] = persona_recommendations.get('persona_candidacy', {})
+            
+            if analysis['recommended_personas']:
+                print(f"🎭 Matched to personas: {', '.join(analysis['recommended_personas'][:3])}")
+        except Exception as e:
+            print(f"⚠️ Persona matching failed: {e}")
+            analysis['recommended_personas'] = []
+            analysis['persona_match_scores'] = {}
+            analysis['persona_candidacy'] = {}
         
         print(f"✅ Analysis complete - Value Score: {analysis.get('intelligent_value_score', 0.0)}/10")
         return analysis
@@ -444,7 +475,10 @@ class IntelligentContentAnalyzer:
               "hook": "The most compelling technical hook (1 sentence)",
               "key_points": ["Technical detail 1", "Technical detail 2", "Technical detail 3"],
               "target_audience": "Who this angle is for",
-              "estimated_engagement": "high/medium/low"
+              "estimated_engagement": "high/medium/low",
+              "tone": "technical/educational/authoritative - How to write this",
+              "call_to_action": "What action to suggest (try this, read more, build something, etc.)",
+              "platform_fit": "twitter_thread/linkedin_post/short_tweet - Best format for this angle"
             }},
             {{
               "persona": "builder",
@@ -452,7 +486,10 @@ class IntelligentContentAnalyzer:
               "hook": "Action-oriented hook focused on building (1 sentence)",
               "key_points": ["Practical step 1", "Practical step 2", "Practical step 3"],
               "target_audience": "Makers, founders, product builders",
-              "estimated_engagement": "high/medium/low"
+              "estimated_engagement": "high/medium/low",
+              "tone": "action-oriented/motivational/practical - Energetic and focused on results",
+              "call_to_action": "Build this, ship now, start today, etc.",
+              "platform_fit": "twitter_thread/short_tweet - Quick actionable content"
             }},
             {{
               "persona": "learner",
@@ -460,7 +497,10 @@ class IntelligentContentAnalyzer:
               "hook": "Learning-focused hook that makes it accessible (1 sentence)",
               "key_points": ["Learning point 1", "Learning point 2", "Learning point 3"],
               "target_audience": "Beginners and students",
-              "estimated_engagement": "high/medium/low"
+              "estimated_engagement": "high/medium/low",
+              "tone": "educational/friendly/patient - Clear and beginner-friendly",
+              "call_to_action": "Learn more, try this exercise, practice this, etc.",
+              "platform_fit": "linkedin_post/twitter_thread - Detailed educational content"
             }},
             {{
               "persona": "trendsetter",
@@ -468,7 +508,10 @@ class IntelligentContentAnalyzer:
               "hook": "Trend-focused hook that highlights what's emerging (1 sentence)",
               "key_points": ["Trend insight 1", "Trend insight 2", "Trend insight 3"],
               "target_audience": "Early adopters and innovators",
-              "estimated_engagement": "high/medium/low"
+              "estimated_engagement": "high/medium/low",
+              "tone": "excited/forward-looking/provocative - FOMO-inducing",
+              "call_to_action": "Jump on this trend, get early access, don't miss this, etc.",
+              "platform_fit": "short_tweet/twitter_thread - Fast-moving trend content"
             }},
             {{
               "persona": "thought_leader",
@@ -476,16 +519,19 @@ class IntelligentContentAnalyzer:
               "hook": "Thought-provoking hook about larger implications (1 sentence)",
               "key_points": ["Strategic insight 1", "Strategic insight 2", "Strategic insight 3"],
               "target_audience": "Leaders and strategists",
-              "estimated_engagement": "high/medium/low"
+              "estimated_engagement": "high/medium/low",
+              "tone": "authoritative/analytical/visionary - Big picture perspective",
+              "call_to_action": "Consider this, rethink your strategy, prepare for this future, etc.",
+              "platform_fit": "linkedin_post/twitter_thread - Long-form thought leadership"
             }}
           ],
 
           "discovery_signals": {{
-            "author_authority": "high/medium/low - Assess credibility based on engagement, follower count, content quality",
-            "trend_relevance": "emerging/mainstream/declining - Is this topic trending or fading",
+            "author_authority": "high/medium/low - Based on engagement (>1000 likes=high, >100=medium, <100=low)",
+            "trend_relevance": "emerging/mainstream/declining - Emerging if mentions new tech/concepts, mainstream if established topics, declining if outdated",
             "viral_potential": 75,
-            "discussion_quality": "high/medium/low - Quality of conversation around this content",
-            "unique_perspective": "yes/no - Does this offer a unique take or is it repetitive"
+            "discussion_quality": "high/medium/low - High if >50 comments with substance, medium if 10-50, low if <10",
+            "unique_perspective": "yes/no - YES if offers novel insight/data/approach, NO if repeating common knowledge"
           }},
 
           "content_freshness": {{
@@ -763,49 +809,78 @@ class IntelligentContentAnalyzer:
         }
     
     def _calculate_intelligent_value_score(self, analysis: Dict, post: SocialPost) -> float:
-        """Calculate sophisticated value score based on multiple factors"""
+        """Calculate sophisticated value score based on multiple factors with wider distribution"""
         
-        score = 5.0  # Base score
-        
-        # Content quality indicators
-        if 'quality_indicators' in analysis:
+        # Safety check - ensure analysis is a dict
+        if not isinstance(analysis, dict):
+            print(f"⚠️ _calculate_intelligent_value_score received non-dict: {type(analysis)}")
+            return 0.0
+
+        score = 3.0  # Lower base score for more contrast
+
+        # Content quality indicators (0-3 points)
+        if isinstance(analysis.get('quality_indicators'), list):
             quality_count = len(analysis['quality_indicators'])
-            score += min(quality_count * 0.5, 2.0)
-        
-        # Actionable content bonus
-        if 'actionable_items' in analysis:
+            score += min(quality_count * 0.6, 3.0)  # Increased weight
+
+        # Actionable content bonus (0-2 points)
+        if isinstance(analysis.get('actionable_items'), list):
             actionable_count = len(analysis['actionable_items'])
-            score += min(actionable_count * 0.3, 1.5)
-        
-        # Learning value bonus
-        if 'learning_value' in analysis and analysis['learning_value']:
-            score += 1.0
-        
-        # Engagement quality (not just quantity)
-        if post.engagement:
-            # High engagement with good content is valuable
-            likes = post.engagement.get('likes', 0)
-            comments = post.engagement.get('comments', 0)
-            if likes > 100 or comments > 20:
-                score += 0.5
-        
-        # Platform-specific adjustments
+            score += min(actionable_count * 0.4, 2.0)  # Increased weight
+
+        # Learning value bonus (0-2 points)
+        learning_value = analysis.get('learning_value')
+        if learning_value and isinstance(learning_value, str):
+            if len(learning_value) > 50:
+                score += 2.0
+            else:
+                score += 1.0
+
+        # Engagement quality with exponential scaling (0-2 points)
+        if isinstance(post.engagement, dict):
+            likes = post.engagement.get('likes', 0) or post.engagement.get('score', 0) or post.engagement.get('favorite_count', 0)
+            comments = post.engagement.get('comments', 0) or post.engagement.get('replies', 0) or post.engagement.get('num_comments', 0)
+
+            # Exponential scaling for viral content
+            if likes > 1000 or comments > 100:
+                score += 2.0  # Viral
+            elif likes > 500 or comments > 50:
+                score += 1.5  # High engagement
+            elif likes > 100 or comments > 20:
+                score += 1.0  # Good engagement
+            elif likes > 20 or comments > 5:
+                score += 0.5  # Medium engagement
+
+        # Platform-specific adjustments (0-1 points)
         if post.platform == 'reddit':
             # Reddit discussions often have high value
             score += 0.5
         elif post.platform == 'twitter':
             # Twitter threads can be valuable
             if post.post_type == 'thread':
-                score += 0.5
-        
-        # Content complexity and depth
+                score += 1.0  # Threads are high value
+
+        # Content complexity and depth (0-1.5 points)
         if 'complexity_level' in analysis:
             complexity = analysis['complexity_level']
-            if complexity in ['Advanced', 'Expert']:
+            if complexity == 'Expert':
+                score += 1.5
+            elif complexity == 'Advanced':
+                score += 1.0
+            elif complexity == 'Intermediate':
                 score += 0.5
-        
-        # Cap the score at 10
-        return min(score, 10.0)
+
+        # Practical applications bonus (0-1.5 points)
+        if 'practical_applications' in analysis:
+            app_count = len(analysis['practical_applications'])
+            score += min(app_count * 0.5, 1.5)
+
+        # Penalize low quality (can go below base)
+        if 'quality_indicators' in analysis and len(analysis['quality_indicators']) == 0:
+            score -= 1.0
+
+        # Cap the score at 10 and floor at 1
+        return max(1.0, min(score, 10.0))
     
     def _calculate_content_quality_score(self, analysis: Dict, post: SocialPost) -> float:
         """
@@ -817,6 +892,14 @@ class IntelligentContentAnalyzer:
         - Information value
         - Shareability factors
         """
+        
+        # Safety check - ensure inputs are correct types
+        if not isinstance(analysis, dict):
+            print(f"⚠️ _calculate_content_quality_score received non-dict: {type(analysis)}")
+            return 0.0
+        
+        if not post.content or not isinstance(post.content, str):
+            return 0.0
         
         quality_score = 0.0
         content = post.content.lower()
@@ -881,6 +964,16 @@ class IntelligentContentAnalyzer:
         - It lacks engaging elements but has valuable content
         - It has potential but needs optimization for social platforms
         """
+        
+        # Safety check - ensure inputs are correct types
+        if not isinstance(analysis, dict):
+            return False
+        
+        if not post.content or not isinstance(post.content, str):
+            return False
+        
+        if not isinstance(quality_score, (int, float)):
+            quality_score = 0.0
         
         content = post.content
         content_lower = content.lower()
@@ -975,7 +1068,10 @@ class IntelligentContentAnalyzer:
                 "hook": "Here's what you need to know from a technical perspective",
                 "key_points": ["Main technical concept", "Implementation details", "Best practices"],
                 "target_audience": "Developers and engineers",
-                "estimated_engagement": "medium"
+                "estimated_engagement": "medium",
+                "tone": "technical",
+                "call_to_action": "Try implementing this in your next project",
+                "platform_fit": "twitter_thread"
             },
             {
                 "persona": "builder",
@@ -983,7 +1079,10 @@ class IntelligentContentAnalyzer:
                 "hook": "Build something with this knowledge",
                 "key_points": ["Practical application", "Quick implementation", "Real-world use case"],
                 "target_audience": "Makers and builders",
-                "estimated_engagement": "medium"
+                "estimated_engagement": "medium",
+                "tone": "action-oriented",
+                "call_to_action": "Ship this today",
+                "platform_fit": "short_tweet"
             },
             {
                 "persona": "learner",
@@ -991,7 +1090,10 @@ class IntelligentContentAnalyzer:
                 "hook": "Learn the basics step by step",
                 "key_points": ["Core concept explained", "Why it matters", "How to get started"],
                 "target_audience": "Beginners",
-                "estimated_engagement": "medium"
+                "estimated_engagement": "medium",
+                "tone": "educational",
+                "call_to_action": "Practice this concept",
+                "platform_fit": "linkedin_post"
             },
             {
                 "persona": "trendsetter",
@@ -999,7 +1101,10 @@ class IntelligentContentAnalyzer:
                 "hook": "This is trending and here's why",
                 "key_points": ["Current trend", "Market momentum", "Early adoption opportunity"],
                 "target_audience": "Innovators",
-                "estimated_engagement": "medium"
+                "estimated_engagement": "medium",
+                "tone": "excited",
+                "call_to_action": "Get ahead of this trend",
+                "platform_fit": "short_tweet"
             },
             {
                 "persona": "thought_leader",
@@ -1007,7 +1112,10 @@ class IntelligentContentAnalyzer:
                 "hook": "What this means for the future",
                 "key_points": ["Industry impact", "Future trends", "Strategic considerations"],
                 "target_audience": "Leaders and strategists",
-                "estimated_engagement": "medium"
+                "estimated_engagement": "medium",
+                "tone": "authoritative",
+                "call_to_action": "Prepare your strategy for this shift",
+                "platform_fit": "linkedin_post"
             }
         ]
 
@@ -1024,6 +1132,49 @@ class IntelligentContentAnalyzer:
                 publication_age = f"{int(age_hours/168)} weeks"
         except Exception:
             publication_age = "unknown"
+
+        # Compute better discovery signals even in basic mode
+        likes = 0
+        comments = 0
+        if post.engagement:
+            likes = post.engagement.get('likes', 0) or post.engagement.get('score', 0) or post.engagement.get('favorite_count', 0)
+            comments = post.engagement.get('comments', 0) or post.engagement.get('replies', 0) or post.engagement.get('num_comments', 0)
+
+        # Author authority based on engagement
+        if likes > 1000 or comments > 100:
+            author_authority = 'high'
+        elif likes > 100 or comments > 20:
+            author_authority = 'medium'
+        else:
+            author_authority = 'low'
+
+        # Trend relevance based on keywords
+        content_lower = post.content.lower() if post.content else ''
+        emerging_keywords = ['gpt-5', 'gpt5', 'claude', 'gemini', 'new release', 'just launched', 'breaking', 'announced', 'alpha', 'beta']
+        declining_keywords = ['deprecated', 'legacy', 'old version', 'no longer', 'sunset']
+
+        if any(kw in content_lower for kw in emerging_keywords):
+            trend_relevance = 'emerging'
+        elif any(kw in content_lower for kw in declining_keywords):
+            trend_relevance = 'declining'
+        else:
+            trend_relevance = 'mainstream'
+
+        # Discussion quality based on comments
+        if comments > 50:
+            discussion_quality = 'high'
+        elif comments > 10:
+            discussion_quality = 'medium'
+        else:
+            discussion_quality = 'low'
+
+        # Viral potential calculation
+        engagement_score = (likes * 0.6 + comments * 1.5) / 10  # Scale to 0-100
+        viral_potential = min(100, int(engagement_score))
+
+        # Unique perspective detection
+        unique_indicators = ['new approach', 'novel', 'first', 'discovered', 'invented', 'created', 'built', 'data shows', 'research']
+        unique_perspective = 'yes' if any(ind in content_lower for ind in unique_indicators) else 'no'
 
         return {
             'category': 'General',
@@ -1048,11 +1199,11 @@ class IntelligentContentAnalyzer:
             'ai_service': 'basic',
             'rewrite_angles': basic_rewrite_angles,
             'discovery_signals': {
-                'author_authority': 'medium',
-                'trend_relevance': 'unknown',
-                'viral_potential': 50,
-                'discussion_quality': 'unknown',
-                'unique_perspective': 'unknown'
+                'author_authority': author_authority,
+                'trend_relevance': trend_relevance,
+                'viral_potential': viral_potential,
+                'discussion_quality': discussion_quality,
+                'unique_perspective': unique_perspective
             },
             'content_freshness': {
                 'publication_age': publication_age,

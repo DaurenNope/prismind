@@ -38,8 +38,12 @@ class DuplicateDetector:
         
         if self.db:
             try:
-                posts = self.db.get_posts(limit=10000)
-                for post in posts:
+                # Load all posts (no limit) - duplicate detection needs complete dataset
+                # If database is too large, this might be slow, but it's necessary for accuracy
+                all_posts = self.db.get_all_posts()
+                logger.info(f"Loading {len(all_posts)} posts into duplicate detection cache...")
+                
+                for post in all_posts:
                     if post.get('url'):
                         normalized_url = self.normalize_url(post['url'])
                         self._url_cache.add(normalized_url)
@@ -48,7 +52,7 @@ class DuplicateDetector:
                         content_hash = self.hash_content(post['content'])
                         self._content_hash_cache.add(content_hash)
                 
-                logger.info(f"✅ Duplicate detector initialized: {len(self._url_cache)} URLs, {len(self._content_hash_cache)} content hashes")
+                logger.info(f"✅ Loaded {len(self._url_cache)} URLs and {len(self._content_hash_cache)} content hashes into cache")
             except Exception as e:
                 logger.warning(f"Cache initialization failed: {e}")
     
@@ -84,10 +88,49 @@ class DuplicateDetector:
             return self.is_duplicate_twitter(item)
         elif platform == 'reddit':
             return self.is_duplicate_reddit(item)
+        elif platform == 'threads':
+            return self.is_duplicate_threads(item)
         elif platform == 'book':
             return self.is_duplicate_book(item)
         
         return False
+    
+    def is_duplicate_threads(self, item: Dict[str, Any]) -> bool:
+        """Threads-specific duplicate detection"""
+        # Threads URLs can have /post/ID or just ID
+        url = item.get('url', '')
+        
+        if url:
+            # Normalize Threads URL - extract post ID
+            # https://www.threads.net/@user/post/ABC123 → ABC123
+            import re
+            thread_match = re.search(r'/post/([^/?]+)', url)
+            if thread_match:
+                post_id = thread_match.group(1)
+                
+                # Check if this post_id already exists in cache or database
+                # First check URL cache (faster)
+                if self.is_duplicate_url(url):
+                    return True
+                
+                # Then check database for Threads posts specifically
+                if self.db:
+                    try:
+                        # Get all Threads posts (no limit - need complete check)
+                        threads_posts = self.db.get_posts_by_platform('threads', limit=None) if hasattr(self.db, 'get_posts_by_platform') else self.db.get_all_posts()
+                        threads_posts = [p for p in threads_posts if p.get('platform', '').lower() == 'threads']
+                        
+                        for post in threads_posts:
+                            existing_url = post.get('url', '')
+                            if existing_url:
+                                existing_match = re.search(r'/post/([^/?]+)', existing_url)
+                                if existing_match and existing_match.group(1) == post_id:
+                                    return True
+                    except Exception as e:
+                        logger.warning(f"Threads duplicate check failed: {e}")
+        
+        # Fallback to URL check
+        return self.is_duplicate_url(url)
     
     def normalize_url(self, url: str) -> str:
         """
@@ -168,11 +211,11 @@ class DuplicateDetector:
             except Exception as e:
                 logger.warning(f"Supabase URL check failed: {e}")
         
-        # Check SQLite if available
+        # Check SQLite if available (check all posts for accuracy)
         if self.db:
             try:
-                posts = self.db.get_posts(limit=1000)
-                for post in posts:
+                all_posts = self.db.get_all_posts()
+                for post in all_posts:
                     if post.get('url') and self.normalize_url(post['url']) == normalized:
                         self._url_cache.add(normalized)  # Add to cache
                         return True

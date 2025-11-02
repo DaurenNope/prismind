@@ -629,6 +629,10 @@ class ThreadsExtractor(SocialExtractorBase):
             hashtags = []
             mentions = []
             
+            # DOM extraction fallback (only if meta tags failed or are too short)
+            # Use meta tag content length as reference - if DOM gives more, prefer it
+            meta_content_length = len(content) if content else 0
+            
             # Try different selectors for post content
             content_selectors = [
                 '[data-pressable-container="true"] span',
@@ -639,21 +643,39 @@ class ThreadsExtractor(SocialExtractorBase):
                 'div[style*="text"] span'
             ]
             
+            # Collect ALL text elements, not just first 3
+            all_texts = []
             for selector in content_selectors:
                 try:
                     elements = await page.query_selector_all(selector)
                     if elements:
                         # Get text from all matching elements
                         texts = []
+                        seen_texts = set()  # Avoid duplicates
                         for elem in elements:
                             text = await elem.inner_text()
                             text = text.strip()
-                            if text and len(text) > 10:  # Only meaningful text
+                            # Only meaningful text (length > 10) and not already seen
+                            if text and len(text) > 10 and text not in seen_texts:
                                 texts.append(text)
+                                seen_texts.add(text)
                         
                         if texts:
-                            content = " ".join(texts[:3])  # Take first 3 meaningful texts
-                            break
+                            # Use ALL texts, not just first 3
+                            combined_text = " ".join(texts)
+                            # Filter out spam patterns (repeated usernames, etc.)
+                            # Split by common separators and filter short/spam-like segments
+                            import re
+                            # Remove very short segments that might be UI elements
+                            segments = re.split(r'\s{2,}|\n', combined_text)
+                            filtered_segments = [s.strip() for s in segments if len(s.strip()) > 20 and not re.match(r'^@\w+\s*$', s.strip())]
+                            filtered_content = " ".join(filtered_segments)
+                            
+                            # Use DOM content if it's longer than meta tag content
+                            if len(filtered_content) > meta_content_length:
+                                content = filtered_content
+                                logging.info(f"✅ Extracted full content from DOM ({len(filtered_content)} chars)")
+                                break
                 except Exception as e:
                     logging.debug(f"Selector {selector} failed: {e}")
                     continue
@@ -793,7 +815,7 @@ class ThreadsExtractor(SocialExtractorBase):
             hashtags = []
             mentions = []
             
-            # Try different selectors for post content
+            # Try different selectors for post content (sync version)
             content_selectors = [
                 '[data-pressable-container="true"] span',
                 'article span',
@@ -803,20 +825,35 @@ class ThreadsExtractor(SocialExtractorBase):
                 'div[style*="text"] span'
             ]
             
+            # Collect ALL text elements, not just first 3 (sync version)
             for selector in content_selectors:
                 try:
                     elements = page.query_selector_all(selector)
                     if elements:
                         # Get text from all matching elements
                         texts = []
+                        seen_texts = set()  # Avoid duplicates
                         for elem in elements:
                             text = elem.inner_text().strip()
-                            if text and len(text) > 10:  # Only meaningful text
+                            # Only meaningful text (length > 10) and not already seen
+                            if text and len(text) > 10 and text not in seen_texts:
                                 texts.append(text)
+                                seen_texts.add(text)
                         
                         if texts:
-                            content = " ".join(texts[:3])  # Take first 3 meaningful texts
-                            break
+                            # Use ALL texts, not just first 3
+                            combined_text = " ".join(texts)
+                            # Filter out spam patterns (repeated usernames, etc.)
+                            import re
+                            # Remove very short segments that might be UI elements
+                            segments = re.split(r'\s{2,}|\n', combined_text)
+                            filtered_segments = [s.strip() for s in segments if len(s.strip()) > 20 and not re.match(r'^@\w+\s*$', s.strip())]
+                            filtered_content = " ".join(filtered_segments)
+                            
+                            if filtered_content:
+                                content = filtered_content
+                                logging.info(f"✅ Extracted full content from DOM ({len(filtered_content)} chars)")
+                                break
                 except Exception as e:
                     logging.debug(f"Selector {selector} failed: {e}")
                     continue

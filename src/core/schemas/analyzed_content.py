@@ -32,6 +32,9 @@ class RewriteAngle(TypedDict):
     key_points: List[str]  # 3-5 main points to emphasize
     target_audience: str  # Who this angle targets
     estimated_engagement: Literal["high", "medium", "low"]
+    tone: str  # Writing tone (technical, action-oriented, educational, excited, authoritative)
+    call_to_action: str  # What action to suggest to readers
+    platform_fit: str  # Best platform/format (twitter_thread, linkedin_post, short_tweet)
 
 
 # ============================================================================

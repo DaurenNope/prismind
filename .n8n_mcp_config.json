@@ -1,0 +1,6 @@
+{
+  "n8n_api_url": "http://localhost:5678/api/v1",
+  "n8n_api_key": "",
+  "n8n_webhook_username": "",
+  "n8n_webhook_password": ""
+}

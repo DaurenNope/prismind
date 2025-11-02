@@ -110,24 +110,30 @@ async def analyze_and_store_post(db_manager, post_dict, supabase_manager=None):
         try:
             analysis_result = await analyzer.analyze_content(analysis_content)
 
-            # Merge analysis results with original post data
-            enhanced_post = {**post_dict, **analysis_result}
-
-            # Guarantee non-None list fields
-            for key in ("key_concepts", "suggested_tags", "action_items"):
-                val = enhanced_post.get(key)
+            # Start with original post data
+            enhanced_post = dict(post_dict)
+            
+            # Only add essential analysis fields - no more bloated columns!
+            essential_fields = {
+                'ai_summary': analysis_result.get('summary', ''),
+                'value_score': analysis_result.get('value_score', 0.0),
+                'quality_score': analysis_result.get('content_quality_score', analysis_result.get('quality_score', 0.0)),
+                'sentiment': analysis_result.get('sentiment', ''),
+                'key_concepts': analysis_result.get('key_concepts', []),
+                'tags': analysis_result.get('tags', []),
+                'category': analysis_result.get('category', '')
+            }
+            
+            # Ensure list fields are actually lists
+            for key in ("key_concepts", "tags"):
+                val = essential_fields.get(key)
                 if val is None:
-                    enhanced_post[key] = []
+                    essential_fields[key] = []
                 elif not isinstance(val, list):
-                    enhanced_post[key] = [val]
-
-            # Ensure scalar defaults exist
-            if enhanced_post.get("summary") is None:
-                enhanced_post["summary"] = ""
-            if enhanced_post.get("value_score") is None:
-                enhanced_post["value_score"] = 0.0
-            if enhanced_post.get("quality_score") is None:
-                enhanced_post["quality_score"] = 0.0
+                    essential_fields[key] = [val] if val else []
+            
+            # Add only essential fields to the post
+            enhanced_post.update(essential_fields)
 
             log(f"Analysis completed successfully", "success")
             

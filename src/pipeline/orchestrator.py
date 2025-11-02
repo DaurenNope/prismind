@@ -22,7 +22,7 @@ class Orchestrator:
         self.config = get_config()
         self.storage = get_storage()
         self._ensure_state_sync()
-    
+
     def _ensure_state_sync(self):
         """Ensure state database is synced with main database on initialization"""
         try:
@@ -32,16 +32,24 @@ class Orchestrator:
             # Silent - state sync is automatic recovery, not critical
             pass
 
-    async def collect_all(self, platforms: Optional[List[str]] = None) -> Dict[str, Any]:
+    async def collect_all(
+        self, platforms: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
         # Default to bookmark platforms only; RSS discovery is separate
         plat = platforms or ["twitter", "reddit", "threads"]
         if not self.config.flags.get("enable_threads"):
             plat = [p for p in plat if p != "threads"]
 
         # Add optional sources based on flags
-        if self.config.flags.get("enable_github_trending") and "github_trending" not in plat:
+        if (
+            self.config.flags.get("enable_github_trending")
+            and "github_trending" not in plat
+        ):
             plat.append("github_trending")
-        if self.config.flags.get("enable_telegram_channels") and "telegram_channels" not in plat:
+        if (
+            self.config.flags.get("enable_telegram_channels")
+            and "telegram_channels" not in plat
+        ):
             plat.append("telegram_channels")
 
         results: Dict[str, Any] = {p: 0 for p in plat}
@@ -70,15 +78,22 @@ class Orchestrator:
         class _ShimDB:
             def __init__(self, storage):
                 self._s = storage
+
             def add_post(self, post):
                 return self._s.save_post(post)
+
+            def update_post(self, post_id: str, post_data: dict):
+                # For the shim, we'll just save the post (upsert behavior)
+                return self._s.save_post(post_data)
+
             def get_all_posts(self, include_deleted: bool = False):
                 return self._s.get_posts(limit=10000)
+
             def get_post_by_id(self, post_id: str):
                 # Simple implementation to check if post exists
                 posts = self._s.get_posts(limit=10000)
                 for post in posts:
-                    if post.get('post_id') == post_id:
+                    if post.get("post_id") == post_id:
                         return post
                 return None
 
@@ -87,54 +102,68 @@ class Orchestrator:
         # Optional Supabase manager for collectors that support cloud sync
         supabase_manager = None
         try:
-            from src.supabase_manager import SupabaseManager
+            from src.database.manager import SupabaseManager
+
             supabase_manager = SupabaseManager()
         except Exception:
             supabase_manager = None
 
         # Get existing IDs and URLs to avoid duplicates
         existing_posts = self.storage.get_posts(limit=10000)
-        existing_ids = {post.get('post_id') for post in existing_posts if post.get('post_id')}
-        existing_urls = {post.get('url') for post in existing_posts if post.get('url')}
+        existing_ids = {
+            post.get("post_id") for post in existing_posts if post.get("post_id")
+        }
+        existing_urls = {post.get("url") for post in existing_posts if post.get("url")}
 
         if platform == "twitter":
-            from src.services.collection.platform_collectors import collect_twitter_bookmarks
+            from src.services.collection.platform_collectors import (
+                collect_twitter_bookmarks,
+            )
+
             return await collect_twitter_bookmarks(
-                db_manager=shim_db, 
-                existing_ids=existing_ids, 
-                existing_urls=existing_urls, 
-                supabase_manager=supabase_manager
+                db_manager=shim_db,
+                existing_ids=existing_ids,
+                existing_urls=existing_urls,
+                supabase_manager=supabase_manager,
             )
         if platform == "reddit":
-            from src.services.collection.platform_collectors import collect_reddit_bookmarks
+            from src.services.collection.platform_collectors import (
+                collect_reddit_bookmarks,
+            )
+
             return await collect_reddit_bookmarks(
-                db_manager=shim_db, 
-                existing_ids=existing_ids, 
-                existing_urls=existing_urls, 
-                supabase_manager=supabase_manager
+                db_manager=shim_db,
+                existing_ids=existing_ids,
+                existing_urls=existing_urls,
+                supabase_manager=supabase_manager,
             )
         if platform == "threads":
-            from src.services.collection.platform_collectors import collect_threads_bookmarks
+            from src.services.collection.platform_collectors import (
+                collect_threads_bookmarks,
+            )
+
             return await collect_threads_bookmarks(
-                db_manager=shim_db, 
-                existing_ids=existing_ids, 
-                existing_urls=existing_urls, 
-                supabase_manager=supabase_manager
+                db_manager=shim_db,
+                existing_ids=existing_ids,
+                existing_urls=existing_urls,
+                supabase_manager=supabase_manager,
             )
         if platform == "rss":
-            items = await self.autonomous_discover()
-            return items.get("saved", 0)
+            # RSS discovery is separate from bookmarks collection
+            # This should not be called when collecting bookmarks
+            logger.info("RSS collection skipped - RSS discovery is handled separately")
+            return 0
         if platform == "github_trending":
             if not self.config.flags.get("enable_github_trending"):
                 return 0
             try:
                 from scripts.github_trending_scraper import scrape_trending
                 from datetime import datetime
-                
+
                 logger.info("Collecting GitHub trending repositories...")
                 trending_data = scrape_trending()
                 saved_count = 0
-                
+
                 for period, repos in trending_data.items():
                     for repo in repos:
                         repo_data = {
@@ -144,7 +173,7 @@ class Orchestrator:
                             "description": repo.get("description", ""),
                             "language": repo.get("language", ""),
                             "stars": int(repo["stars"]),
-                            "collected_at": datetime.now().isoformat()
+                            "collected_at": datetime.now().isoformat(),
                         }
                         try:
                             # Save to native github_trending table
@@ -152,9 +181,13 @@ class Orchestrator:
                             if result:
                                 saved_count += 1
                         except Exception as e:
-                            logger.warning(f"Failed to save GitHub repo {repo['full_name']}: {e}")
-                
-                logger.info(f"GitHub trending collection completed: {saved_count} new repos.")
+                            logger.warning(
+                                f"Failed to save GitHub repo {repo['full_name']}: {e}"
+                            )
+
+                logger.info(
+                    f"GitHub trending collection completed: {saved_count} new repos."
+                )
                 return saved_count
             except Exception as e:
                 logger.error(f"GitHub trending collection failed: {e}")
@@ -163,73 +196,108 @@ class Orchestrator:
             if not self.config.flags.get("enable_telegram_channels"):
                 return 0
             try:
-                from src.core.extraction.telegram_channel_extractor import TelegramChannelExtractor
+                from src.core.extraction.telegram_channel_extractor import (
+                    TelegramChannelExtractor,
+                )
                 from src.supabase_manager import SupabaseManager
                 from datetime import datetime
                 import json
-                
+
                 logger.info("Collecting Telegram channel messages...")
-                
+
                 # Get all channels to collect
                 all_channels_to_collect = []
-                telegram_channels_config = self.config.get('telegram_channels', {})
+                telegram_channels_config = self.config.get("telegram_channels", {})
                 for persona_key, persona_channels in telegram_channels_config.items():
                     for channel_data in persona_channels:
-                        channel_username = channel_data.get('username', channel_data.get('channel', '')) if isinstance(channel_data, dict) else channel_data
+                        channel_username = (
+                            channel_data.get(
+                                "username", channel_data.get("channel", "")
+                            )
+                            if isinstance(channel_data, dict)
+                            else channel_data
+                        )
                         if channel_username:
                             all_channels_to_collect.append(channel_username)
-                
+
                 if not all_channels_to_collect:
                     logger.warning("No Telegram channels configured")
                     return 0
-                
+
                 # Initialize extractor and Supabase
                 extractor = TelegramChannelExtractor()
                 supabase = SupabaseManager()
-                
+
                 saved_count = 0
                 await extractor.connect()
-                
+
                 for channel_username in all_channels_to_collect:
                     try:
                         # Fetch existing messages for this channel to avoid duplicates
-                        existing_messages_data = supabase.client.table('telegram_messages').select('message_id').eq('channel_username', channel_username).execute()
-                        existing_message_ids = {m['message_id'] for m in existing_messages_data.data}
-                        
-                        messages = await extractor.get_messages_from_channel(channel_username, limit=50)
-                        
+                        existing_messages_data = (
+                            supabase.client.table("telegram_messages")
+                            .select("message_id")
+                            .eq("channel_username", channel_username)
+                            .execute()
+                        )
+                        existing_message_ids = {
+                            m["message_id"] for m in existing_messages_data.data
+                        }
+
+                        messages = await extractor.get_messages_from_channel(
+                            channel_username, limit=50
+                        )
+
                         for msg in messages:
-                            if msg.get('id') and msg['id'] not in existing_message_ids:
+                            if msg.get("id") and msg["id"] not in existing_message_ids:
                                 message_data = {
                                     "channel_username": channel_username,
-                                    "message_id": msg['id'],
-                                    "date": msg['date'].isoformat() if isinstance(msg['date'], datetime) else msg['date'],
-                                    "content": msg.get('content', ''),
-                                    "sender": msg.get('sender', ''),
-                                    "message_url": msg.get('message_url', ''),
-                                    "views": msg.get('views', 0),
-                                    "forwards": msg.get('forwards', 0),
-                                    "replies": msg.get('replies', 0),
-                                    "reactions": json.dumps(msg.get('reactions', {})),
-                                    "collected_at": datetime.now().isoformat()
+                                    "message_id": msg["id"],
+                                    "date": msg["date"].isoformat()
+                                    if isinstance(msg["date"], datetime)
+                                    else msg["date"],
+                                    "content": msg.get("content", ""),
+                                    "sender": msg.get("sender", ""),
+                                    "message_url": msg.get("message_url", ""),
+                                    "views": msg.get("views", 0),
+                                    "forwards": msg.get("forwards", 0),
+                                    "replies": msg.get("replies", 0),
+                                    "reactions": json.dumps(msg.get("reactions", {})),
+                                    "collected_at": datetime.now().isoformat(),
                                 }
                                 try:
-                                    result = self.storage.save_telegram_message(message_data)
+                                    result = self.storage.save_telegram_message(
+                                        message_data
+                                    )
                                     if result:
                                         saved_count += 1
-                                        existing_message_ids.add(msg['id'])
+                                        existing_message_ids.add(msg["id"])
                                 except Exception as e:
-                                    if 'duplicate' in str(e).lower() or 'unique' in str(e).lower():
-                                        logger.debug(f"Skipping duplicate Telegram message {msg['id']} in {channel_username}")
+                                    if (
+                                        "duplicate" in str(e).lower()
+                                        or "unique" in str(e).lower()
+                                    ):
+                                        logger.debug(
+                                            f"Skipping duplicate Telegram message {msg['id']} in {channel_username}"
+                                        )
                                     else:
-                                        logger.warning(f"Failed to save Telegram message {msg['id']} from {channel_username}: {e}")
+                                        logger.warning(
+                                            f"Failed to save Telegram message {msg['id']} from {channel_username}: {e}"
+                                        )
                             else:
-                                logger.debug(f"Skipping existing Telegram message {msg.get('id')} in {channel_username}")
+                                logger.debug(
+                                    f"Skipping existing Telegram message {msg.get('id')} in {channel_username}"
+                                )
                     except Exception as e:
-                        logger.error(f"Error collecting from Telegram channel {channel_username}: {e}", exc_info=True)
-                
+                        logger.error(
+                            f"Error collecting from Telegram channel {channel_username}: {e}",
+                            exc_info=True,
+                        )
+
                 await extractor.disconnect()
-                logger.info(f"Telegram channels collection completed: {saved_count} new messages.")
+                logger.info(
+                    f"Telegram channels collection completed: {saved_count} new messages."
+                )
                 return saved_count
             except Exception as e:
                 logger.error(f"Telegram channels collection failed: {e}")
@@ -238,6 +306,7 @@ class Orchestrator:
 
     async def autonomous_discover(self) -> Dict[str, Any]:
         from src.services.autonomous_discovery import AutonomousDiscovery
+
         engine = AutonomousDiscovery()
         return await engine.discover_content()
 
@@ -246,15 +315,19 @@ class Orchestrator:
             return 0
         try:
             from src.services.analysis.post_analyzer import analyze_and_store_post
+
             posts = self.storage.get_posts(limit=limit)
             count = 0
             for p in posts:
                 try:
+
                     class _ShimDB:
                         def __init__(self, storage):
                             self._s = storage
+
                         def add_post(self, post):
                             return self._s.save_post(post)
+
                     shim = _ShimDB(self.storage)
                     await analyze_and_store_post(shim, p)
                     count += 1
@@ -268,10 +341,7 @@ class Orchestrator:
         # Simplified digest generation
         try:
             posts = self.storage.get_posts(limit=20)
-            return {
-                "items": posts,
-                "generated_at": asyncio.get_event_loop().time()
-            }
+            return {"items": posts, "generated_at": asyncio.get_event_loop().time()}
         except Exception as e:
             return {"error": str(e)}
 
@@ -283,51 +353,63 @@ class Orchestrator:
             telegram_msgs = self.storage.get_telegram_messages(limit=limit)
 
             feed: List[Dict[str, Any]] = []
-            
+
             # Add posts
             for p in posts:
-                feed.append({
-                    "title": p.get("title") or (p.get("content") or "")[:80],
-                    "summary": p.get("summary") or (p.get("content") or "")[:200],
-                    "url": p.get("url"),
-                    "platform": p.get("platform"),
-                    "source": p.get("source"),
-                    "created_at": p.get("created_at"),
-                    "value_score": p.get("value_score", 0.0),
-                    "tags": p.get("suggested_tags") or [],
-                    "type": "post"
-                })
-            
+                feed.append(
+                    {
+                        "title": p.get("title") or (p.get("content") or "")[:80],
+                        "summary": p.get("summary") or (p.get("content") or "")[:200],
+                        "url": p.get("url"),
+                        "platform": p.get("platform"),
+                        "source": p.get("source"),
+                        "created_at": p.get("created_at"),
+                        "value_score": p.get("value_score", 0.0),
+                        "tags": p.get("suggested_tags") or [],
+                        "type": "post",
+                    }
+                )
+
             # Add GitHub trending repos
             for repo in github_repos:
-                feed.append({
-                    "title": f"GitHub Trending: {repo.get('full_name')}",
-                    "summary": repo.get('description', '')[:200],
-                    "url": repo.get('url'),
-                    "platform": "github",
-                    "source": "github_trending",
-                    "created_at": repo.get('collected_at'),
-                    "value_score": repo.get('stars', 0) / 1000.0,  # Scale stars to a score
-                    "tags": [repo.get('language')] if repo.get('language') else [],
-                    "type": "github_repo"
-                })
+                feed.append(
+                    {
+                        "title": f"GitHub Trending: {repo.get('full_name')}",
+                        "summary": repo.get("description", "")[:200],
+                        "url": repo.get("url"),
+                        "platform": "github",
+                        "source": "github_trending",
+                        "created_at": repo.get("collected_at"),
+                        "value_score": repo.get("stars", 0)
+                        / 1000.0,  # Scale stars to a score
+                        "tags": [repo.get("language")] if repo.get("language") else [],
+                        "type": "github_repo",
+                    }
+                )
 
             # Add Telegram messages
             for msg in telegram_msgs:
-                feed.append({
-                    "title": f"Telegram: {msg.get('channel_username')}",
-                    "summary": msg.get('content', '')[:200],
-                    "url": msg.get('message_url'),
-                    "platform": "telegram",
-                    "source": msg.get('channel_username'),
-                    "created_at": msg.get('date'),
-                    "value_score": (msg.get('views', 0) + msg.get('forwards', 0) * 2) / 100.0,  # Simple score
-                    "tags": [],
-                    "type": "telegram_message"
-                })
+                feed.append(
+                    {
+                        "title": f"Telegram: {msg.get('channel_username')}",
+                        "summary": msg.get("content", "")[:200],
+                        "url": msg.get("message_url"),
+                        "platform": "telegram",
+                        "source": msg.get("channel_username"),
+                        "created_at": msg.get("date"),
+                        "value_score": (
+                            msg.get("views", 0) + msg.get("forwards", 0) * 2
+                        )
+                        / 100.0,  # Simple score
+                        "tags": [],
+                        "type": "telegram_message",
+                    }
+                )
 
             # Sort by creation date (most recent first)
-            feed.sort(key=lambda x: x.get('created_at', '0000-00-00T00:00:00'), reverse=True)
+            feed.sort(
+                key=lambda x: x.get("created_at", "0000-00-00T00:00:00"), reverse=True
+            )
             return feed[:limit]
         except Exception as e:
             logger.error(f"Error building news feed: {e}")

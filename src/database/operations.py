@@ -83,9 +83,48 @@ class DatabaseOperations:
                         saved_at TIMESTAMP,
                         deleted BOOLEAN DEFAULT 0,
                         created_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        updated_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
+                        updated_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                           embedding TEXT,
+                           embedding_model TEXT,
+                           ai_summary TEXT,
+                           key_concepts TEXT,
+                           tags TEXT,
+                           category TEXT,
+                           analyzed_at TIMESTAMP,
+                           recommended_personas TEXT,
+                           persona_match_scores TEXT,
+                           persona_candidacy TEXT
+                       )
                 """)
+                
+                # Add new columns if they don't exist (migration for existing databases)
+                # SQLite doesn't support IF NOT EXISTS for ALTER TABLE, so check first
+                cursor.execute("PRAGMA table_info(posts)")
+                existing_columns = [row[1] for row in cursor.fetchall()]
+                
+                columns_to_add = {
+                    'embedding': 'TEXT',
+                    'embedding_model': 'TEXT',
+                    'ai_summary': 'TEXT',
+                    'key_concepts': 'TEXT',
+                    'tags': 'TEXT',
+                    'category': 'TEXT',
+                    'analyzed_at': 'TIMESTAMP',
+                    'recommended_personas': 'TEXT',
+                    'persona_match_scores': 'TEXT',
+                    'persona_candidacy': 'TEXT'
+                }
+                
+                for col_name, col_type in columns_to_add.items():
+                    if col_name not in existing_columns:
+                        try:
+                            cursor.execute(f"ALTER TABLE posts ADD COLUMN {col_name} {col_type}")
+                        except sqlite3.OperationalError as e:
+                            # Column might already exist from concurrent access
+                            if "duplicate column" not in str(e).lower():
+                                print(f"⚠️ Failed to add column {col_name}: {e}")
+                
+                conn.commit()
 
                 # Create indexes
                 cursor.execute(
@@ -260,6 +299,11 @@ class DatabaseOperations:
                 rewrite_notes = post_data.get("rewrite_notes")
                 updated_timestamp = datetime.now().isoformat()
 
+                # Handle embedding - serialize if it's a list/array
+                embedding = post_data.get("embedding")
+                embedding_model = post_data.get("embedding_model")
+                embedding_str = self._serialize_json(embedding) if embedding else None
+                
                 columns = [
                     "post_id",
                     "platform",
@@ -296,6 +340,14 @@ class DatabaseOperations:
                     "rewritten_content",
                     "rewrite_notes",
                     "updated_timestamp",
+                    "embedding",
+                    "embedding_model",
+                    "ai_summary",
+                    "category",
+                    "analyzed_at",
+                    "recommended_personas",
+                    "persona_match_scores",
+                    "persona_candidacy",
                 ]
 
                 values = [
@@ -334,6 +386,14 @@ class DatabaseOperations:
                     rewritten_content,
                     rewrite_notes,
                     updated_timestamp,
+                    embedding_str,
+                    embedding_model,
+                    content_summary or post_data.get("ai_summary"),
+                    post_data.get("category"),
+                    post_data.get("analyzed_at") or post_data.get("analysis_timestamp"),
+                    self._serialize_json(post_data.get("recommended_personas", [])),
+                    self._serialize_json(post_data.get("persona_match_scores", {})),
+                    self._serialize_json(post_data.get("persona_candidacy", {})),
                 ]
 
                 placeholders = ", ".join(["?"] * len(columns))

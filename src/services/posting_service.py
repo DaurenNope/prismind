@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-import hmac
-import hashlib
 import requests
 from dotenv import load_dotenv
 
@@ -48,18 +45,28 @@ class PostingService:
     def post_to_twitter(self, content: str, **kwargs) -> Dict[str, Any]:
         """
         Post content to Twitter.
-        Supports both webhook and API approaches.
+        Uses Twitter API (Tweepy) directly, with Playwright fallback.
         """
-        # Try webhook first (preferred)
-        webhook_url = self._get_platform_config_value('twitter', 'webhook_url')
-        webhook_secret = self._get_platform_config_value('twitter', 'webhook_secret')
+        # Try Twitter API first (faster than Playwright if it works)
+        try:
+            from src.publishing.platforms.twitter import post_to_twitter_direct
+            result = post_to_twitter_direct(content)
+            if result.get("success"):
+                return result
+        except Exception as e:
+            logger.debug(f"Twitter API posting failed: {e}")
         
-        if webhook_url:
-            return self._post_via_webhook('twitter', webhook_url, webhook_secret, content, **kwargs)
+        # Fallback to Playwright (browser automation)
+        try:
+            from src.publishing.platforms.twitter_playwright import post_to_twitter_direct as post_twitter_playwright
+            result = post_twitter_playwright(content)
+            if result.get("success"):
+                return result
+        except Exception as e:
+            logger.debug(f"Twitter Playwright posting failed: {e}")
         
-        # Fallback to Twitter API (requires tweepy)
-        logger.warning("Twitter API posting not yet implemented in prismind")
-        return {"success": False, "error": "Twitter API not configured"}
+        # All methods failed
+        return {"success": False, "error": "All Twitter posting methods failed"}
 
     def post_to_telegram(self, content: str, **kwargs) -> Dict[str, Any]:
         """
@@ -103,70 +110,21 @@ class PostingService:
     def post_to_threads(self, content: str, **kwargs) -> Dict[str, Any]:
         """
         Post content to Threads.
-        Supports webhook approach.
+        Uses Playwright (browser automation) directly.
         """
-        webhook_url = self._get_platform_config_value('threads', 'webhook_url')
-        webhook_secret = self._get_platform_config_value('threads', 'webhook_secret')
-        
-        if webhook_url:
-            return self._post_via_webhook('threads', webhook_url, webhook_secret, content, **kwargs)
-        
-        logger.warning("Threads posting not configured")
-        return {"success": False, "error": "Threads not configured"}
-
-    def _post_via_webhook(
-        self, 
-        platform: str, 
-        webhook_url: str, 
-        webhook_secret: Optional[str],
-        content: str,
-        **kwargs
-    ) -> Dict[str, Any]:
-        """
-        Generic webhook posting method.
-        Sends content to a webhook endpoint with HMAC signature for security.
-        """
-        payload = {
-            "platform": platform,
-            "content": content,
-            "timestamp": datetime.utcnow().isoformat(),
-            **kwargs
-        }
-        
-        headers = {"Content-Type": "application/json"}
-        
-        # Add HMAC signature if secret is configured
-        if webhook_secret:
-            body = json.dumps(payload, ensure_ascii=False)
-            signature = hmac.new(
-                webhook_secret.encode('utf-8'),
-                body.encode('utf-8'),
-                hashlib.sha256
-            ).hexdigest()
-            headers["X-Webhook-Signature"] = signature
-        
+        # Use Playwright (primary method - works reliably)
+        logger.info("Using Playwright for Threads posting...")
         try:
-            response = requests.post(
-                webhook_url,
-                json=payload,
-                headers=headers,
-                timeout=30
-            )
-            response.raise_for_status()
-            
-            return {
-                "success": True,
-                "platform": platform,
-                "webhook_response": response.json() if response.content else {},
-                "timestamp": datetime.utcnow().isoformat()
-            }
-        except Exception as exc:
-            logger.exception("Webhook posting failed for %s: %s", platform, exc)
-            return {
-                "success": False,
-                "platform": platform,
-                "error": str(exc)
-            }
+            from src.publishing.platforms.threads_playwright import post_to_threads_direct
+            result = post_to_threads_direct(content)
+            if result.get("success"):
+                return result
+            else:
+                logger.warning(f"Playwright posting failed: {result.get('error', 'Unknown error')}")
+                return result  # Return the error from Playwright
+        except Exception as e:
+            logger.error(f"Threads Playwright posting exception: {e}", exc_info=True)
+            return {"success": False, "error": f"Playwright error: {str(e)}"}
 
     def publish(self, platform: str, content: str, **kwargs) -> Dict[str, Any]:
         """

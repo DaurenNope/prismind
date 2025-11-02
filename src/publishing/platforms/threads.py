@@ -211,7 +211,7 @@ class ThreadsPoster:
 
 def post_to_threads_direct(content: str, image_url: Optional[str] = None) -> Dict:
     """
-    Post to Threads using direct API (bypasses webhook).
+    Post to Threads using direct API.
 
     Returns:
         Dict with 'success', 'post_id', 'url', 'error' keys

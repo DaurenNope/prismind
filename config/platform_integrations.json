@@ -1,0 +1,12 @@
+{
+  "twitter": {
+    "api_enabled": true
+  },
+  "telegram": {
+    "bot_api_enabled": true,
+    "default_parse_mode": "Markdown"
+  },
+  "threads": {
+    "autoposter_enabled": true
+  }
+}

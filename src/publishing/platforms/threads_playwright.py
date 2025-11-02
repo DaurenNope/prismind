@@ -96,121 +96,34 @@ async def post_to_threads_playwright(content: str, image_url: Optional[str] = No
             cookies_loaded = await context.cookies()
             logger.info(f"✅ Loaded {len(cookies_loaded)} cookies into context")
             print(f"✅ Loaded {len(cookies_loaded)} cookies into context")
-        except Exception as e:
+            except Exception as e:
             logger.warning(f"Could not verify cookies: {e}")
             print(f"⚠️  Could not verify cookies: {e}")
         
         page = await context.new_page()
         
-        # DON'T use stealth - extractor doesn't use it and it works!
-        # Stealth might be interfering with page loading
-        # if stealth:
-        #     await stealth(page)
-        
-        # CRITICAL: First verify authentication by going to /saved (EXACTLY like collection does!)
-        print("🔐 STEP 1: Verifying authentication by navigating to /saved...")
-        logger.info("🔐 Verifying authentication by navigating to /saved (like collection does)...")
-        
-        # Check if cookies file exists
-        cookie_file_path = Path(cookie_file) if cookie_file else None
-        if cookie_file_path and cookie_file_path.exists():
-            print(f"✅ Cookie file exists: {cookie_file}")
-            logger.info(f"✅ Cookie file exists: {cookie_file}")
-        else:
-            print(f"⚠️  Cookie file not found: {cookie_file}")
-            logger.warning(f"Cookie file not found: {cookie_file}")
+        # OPTIMIZED: Go directly to home page - no need to verify auth first
+        # If cookies are invalid, posting will fail naturally when we try to compose
+        logger.info("🚀 Navigating directly to home page (optimized - skipping auth check)")
+        print("🚀 Navigating directly to home page...")
         
         try:
-            print("🚀 Navigating to https://www.threads.net/saved...")
-            # EXACT SAME as extractor line 88 - domcontentloaded, 20000 timeout
-            await page.goto("https://www.threads.net/saved", wait_until='domcontentloaded', timeout=20000)
-            # EXACT SAME as extractor line 89 - jitter(0.5) = wait 0.5s
-            await page.wait_for_timeout(500)  # Same as extractor _jitter(0.5)
+            # Navigate directly to home page
+            await page.goto("https://www.threads.net/", wait_until='domcontentloaded', timeout=20000)
+            await page.wait_for_timeout(1000)  # Brief wait for initial load
             
-            # Check if redirected to login (cookies expired)
-            current_url = page.url
-            print(f"📍 After navigation, URL: {current_url}")
-            logger.info(f"After /saved navigation, URL: {current_url}")
-            
+            # Check if redirected to login (quick auth check)
+        current_url = page.url
             if 'login' in current_url.lower() or 'accounts/login' in current_url.lower():
-                print("❌ NOT authenticated - redirected to login page!")
-                logger.error("❌ NOT authenticated - redirected to login page!")
-                authenticated = False
-            else:
-                # Check if page actually loaded content (like collection does)
-                print("🔍 Checking if page actually loaded content...")
-                try:
-                    # Wait for content to appear (like collection does)
-                    await page.wait_for_timeout(2000)
-                    
-                    # Check for saved posts indicators
-                    content_selectors = [
-                        'a[href*="/post/"]',
-                        'article',
-                        'div[role="article"]',
-                        '[data-testid*="post"]',
-                    ]
-                    
-                    content_found = False
-                    for selector in content_selectors:
-                        try:
-                            elements = await page.query_selector_all(selector)
-                            if elements and len(elements) > 0:
-                                print(f"✅ Found {len(elements)} content elements (authenticated)")
-                                logger.info(f"✅ Found {len(elements)} content elements - page is loaded")
-                                content_found = True
-                                break
-                        except Exception as e:
-                            logger.debug(f"Selector check failed: {e}")
-                            continue
-                    
-                    if not content_found:
-                        # Check if page is still loading
-                        page_text = await page.evaluate("document.body.innerText")
-                        print(f"📄 Page text length: {len(page_text)} chars")
-                        
-                        # Check for login indicators in page text
-                        if 'log in' in page_text.lower() or 'sign in' in page_text.lower():
-                            print("❌ Page shows login form even though URL is /saved - cookies invalid!")
-                            logger.error("Page shows login form - cookies invalid")
-                            authenticated = False
-                        elif 'loading' in page_text.lower() or len(page_text) < 100:
-                            print("⚠️  Page seems to be stuck loading or empty")
-                            logger.warning("Page seems to be stuck loading or empty")
-                            # Even if loading, if URL is correct, assume authenticated but page not fully loaded
-                            authenticated = True
-                        else:
-                            print(f"⚠️  No content elements found, but page has text: {len(page_text)} chars")
-                            logger.warning(f"No content elements found, but page has {len(page_text)} chars")
-                            authenticated = True
-                    else:
-                        print("✅ Authentication verified - content found on /saved page")
-                        logger.info("✅ Authentication verified - content found on /saved page")
-                        authenticated = True
-                    
-                    if authenticated and not content_found:
-                        print("✅ Authentication verified - we're on /saved page (not login), content may still be loading")
-                        logger.info("✅ Authentication verified - we're on /saved page")
-                except Exception as check_error:
-                    print(f"⚠️  Could not verify content: {check_error}")
-                    logger.warning(f"Could not verify content: {check_error}")
-                    authenticated = True  # Assume authenticated if URL is correct
+                logger.error("❌ Redirected to login - cookies expired")
+                print("❌ Redirected to login - cookies expired")
                 
-        except Exception as e:
-            print(f"❌ Failed to verify authentication: {e}")
-            logger.error(f"Failed to verify authentication: {e}")
-            authenticated = False
-        
-        if not authenticated:
-            logger.error("❌ Authentication failed - cookies may be expired")
-        
             # Try login if password provided
             if password:
                 logger.info("Cookies didn't work, trying username/password login...")
                 await page.goto("https://www.instagram.com/accounts/login/", wait_until="domcontentloaded", timeout=30000)
                 await asyncio.sleep(2)
                 
-                # Enter username
                 username_input = await page.wait_for_selector('input[name="username"]', timeout=5000)
                 if not username_input:
                     return {"success": False, "error": "Login failed: Could not find username input"}
@@ -218,7 +131,6 @@ async def post_to_threads_playwright(content: str, image_url: Optional[str] = No
                 await username_input.fill(username)
                 await asyncio.sleep(1)
                 
-                # Enter password
                 password_input = await page.wait_for_selector('input[type="password"]', timeout=5000)
                 if not password_input:
                     return {"success": False, "error": "Login failed: Could not find password input"}
@@ -226,7 +138,6 @@ async def post_to_threads_playwright(content: str, image_url: Optional[str] = No
                 await password_input.fill(password)
                 await asyncio.sleep(1)
                 
-                # Click login
                 login_button = await page.wait_for_selector('button[type="submit"]', timeout=5000)
                 if not login_button:
                     return {"success": False, "error": "Login failed: Could not find login button"}
@@ -234,73 +145,31 @@ async def post_to_threads_playwright(content: str, image_url: Optional[str] = No
                 await login_button.click()
                 await asyncio.sleep(3)
                 
-                # Navigate to Threads saved page to verify login worked
-                await page.goto("https://www.threads.net/saved", wait_until="domcontentloaded", timeout=30000)
-                await asyncio.sleep(2)
-                
-                # Verify we're authenticated
-                current_url = page.url
-                if 'login' in current_url.lower():
-                    return {"success": False, "error": "Login failed - still redirected to login"}
-                
-                logger.info("✅ Login successful - verified by /saved page")
-                
-                # AUTO-SAVE: Save cookies after successful password login
-                if cookie_file and context:
-                    try:
-                        cookies = await context.cookies()
-                        cookie_data = {"cookies": cookies}
-                        Path(cookie_file).parent.mkdir(parents=True, exist_ok=True)
-                        with open(cookie_file, "w") as f:
-                            json.dump(cookie_data, f, indent=2)
-                        logger.info(f"✅ Saved {len(cookies)} cookies after password login to {cookie_file}")
-                    except Exception as e:
-                        logger.warning(f"Failed to save cookies after login: {e}")
+                    # Navigate to home after login
+                await page.goto("https://www.threads.net/", wait_until="domcontentloaded", timeout=30000)
+                    
+                    # Save cookies after login
+                    if cookie_file and context:
+                        try:
+                            cookies = await context.cookies()
+                            cookie_data = {"cookies": cookies}
+                            Path(cookie_file).parent.mkdir(parents=True, exist_ok=True)
+                            with open(cookie_file, "w") as f:
+                                json.dump(cookie_data, f, indent=2)
+                            logger.info(f"✅ Saved {len(cookies)} cookies after password login")
+                        except Exception as e:
+                            logger.warning(f"Failed to save cookies after login: {e}")
             else:
-                # No password - cookies failed
                 return {"success": False, "error": "Not logged in - cookies expired, need password"}
         
-        # We're already on home page - verify we're logged in
-        current_url = page.url
-        logger.info(f"On page: {current_url}")
-        
-        # Make sure we're on threads page
-        if "threads" not in current_url.lower() or "login" in current_url.lower():
-            logger.error("❌ Not on threads page or redirected to login")
-            try:
-                if page and not page.is_closed():
-                    await page.close()
-                if browser and browser.is_connected():
-                    await browser.close()
-                if playwright:
-                    await playwright.stop()
-            except Exception as e:
-                logger.error(f"Cleanup failed during error: {e}")
-                pass
-                return {"success": False, "error": "Not logged in - cookies expired"}
-        
-        # CRITICAL: Navigate to /saved FIRST like collection does - this ensures page is fully loaded and authenticated
-        logger.info("Navigating to /saved page first (like collection does) to ensure page is loaded...")
-        try:
-            await page.goto("https://www.threads.net/saved", wait_until='domcontentloaded', timeout=20000)
-            await page.wait_for_timeout(2000)
-            logger.info("✅ Navigated to /saved page")
+            # Wait for page to be ready (minimal wait)
+            await page.wait_for_load_state('networkidle', timeout=10000)
+            logger.info("✅ Home page loaded")
+            print("✅ Home page loaded")
             
-            # Wait for networkidle like extractor does after navigating to /saved
-            await page.wait_for_load_state('networkidle', timeout=15000)
-            logger.info("✅ /saved page fully loaded")
         except Exception as e:
-            logger.warning(f"Navigation to /saved failed or timed out: {e} - continuing anyway")
-        
-        # Now navigate back to home page - should be fully loaded now
-        logger.info("Navigating back to home page...")
-        try:
-            await page.goto("https://www.threads.net/", wait_until='domcontentloaded', timeout=20000)
-            await page.wait_for_timeout(2000)
-            await page.wait_for_load_state('networkidle', timeout=15000)
-            logger.info("✅ Home page fully loaded")
-        except Exception as e:
-            logger.warning(f"Home page load timed out: {e} - continuing anyway")
+            logger.warning(f"Home page navigation issue: {e} - continuing anyway")
+            print(f"⚠️  Navigation warning: {e}")
         
         # Now look for compose button
         logger.info("Looking for compose button on home page...")
@@ -472,7 +341,7 @@ async def post_to_threads_playwright(content: str, image_url: Optional[str] = No
             try:
                 await page.screenshot(path="logs/threads_no_compose_button.png", full_page=True)
                 logger.error("📸 Screenshot: logs/threads_no_compose_button.png")
-
+            
                 # Also get page HTML to see what's available
                 page_text = await page.evaluate("document.body.innerText")
                 logger.debug(f"Page text preview: {page_text[:500]}")
@@ -541,53 +410,106 @@ async def post_to_threads_playwright(content: str, image_url: Optional[str] = No
             logger.error(f"Failed to type content: {e}")
             raise
         
-        # Find and click post button (LIKE MIMESIS - multiple selectors)
+        # Find and click post button - find ALL buttons with "Post" and choose the right one
         post_button = None
+        logger.info("🔍 Finding all post buttons on the page...")
+        print("🔍 Finding all post buttons...")
+        
+        # First, find all buttons with "Post" text or aria-label
+        all_post_buttons = []
+        
+        # Try multiple selectors to find ALL post buttons
         post_selectors = [
             'button:has-text("Post")',
             'button:has-text("Publish")',
             '[aria-label*="Post"]',
             '[aria-label*="Publish"]',
-            'button[type="submit"]',
             'div[role="button"]:has-text("Post")',
+            'div[role="button"]:has-text("Publish")',
+            'a[role="button"]:has-text("Post")',
+            'button[type="submit"]',
         ]
         
         for selector in post_selectors:
             try:
-                post_button = await page.wait_for_selector(selector, timeout=5000)
-                if post_button:
-                    # Check if button is enabled and visible
-                    is_enabled = await post_button.is_enabled()
-                    is_visible = await post_button.is_visible()
-                    is_disabled = await post_button.get_attribute('disabled')
-                    
-                    logger.info(f"✅ Found post button with selector: {selector}")
-                    print(f"🔍 Post button - enabled: {is_enabled}, visible: {is_visible}, disabled attr: {is_disabled}")
-                    
-                    if is_enabled and is_visible and not is_disabled:
-                        logger.info("✅ Post button is enabled and ready")
-                        break
-                    else:
-                        logger.warning(f"Post button found but not clickable: enabled={is_enabled}, visible={is_visible}, disabled={is_disabled}")
-                        post_button = None
-                        continue
+                buttons = await page.query_selector_all(selector)
+                for btn in buttons:
+                    if btn:
+                        is_visible = await btn.is_visible()
+                        if is_visible:
+                            text = await btn.inner_text()
+                            aria_label = await btn.get_attribute('aria-label') or ''
+                            all_post_buttons.append({
+                                'element': btn,
+                                'selector': selector,
+                                'text': text,
+                                'aria_label': aria_label
+                            })
             except Exception as e:
-                logger.debug(f"Post button check failed: {e}")
+                logger.debug(f"Selector {selector} failed: {e}")
                 continue
         
-        if not post_button:
-            # Try query_selector as fallback
+        logger.info(f"Found {len(all_post_buttons)} post button(s)")
+        print(f"Found {len(all_post_buttons)} post button(s)")
+        
+        # Log all found buttons for debugging
+        for i, btn_info in enumerate(all_post_buttons):
+            logger.info(f"  Button {i+1}: text='{btn_info['text'][:50]}', aria-label='{btn_info['aria_label'][:50]}'")
+            print(f"  Button {i+1}: text='{btn_info['text'][:50]}', aria-label='{btn_info['aria_label'][:50]}'")
+        
+        # Choose the button that's in the compose modal (not navigation buttons)
+        # Look for button inside modal or dialog
+        for btn_info in all_post_buttons:
+            btn = btn_info['element']
             try:
-                post_button = await page.query_selector('button[type="submit"]')
-                if post_button:
-                    is_enabled = await post_button.is_enabled()
-                    is_visible = await post_button.is_visible()
-                    print(f"🔍 Fallback post button - enabled: {is_enabled}, visible: {is_visible}")
-                    if not (is_enabled and is_visible):
-                        post_button = None
-            except Exception as e:
-                logger.debug(f"Fallback post button check failed: {e}")
+                # Check if button is inside a modal/dialog
+                parent = await btn.evaluate_handle("el => el.closest('div[role=\"dialog\"], div[class*=\"modal\"], div[class*=\"compose\"]')")
+                if parent and parent.as_element():
+                    # This button is in a modal - likely the correct one
+                    is_enabled = await btn.is_enabled()
+                    is_visible = await btn.is_visible()
+                    is_disabled = await btn.get_attribute('disabled')
+                    
+                    if is_enabled and is_visible and not is_disabled:
+                        post_button = btn
+                        logger.info(f"✅ Selected post button from modal: text='{btn_info['text'][:50]}'")
+                        print(f"✅ Selected post button from modal")
+                        break
+            except:
                 pass
+        
+        # If no button in modal, try the first enabled button
+        if not post_button:
+            for btn_info in all_post_buttons:
+                btn = btn_info['element']
+                try:
+                    is_enabled = await btn.is_enabled()
+                    is_visible = await btn.is_visible()
+                    is_disabled = await btn.get_attribute('disabled')
+                    
+                    if is_enabled and is_visible and not is_disabled:
+                        # Prefer buttons with specific text
+                        text_lower = (btn_info['text'] or '').lower()
+                        if 'post' in text_lower and 'share' not in text_lower and 'reply' not in text_lower:
+                            post_button = btn
+                            logger.info(f"✅ Selected post button: text='{btn_info['text'][:50]}'")
+                            print(f"✅ Selected post button: '{btn_info['text'][:50]}'")
+                            break
+                except:
+                    continue
+        
+        if not post_button:
+            # Last resort: try submit button
+            try:
+                submit_btn = await page.query_selector('button[type="submit"]')
+                if submit_btn:
+                    is_enabled = await submit_btn.is_enabled()
+                    is_visible = await submit_btn.is_visible()
+                    if is_enabled and is_visible:
+                        post_button = submit_btn
+                        logger.info("✅ Selected submit button")
+            except Exception as e:
+                logger.debug(f"Submit button check failed: {e}")
         
         if not post_button:
             # Cleanup and return error
@@ -601,7 +523,7 @@ async def post_to_threads_playwright(content: str, image_url: Optional[str] = No
             except Exception as e:
                 logger.debug(f"Cleanup failed: {e}")
                 pass
-            return {"success": False, "error": "Could not find post button"}
+            return {"success": False, "error": f"Could not find enabled post button (found {len(all_post_buttons)} button(s) but none were suitable)"}
         
         # Wait a bit more for button to be fully ready (Threads may need time to enable it)
         await page.wait_for_timeout(2000)
@@ -780,15 +702,40 @@ async def post_to_threads_playwright(content: str, image_url: Optional[str] = No
                     try:
                         message_element = await page.query_selector(message_selector)
                         if message_element:
-                            message_text = await message_element.inner_text()
-                            if message_text and len(message_text) < 300:  # Reasonable message length
-                                print(f"📄 Message detected: {message_text}")
-                                logger.info(f"Post message: {message_text}")
-                                
-                                # Check if it's a success message (but not button text)
-                                # Make sure it's not just the button text "Post"
-                                is_button_text = "post" in message_text.lower() and len(message_text.strip()) <= 5
-                                is_success_message = any(word in message_text.lower() for word in ["fediverse", "shared", "success", "published", "your post"]) and not is_button_text
+                                message_text = await message_element.inner_text()
+                                if message_text and len(message_text) < 300:  # Reasonable message length
+                                    print(f"📄 Message detected: {message_text}")
+                                    logger.info(f"Post message: {message_text}")
+                                    
+                                    # CRITICAL: "Posting..." message means the post WAS submitted!
+                                    if "posting" in message_text.lower():
+                                        print("✅ 'Posting...' message detected - post was submitted!")
+                                        logger.info("✅ 'Posting...' message detected - post was submitted!")
+                                        post_success = True
+                                        # Wait a bit more for it to complete, then assume success
+                                        await page.wait_for_timeout(3000)
+                                        
+                                        # Try to get post ID/URL from the page
+                                        current_url = page.url
+                                        if "/post/" in current_url:
+                                            post_id = current_url.split("/post/")[-1].split("?")[0]
+                                            username_from_page = current_url.split("threads.net/@")[1].split("/post/")[0] if "@" in current_url else None
+                                            if username_from_page:
+                                                post_url = f"https://www.threads.net/@{username_from_page}/post/{post_id}"
+                                            else:
+                                                post_url = current_url
+                                        else:
+                                            # Generate synthetic ID since we can't get the real one yet
+                                            post_id = f"playwright_{int(datetime.now().timestamp())}"
+                                            post_url = None
+                                        
+                                        logger.info(f"✅ Post successful - 'Posting...' detected, assuming success")
+                                        break
+                                    
+                                    # Check if it's a success message (but not button text)
+                                    # Make sure it's not just the button text "Post"
+                                    is_button_text = "post" in message_text.lower() and len(message_text.strip()) <= 5
+                                    is_success_message = any(word in message_text.lower() for word in ["fediverse", "shared", "success", "published", "your post"]) and not is_button_text
                                 
                                 if is_success_message:
                                     print("✅ Success message detected!")
@@ -900,9 +847,7 @@ async def post_to_threads_playwright(content: str, image_url: Optional[str] = No
                 logger.debug(f"Failed to get page text: {e}")
                 pass
             
-            # CRITICAL: Since user confirmed posts ARE being created, we should assume success
-            # The modal might just take longer to close, or Threads changed their UI
-            # Check one final time for content in feed
+            # Final check: Look for content in feed
             try:
                 page_content = await page.evaluate("document.body.innerText")
                 search_text = content[:50].strip()
@@ -911,19 +856,18 @@ async def post_to_threads_playwright(content: str, image_url: Optional[str] = No
                     post_success = True
                     post_id = f"playwright_{int(datetime.now().timestamp())}"
                 else:
-                    logger.warning("⚠️ Content not found in feed, but assuming success (user confirmed posts work)")
-                    post_success = True
-                    post_id = f"playwright_{int(datetime.now().timestamp())}"
-            except:
-                logger.warning("⚠️ Could not verify, but assuming success (user confirmed posts work)")
-                post_success = True
-                post_id = f"playwright_{int(datetime.now().timestamp())}"
+                    logger.error("❌ Content NOT found in feed after posting")
+            except Exception as e:
+                logger.error(f"❌ Could not verify post: {e}")
         
-        # If still not confirmed, assume success anyway (user confirmed it works)
+        # Return failure if we couldn't confirm success
         if not post_success:
-            logger.info("⚠️ Final check: Assuming post succeeded based on user confirmation")
-            post_success = True
-            post_id = f"playwright_{int(datetime.now().timestamp())}"
+            return {
+                "success": False,
+                "error": "Post verification failed - check screenshot: logs/threads_post_failed.png",
+                "post_id": None,
+                "url": None,
+            }
         
         # Save cookies for next time (mimesis format: {"cookies": [...], "origins": [...]})
         if cookie_file and context:

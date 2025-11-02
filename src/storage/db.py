@@ -36,31 +36,53 @@ class StorageFacade:
     def save_post(self, post: Dict[str, Any]) -> bool:
         # Final gate: skip duplicates by normalized URL or content hash
         try:
-            if self._dupes and self._dupes.is_duplicate(post):
+            if self._dupes:
+                # Check URL first (fastest)
+                url = post.get('url', '')
+                if url and self._dupes.is_duplicate_url(url):
+                    return False
+                
+                # Check content hash (catches same content with different URLs)
+                content = post.get('content', '')
+                if content and self._dupes.is_duplicate_content(content):
+                    return False
+                
+                # Full duplicate check (platform-specific)
+                if self._dupes.is_duplicate(post):
                 return False
-        except Exception:
+        except Exception as e:
+            import logging
+            logging.debug(f"Duplicate check failed: {e}")
             pass
         
         supabase_ok = False
         sqlite_ok = False
         
-        # Try Supabase first (optional)
+        # Try SQLite first (primary storage) - should always work even if validation fails
+        if self._sqlite is not None:
+            try:
+                sqlite_ok = self._sqlite.save_post(post)
+            except Exception as e:
+                # Log SQLite errors but don't fail
+                import logging
+                logging.debug(f"SQLite save failed: {e}")
+        
+        # Try Supabase (optional - may fail validation, that's ok)
         if self._supabase is not None:
             try:
                 supabase_ok = self._supabase.save_post(post)
             except Exception as e:
-                # Supabase failed, but that's ok - we'll save locally
-                pass
-        
-        # Always save to SQLite (primary storage)
-        if self._sqlite is not None:
-            try:
-                sqlite_ok = self._sqlite.save_post(post)
-            except Exception:
-                pass
+                # Supabase failed, but that's ok - we saved locally
+                import logging
+                logging.debug(f"Supabase save failed: {e}")
         
         # Success if EITHER storage succeeded (prioritize local)
-        return sqlite_ok or supabase_ok
+        # SQLite is primary - if it succeeds, we're good
+        if sqlite_ok:
+            return True
+        
+        # If SQLite failed but Supabase succeeded, that's also ok
+        return supabase_ok
 
     def save_posts(self, posts: List[Dict[str, Any]]) -> int:
         saved = 0

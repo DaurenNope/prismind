@@ -83,11 +83,17 @@ async def collect_twitter_bookmarks(
             )
             return 0
 
+        # Check for headless mode configuration (default: False for development, True for production)
+        headless_mode = os.getenv('HEADLESS_MODE', 'false').lower() in ('true', '1', 'yes')
+        
         extractor = TwitterExtractorPlaywright(
             username=twitter_username,
             password=twitter_password,
+            headless=headless_mode,
             cookie_file=str(cookie_path) if cookie_path else None,
         )
+        
+        log(f"🚀 Starting Twitter collection (headless: {headless_mode})")
 
         if twitter_password:
             log("Twitter credentials detected; attempting password authentication")
@@ -490,10 +496,12 @@ async def collect_reddit_bookmarks(
                     "collected_at": datetime.now().isoformat(),
                 }
 
-                # Analyze and store
-                if await analyze_and_store_post(
-                    db_manager, post_dict, supabase_manager
-                ):
+                # Analyze and store (allow skipping analysis via env)
+                if os.environ.get("SKIP_AI_ANALYSIS", "").lower() in ("true", "1", "yes"):
+                    ok = db_manager.add_post(post_dict)
+                else:
+                    ok = await analyze_and_store_post(db_manager, post_dict, supabase_manager)
+                if ok:
                     successful_count += 1
                     
                     # Update last post tracking
@@ -626,8 +634,8 @@ async def collect_threads_bookmarks(
         reached_last_collected = False
         
         for post in saved_posts:
-            post_id = str(post.get("post_id", ""))
-            url = post.get("url", "")
+            post_id = str(post.post_id or "")
+            url = post.url or ""
             
             # Normalize post ID for comparison
             normalized_id = state_manager.normalize_post_id(post_id, "threads")
@@ -661,33 +669,44 @@ async def collect_threads_bookmarks(
             """Detect if content is primarily Russian or English"""
             if not text:
                 return 'en'
+            
+            # Count Cyrillic characters (Russian)
             russian_chars = sum(1 for c in text if '\u0400' <= c <= '\u04FF')
-            total_chars = len(text.replace(' ', ''))
-            if total_chars > 0 and russian_chars / total_chars > 0.3:
+            # Count Latin characters (English)
+            latin_chars = sum(1 for c in text if c.isalpha() and ord(c) < 128)
+            
+            total_letters = russian_chars + latin_chars
+            
+            if total_letters == 0:
+                return 'en'  # Default to English if no letters
+            
+            russian_ratio = russian_chars / total_letters
+            
+            # If more than 30% of letters are Cyrillic, it's Russian
+            if russian_ratio > 0.3:
                 return 'ru'
-            return 'en'
+            else:
+                return 'en'
         
         for post_data in new_posts:
             try:
-                post_id = str(post_data.get("post_id", ""))
-                content = post_data.get("content", "")
+                post_id = str(post_data.post_id or "")
+                content = post_data.content or ""
                 
                 # Normalize post ID
                 normalized_id = state_manager.normalize_post_id(post_id, "threads")
                 
                 # Convert to dictionary format
                 post_dict = {
-                    "post_id": post_data.get("post_id"),
-                    "title": post_data.get("title", ""),
+                    "post_id": post_data.post_id,
+                    "title": getattr(post_data, 'title', ''),
                     "content": content,
-                    "url": post_data.get("url"),
+                    "url": post_data.url,
                     "platform": "threads",
-                    "author": post_data.get("author"),
-                    "username": post_data.get("username"),
+                    "author": post_data.author,
+                    "username": post_data.author_handle,
                     "language": detect_language(content),  # Add language detection
-                    "created_at": post_data.get(
-                        "created_at", datetime.now().isoformat()
-                    ),
+                    "created_at": post_data.created_at.isoformat() if post_data.created_at else datetime.now().isoformat(),
                     "collected_at": datetime.now().isoformat(),
                 }
 

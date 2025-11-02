@@ -161,17 +161,15 @@ def render_unified_feed():
     supabase = get_supabase()
     curator = get_curator()
     
-    # Sidebar filters
-    with st.sidebar:
-        st.subheader("🔍 Filters")
+    # Filters in main content area (more useful than sidebar)
+    col1, col2, col3 = st.columns(3)
         
-        # Time range
+    with col1:
         time_range = st.selectbox(
-            "Time Range",
+            "📅 Time Range",
             ["Last 24 hours", "Last 3 days", "Last week", "Last month", "All time"],
             index=0
         )
-        
         time_map = {
             "Last 24 hours": 1,
             "Last 3 days": 3,
@@ -181,24 +179,23 @@ def render_unified_feed():
         }
         days = time_map[time_range]
         
-        # Source filter
+    with col2:
         sources = st.multiselect(
-            "Sources",
+            "📰 Sources",
             ["RSS", "Reddit", "GitHub"],
             default=["RSS", "Reddit", "GitHub"]
         )
         
-        # Category filter
+    with col3:
+        min_score = st.slider("⭐ Min Quality Score", 0, 10, 5)
+    
+    # Category filter (if needed)
         categories = st.multiselect(
-            "Categories",
+        "📂 Categories",
             ["AI", "Crypto", "Business", "Space", "Mystery", "All"],
-            default=["All"]
+        default=["All"],
+        key="feed_categories"
         )
-        
-        # Quality filter
-        min_score = st.slider("Min Quality Score", 0, 10, 5)
-        
-        # Note: Telegram has its own dedicated tab
     
     # Fetch data from multiple sources
     cutoff_date = (datetime.now() - timedelta(days=days)).isoformat()
@@ -286,11 +283,12 @@ def render_unified_feed():
         for item in all_items:
             render_feed_card(item, curator)
     
-    # Auto-refresh
-    if auto_refresh:
-        import time
-        time.sleep(60)
-        st.rerun()
+    # Auto-refresh (optional feature - disabled by default)
+    # Uncomment to enable auto-refresh every 60 seconds
+    # if st.checkbox("Auto-refresh feed", value=False):
+    #     import time
+    #     time.sleep(60)
+    #     st.rerun()
 
 
 def render_feed_card(item: Dict[str, Any], curator: IntelligentCurator):

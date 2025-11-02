@@ -120,6 +120,24 @@ Access at: `http://localhost:8501`
 - 💾 **Bookmarks Tab** - Saved Twitter/Reddit posts
 - 🤖 **Automation Tab** - Schedule collections
 - 📊 **Analytics** - Content insights and trends
+ - 📝 **Publishing** (Mimesis) - Personas, queue, scheduler, posting analytics
+  - Flow: Generate → Edit/Approve → Schedule → Post → Analytics
+
+### Publishing (Mimesis)
+
+Posting methods:
+- Twitter: Twitter API (Tweepy) or Playwright fallback
+- Threads: Playwright (browser automation)
+- Telegram: Bot API
+
+Tabs included:
+- Overview: Ready and due counts
+- Queue: Create scheduled posts manually or Generate transformations from posts
+- Editor: Review/edit transformations; Approve → Schedule
+- Scheduler: Post due items, mark posted
+- Analytics: Recent `posted_content`
+
+Apply Supabase SQL migration in `migrations/2025_10_31_mimesis.sql` to create required tables.
 
 ### Telegram Bot
 
@@ -169,10 +187,10 @@ Collects from:
 │  ┌──────────────┐    ┌──────────────┐    ┌──────────┐ │
 │  │   SOURCES    │───▶│   ANALYSIS   │───▶│ DATABASE │ │
 │  └──────────────┘    └──────────────┘    └──────────┘ │
-│   • RSS (60)            • Quality            Supabase  │
-│   • Reddit              • Category                     │
-│   • Telegram            • Deduplication                │
-│   • GitHub              • Scoring                      │
+│   • Twitter/Reddit/Threads   • Essential AI fields     │
+│   • Telegram channels        • Incremental + dedupe    │
+│   • GitHub trending          • Deterministic scoring   │
+│   • RSS (curated)            Supabase + SQLite cache   │
 │                                                         │
 │  ┌──────────────┐    ┌──────────────┐    ┌──────────┐ │
 │  │     UI       │◀───│   LEARNING   │◀───│   USER   │ │
@@ -186,7 +204,7 @@ Collects from:
 
 ---
 
-## 📂 Project Structure
+## 📂 Project Structure (lean)
 
 ```
 prismind/
@@ -204,9 +222,9 @@ prismind/
 │   │       └── intelligent_curator.py
 │   │
 │   ├── services/
-│   │   ├── autonomous_discovery.py  # Main discovery engine
-│   │   ├── telegram_bot.py          # Bot with 13 commands
-│   │   └── new_database_manager.py  # Database operations
+│   │   ├── autonomous_discovery.py      # Discovery engine
+│   │   ├── telegram_bot.py              # Bot commands
+│   │   └── new_database_manager.py      # SQLite DB operations
 │   │
 │   └── web/
 │       ├── app.py               # Main Streamlit app
@@ -219,6 +237,8 @@ prismind/
 │   └── test_collectors.py          # Unit tests
 │
 ├── run_full_collection.py      # One-click collection script
+├── archive/                    # Moved: legacy scripts/assets
+├── docs/archive/               # Moved: legacy notes/docs
 ├── requirements.txt             # Python dependencies
 └── .env.example                 # Configuration template
 ```

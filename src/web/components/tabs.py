@@ -192,9 +192,22 @@ def render_browse_tab():
         end_date = datetime.now().date()
 
     if 'created_at' in df.columns:
-        start_ts = pd.to_datetime(start_date)
-        end_ts = pd.to_datetime(end_date) + pd.Timedelta(days=1)
-        df = df[(df['created_at'] >= start_ts) & (df['created_at'] < end_ts)]
+        try:
+            # Convert to timezone-aware timestamps for comparison
+            start_ts = pd.Timestamp(start_date, tz='UTC')
+            end_ts = pd.Timestamp(end_date, tz='UTC') + pd.Timedelta(days=1)
+            
+            # Ensure created_at column is timezone-aware UTC
+            if df['created_at'].dt.tz is None:
+                df['created_at'] = df['created_at'].dt.tz_localize('UTC')
+            elif str(df['created_at'].dt.tz) != 'UTC':
+                df['created_at'] = df['created_at'].dt.tz_convert('UTC')
+            
+            # Now do the comparison
+            df = df[(df['created_at'] >= start_ts) & (df['created_at'] < end_ts)]
+        except Exception as e:
+            st.warning(f"Date filtering skipped due to: {e}")
+            # Continue without date filtering
 
     if df.empty:
         st.info("No posts found for the selected filters.")
