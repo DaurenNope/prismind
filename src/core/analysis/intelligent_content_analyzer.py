@@ -51,9 +51,13 @@ class IntelligentContentAnalyzer:
             self.ai_services.append({
                 'name': 'ollama',
                 'url': ollama_url.rstrip('/'),
-                'model': os.getenv('OLLAMA_MODEL', 'qwen2.5:7b')
+                'model': os.getenv('OLLAMA_MODEL', 'qwen2.5:1.5b'),
+                'options': {
+                    'num_predict': 150,  # Limit for speed
+                    'temperature': 0.3
+                }
             })
-            print("✅ Ollama (Qwen) initialized")
+            print("✅ Ollama (Qwen 1.5B - Fast) initialized")
 
         # 1. Mistral AI (Primary - best for analysis)
         mistral_key = os.getenv('MISTRAL_API_KEY')
@@ -154,6 +158,26 @@ class IntelligentContentAnalyzer:
             try:
                 media_analysis = self._analyze_media_content(post.media_urls)
                 analysis['media_insights'] = media_analysis
+
+                # Enhance analysis with media insights
+                if media_analysis.get('analyzed_media', 0) > 0:
+                    for insight in media_analysis.get('insights', []):
+                        # Add technical concepts from images
+                        if 'technical_concepts' in insight and insight['technical_concepts']:
+                            existing_concepts = analysis.get('key_concepts', [])
+                            for concept in insight['technical_concepts']:
+                                if concept not in existing_concepts:
+                                    existing_concepts.append(concept)
+                            analysis['key_concepts'] = existing_concepts
+
+                        # Flag high-value visual content
+                        if insight.get('educational_value') == 'high' and insight.get('adds_value') == 'yes':
+                            analysis['has_high_value_visuals'] = True
+
+                        # Add extracted text to context
+                        if insight.get('extracted_text'):
+                            analysis['visual_text_content'] = insight['extracted_text']
+
             except Exception as e:
                 print(f"⚠️ Media analysis failed: {e}")
                 analysis['media_insights'] = {
@@ -219,6 +243,33 @@ class IntelligentContentAnalyzer:
 
         sentiment_scores = self.sentiment_analyzer.polarity_scores(content)
 
+        # Deterministic rewrite angles based on content hash
+        personas = ["technical", "builder", "learner", "trendsetter", "thought_leader"]
+        deterministic_rewrite_angles = []
+        for i, persona in enumerate(personas):
+            engagement_level = ["high", "medium", "low"][int(content_hash[i], 16) % 3]
+            deterministic_rewrite_angles.append({
+                "persona": persona,
+                "angle": f"Deterministic {persona} angle for {category}",
+                "hook": f"Consistent hook for {persona} persona",
+                "key_points": [f"Point 1 for {persona}", f"Point 2 for {persona}", f"Point 3 for {persona}"],
+                "target_audience": f"{persona.title()} audience",
+                "estimated_engagement": engagement_level
+            })
+
+        # Calculate content age
+        try:
+            created_dt = datetime.fromisoformat(post.created_at.replace('Z', '+00:00'))
+            age_hours = (datetime.now(created_dt.tzinfo) - created_dt).total_seconds() / 3600
+            if age_hours < 24:
+                publication_age = f"{int(age_hours)} hours"
+            elif age_hours < 168:  # 7 days
+                publication_age = f"{int(age_hours/24)} days"
+            else:
+                publication_age = f"{int(age_hours/168)} weeks"
+        except Exception:
+            publication_age = "unknown"
+
         analysis = {
             'post_id': post.post_id,
             'platform': post.platform,
@@ -243,7 +294,20 @@ class IntelligentContentAnalyzer:
             'tags': post.hashtags[:5] if post.hashtags else [],
             'confidence_score': 1.0,
             'sentiment_scores': sentiment_scores,
-            'ai_service': 'deterministic'
+            'ai_service': 'deterministic',
+            'rewrite_angles': deterministic_rewrite_angles,
+            'discovery_signals': {
+                'author_authority': ['high', 'medium', 'low'][int(content_hash[5], 16) % 3],
+                'trend_relevance': ['emerging', 'mainstream', 'declining'][int(content_hash[6], 16) % 3],
+                'viral_potential': int(content_hash[7], 16) * 6,  # 0-90 range
+                'discussion_quality': ['high', 'medium', 'low'][int(content_hash[8], 16) % 3],
+                'unique_perspective': 'yes' if int(content_hash[9], 16) % 2 == 0 else 'no'
+            },
+            'content_freshness': {
+                'publication_age': publication_age,
+                'still_relevant': 'yes' if int(content_hash[10], 16) % 2 == 0 else 'no',
+                'time_sensitivity': ['urgent', 'timely', 'evergreen'][int(content_hash[11], 16) % 3]
+            }
         }
 
         try:
@@ -251,20 +315,20 @@ class IntelligentContentAnalyzer:
             analysis['intelligent_value_score'] = value_score
         except Exception:
             analysis['intelligent_value_score'] = 5.0
-        
+
         # Add content quality score and rewrite candidate assessment
         try:
             content_quality_score = self._calculate_content_quality_score(analysis, post)
             analysis['content_quality_score'] = content_quality_score
         except Exception:
             analysis['content_quality_score'] = 5.0
-        
+
         try:
             is_rewrite_candidate = self._determine_rewrite_candidate(analysis, post, content_quality_score)
             analysis['is_rewrite_candidate'] = is_rewrite_candidate
         except Exception:
             analysis['is_rewrite_candidate'] = False
-        
+
         if include_comments and post.platform == 'reddit':
             analysis['comment_insights'] = []
         if include_media and post.media_urls:
@@ -312,11 +376,11 @@ class IntelligentContentAnalyzer:
     
     def _create_analysis_prompt(self, post: SocialPost) -> str:
         """Create a comprehensive analysis prompt with improved categorization"""
-        
+
         # Define specific categories to avoid generic "Technology" or "General"
         categories = [
             "AI & Machine Learning",
-            "Development Tools", 
+            "Development Tools",
             "Crypto & Web3",
             "Business & Startups",
             "Content Creation",
@@ -328,7 +392,10 @@ class IntelligentContentAnalyzer:
             "Learning & Education",
             "Other"
         ]
-        
+
+        # Define the 5 personas for content transformation
+        personas = ["technical", "builder", "learner", "trendsetter", "thought_leader"]
+
         return f"""
         Analyze this social media bookmark with deep intelligence and provide actionable insights:
 
@@ -368,10 +435,71 @@ class IntelligentContentAnalyzer:
           "follow_up_research": ["what to research next"],
           "quality_indicators": ["why this is high/low quality content"],
           "tags": ["searchable", "keywords"],
-          "confidence_score": 0.85
+          "confidence_score": 0.85,
+
+          "rewrite_angles": [
+            {{
+              "persona": "technical",
+              "angle": "How a developer/engineer would approach this topic",
+              "hook": "The most compelling technical hook (1 sentence)",
+              "key_points": ["Technical detail 1", "Technical detail 2", "Technical detail 3"],
+              "target_audience": "Who this angle is for",
+              "estimated_engagement": "high/medium/low"
+            }},
+            {{
+              "persona": "builder",
+              "angle": "How to build/ship something with this knowledge",
+              "hook": "Action-oriented hook focused on building (1 sentence)",
+              "key_points": ["Practical step 1", "Practical step 2", "Practical step 3"],
+              "target_audience": "Makers, founders, product builders",
+              "estimated_engagement": "high/medium/low"
+            }},
+            {{
+              "persona": "learner",
+              "angle": "Educational explanation for someone learning this topic",
+              "hook": "Learning-focused hook that makes it accessible (1 sentence)",
+              "key_points": ["Learning point 1", "Learning point 2", "Learning point 3"],
+              "target_audience": "Beginners and students",
+              "estimated_engagement": "high/medium/low"
+            }},
+            {{
+              "persona": "trendsetter",
+              "angle": "What's new/trending/cutting-edge about this",
+              "hook": "Trend-focused hook that highlights what's emerging (1 sentence)",
+              "key_points": ["Trend insight 1", "Trend insight 2", "Trend insight 3"],
+              "target_audience": "Early adopters and innovators",
+              "estimated_engagement": "high/medium/low"
+            }},
+            {{
+              "persona": "thought_leader",
+              "angle": "Big picture analysis and future implications",
+              "hook": "Thought-provoking hook about larger implications (1 sentence)",
+              "key_points": ["Strategic insight 1", "Strategic insight 2", "Strategic insight 3"],
+              "target_audience": "Leaders and strategists",
+              "estimated_engagement": "high/medium/low"
+            }}
+          ],
+
+          "discovery_signals": {{
+            "author_authority": "high/medium/low - Assess credibility based on engagement, follower count, content quality",
+            "trend_relevance": "emerging/mainstream/declining - Is this topic trending or fading",
+            "viral_potential": 75,
+            "discussion_quality": "high/medium/low - Quality of conversation around this content",
+            "unique_perspective": "yes/no - Does this offer a unique take or is it repetitive"
+          }},
+
+          "content_freshness": {{
+            "publication_age": "Calculate age from created_at timestamp (hours/days/weeks)",
+            "still_relevant": "yes/no - Is this content still useful or is it outdated",
+            "time_sensitivity": "urgent/timely/evergreen - Does this need to be acted on now or is it timeless"
+          }}
         }}
 
         Focus on PRACTICAL VALUE and ACTIONABLE INSIGHTS. Be specific and helpful.
+        The rewrite_angles are CRITICAL - provide detailed, distinct approaches for each persona.
+        The discovery_signals help determine content worth and discoverability.
+        The content_freshness helps with timing and relevance.
+
         Return ONLY valid JSON, no additional text.
         """
     
@@ -543,43 +671,96 @@ class IntelligentContentAnalyzer:
         return media_insights
     
     def _analyze_single_media(self, media_url: str) -> Optional[Dict[str, Any]]:
-        """Analyze a single media item"""
-        
+        """Analyze a single media item using AI vision"""
+
         # Check if we have Gemini Vision available
         for service in self.ai_services:
             if service['name'] == 'gemini' and 'vision_model' in service:
                 try:
-                    # Download and analyze image
+                    # Download image
                     response = requests.get(media_url, timeout=10)
-                    if response.status_code == 200:
-                        
-                        # Use Gemini Vision to analyze
-                        vision_prompt = """
-                        Analyze this image from a social media post and extract:
-                        1. What is shown in the image?
-                        2. Any text or code visible?
-                        3. Technical concepts or tools shown?
-                        4. Educational or practical value?
-                        5. Key insights someone could learn?
-                        
-                        Provide a brief but informative analysis.
-                        """
-                        
-                        # This would use Gemini Vision API
-                        # For now, return placeholder
-                        return {
-                            'media_url': media_url,
-                            'content_type': 'image',
-                            'description': 'AI vision analysis would appear here',
-                            'key_elements': ['element1', 'element2'],
-                            'educational_value': 'High',
-                            'extracted_text': ''
-                        }
-                        
+                    if response.status_code != 200:
+                        print(f"Failed to download image: {media_url}")
+                        continue
+
+                    # Save image temporarily
+                    from PIL import Image
+                    from io import BytesIO
+
+                    img = Image.open(BytesIO(response.content))
+
+                    # Create comprehensive vision analysis prompt
+                    vision_prompt = """
+                    Analyze this image from a social media post and provide structured insights.
+
+                    Return a JSON response with this structure:
+                    {
+                      "content_type": "diagram/code/screenshot/infographic/photo/chart/other",
+                      "description": "What is shown in the image (2-3 sentences)",
+                      "key_elements": ["element1", "element2", "element3"],
+                      "extracted_text": "Any visible text or code (if applicable)",
+                      "technical_concepts": ["concept1", "concept2"],
+                      "educational_value": "high/medium/low",
+                      "practical_insights": ["insight1", "insight2"],
+                      "adds_value": "yes/no - Does this image add significant value to understanding the content?"
+                    }
+
+                    Focus on technical, educational, and practical value.
+                    Return ONLY valid JSON, no additional text.
+                    """
+
+                    # Use Gemini Vision to analyze
+                    vision_response = service['vision_model'].generate_content(
+                        [vision_prompt, img],
+                        generation_config=genai.types.GenerationConfig(
+                            temperature=0.1,
+                            max_output_tokens=800
+                        )
+                    )
+
+                    # Parse the response
+                    content = vision_response.text.strip()
+
+                    # Clean JSON response
+                    if content.startswith('```json'):
+                        content = content[7:-3]
+                    elif content.startswith('```'):
+                        content = content[3:-3]
+
+                    import json
+                    vision_analysis = json.loads(content)
+
+                    # Add metadata
+                    vision_analysis['media_url'] = media_url
+                    vision_analysis['analyzed_with'] = 'gemini-vision'
+
+                    print(f"✅ Vision analysis complete: {vision_analysis.get('content_type', 'unknown')}")
+
+                    return vision_analysis
+
                 except Exception as e:
-                    print(f"Vision analysis failed: {e}")
-        
-        return None
+                    print(f"⚠️ Vision analysis failed for {media_url}: {e}")
+                    # Return basic analysis as fallback
+                    return {
+                        'media_url': media_url,
+                        'content_type': 'image',
+                        'description': 'Vision analysis unavailable',
+                        'key_elements': [],
+                        'educational_value': 'unknown',
+                        'extracted_text': '',
+                        'analyzed_with': 'basic'
+                    }
+
+        # No vision service available
+        return {
+            'media_url': media_url,
+            'content_type': 'image',
+            'description': 'No vision AI service available',
+            'key_elements': [],
+            'educational_value': 'unknown',
+            'extracted_text': '',
+            'analyzed_with': 'none'
+        }
     
     def _calculate_intelligent_value_score(self, analysis: Dict, post: SocialPost) -> float:
         """Calculate sophisticated value score based on multiple factors"""
@@ -785,7 +966,65 @@ class IntelligentContentAnalyzer:
     
     def _basic_analysis(self, post: SocialPost, sentiment_scores: Dict) -> Dict[str, Any]:
         """Fallback basic analysis when AI services are unavailable"""
-        
+
+        # Basic rewrite angles when AI is not available
+        basic_rewrite_angles = [
+            {
+                "persona": "technical",
+                "angle": "Technical breakdown of this content",
+                "hook": "Here's what you need to know from a technical perspective",
+                "key_points": ["Main technical concept", "Implementation details", "Best practices"],
+                "target_audience": "Developers and engineers",
+                "estimated_engagement": "medium"
+            },
+            {
+                "persona": "builder",
+                "angle": "How to apply this in your projects",
+                "hook": "Build something with this knowledge",
+                "key_points": ["Practical application", "Quick implementation", "Real-world use case"],
+                "target_audience": "Makers and builders",
+                "estimated_engagement": "medium"
+            },
+            {
+                "persona": "learner",
+                "angle": "Understanding the fundamentals",
+                "hook": "Learn the basics step by step",
+                "key_points": ["Core concept explained", "Why it matters", "How to get started"],
+                "target_audience": "Beginners",
+                "estimated_engagement": "medium"
+            },
+            {
+                "persona": "trendsetter",
+                "angle": "Why this is relevant now",
+                "hook": "This is trending and here's why",
+                "key_points": ["Current trend", "Market momentum", "Early adoption opportunity"],
+                "target_audience": "Innovators",
+                "estimated_engagement": "medium"
+            },
+            {
+                "persona": "thought_leader",
+                "angle": "Strategic implications",
+                "hook": "What this means for the future",
+                "key_points": ["Industry impact", "Future trends", "Strategic considerations"],
+                "target_audience": "Leaders and strategists",
+                "estimated_engagement": "medium"
+            }
+        ]
+
+        # Calculate content age
+        from datetime import datetime
+        try:
+            created_dt = datetime.fromisoformat(post.created_at.replace('Z', '+00:00'))
+            age_hours = (datetime.now(created_dt.tzinfo) - created_dt).total_seconds() / 3600
+            if age_hours < 24:
+                publication_age = f"{int(age_hours)} hours"
+            elif age_hours < 168:  # 7 days
+                publication_age = f"{int(age_hours/24)} days"
+            else:
+                publication_age = f"{int(age_hours/168)} weeks"
+        except Exception:
+            publication_age = "unknown"
+
         return {
             'category': 'General',
             'subcategory': post.platform.title(),
@@ -806,7 +1045,20 @@ class IntelligentContentAnalyzer:
             'tags': post.hashtags[:5] if post.hashtags else [],
             'confidence_score': 0.3,
             'sentiment_scores': sentiment_scores,
-            'ai_service': 'basic'
+            'ai_service': 'basic',
+            'rewrite_angles': basic_rewrite_angles,
+            'discovery_signals': {
+                'author_authority': 'medium',
+                'trend_relevance': 'unknown',
+                'viral_potential': 50,
+                'discussion_quality': 'unknown',
+                'unique_perspective': 'unknown'
+            },
+            'content_freshness': {
+                'publication_age': publication_age,
+                'still_relevant': 'yes',
+                'time_sensitivity': 'evergreen'
+            }
         }
 
 
