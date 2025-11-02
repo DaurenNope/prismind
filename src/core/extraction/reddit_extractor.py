@@ -1,9 +1,10 @@
 import time
-import socket
 import requests
 import dns.resolver
 import urllib3
 from datetime import datetime
+import json
+import random
 from typing import Dict, List, Optional, Tuple, Any, Union
 import os
 import asyncio
@@ -60,37 +61,40 @@ class RedditExtractor(SocialExtractorBase):
         if self.enable_screenshots:
             self.screenshot_dir.mkdir(parents=True, exist_ok=True)
 
-        # Known Reddit IPs
-        self.reddit_ips = {
-            "oauth.reddit.com": "151.101.1.140",
-            "www.reddit.com": "151.101.1.140",
-            "api.reddit.com": "151.101.1.140",
-            "reddit.com": "151.101.1.140",
-        }
-
-        # Configure session with retries and custom resolver
+        # Configure session with retries
         self.session = self._create_retry_session()
 
-        # Patch socket.getaddrinfo to use our IP mapping
-        self.original_getaddrinfo = socket.getaddrinfo
-        socket.getaddrinfo = self._patched_getaddrinfo
+        # Safety config
+        self._load_collection_safety_config()
 
-    def _patched_getaddrinfo(self, *args):
-        """Patch getaddrinfo to use our IP mapping."""
-        host = args[0]
-        if host in self.reddit_ips:
-            # Return the IP address directly for Reddit domains
-            return [
-                (
-                    socket.AF_INET,
-                    socket.SOCK_STREAM,
-                    6,
-                    "",
-                    (self.reddit_ips[host], args[1] if len(args) > 1 else 80),
-                )
-            ]
-        # Fall back to original getaddrinfo for other domains
-        return self.original_getaddrinfo(*args)
+    def _load_collection_safety_config(self):
+        """Load optional jitter/rate safety settings from config/collection.json."""
+        try:
+            cfg_path = Path("config/collection.json")
+            self.reddit_cfg = {}
+            if cfg_path.exists():
+                with open(cfg_path, "r") as f:
+                    data = json.load(f)
+                    self.reddit_cfg = data.get("reddit", {}) or {}
+            jitter = self.reddit_cfg.get("jitter_ms") or [300, 1200]
+            if isinstance(jitter, list) and len(jitter) == 2:
+                self._jitter_low, self._jitter_high = int(jitter[0]), int(jitter[1])
+            else:
+                self._jitter_low, self._jitter_high = 300, 1200
+            self._requests_per_hour_cap = int(self.reddit_cfg.get("requests_per_hour_cap", 60))
+            self._processed_counter = 0
+        except Exception:
+            self._jitter_low, self._jitter_high = 300, 1200
+            self._requests_per_hour_cap = 60
+            self._processed_counter = 0
+
+    def _jitter_sleep(self, extra_ms: int = 0):
+        try:
+            delay_ms = random.randint(self._jitter_low, self._jitter_high)
+            time.sleep((delay_ms + max(0, extra_ms)) / 1000)
+        except Exception:
+            time.sleep(0.3)
+
 
     def _create_retry_session(self, retries=5, backoff_factor=1.0) -> requests.Session:
         """Create a requests session with retry logic and improved timeouts."""
@@ -381,6 +385,8 @@ class RedditExtractor(SocialExtractorBase):
 
         for attempt in range(max_retries):
             try:
+                # Safety: minimal jitter before API call
+                self._jitter_sleep()
                 saved_items = []
                 next_after = None
 
@@ -468,6 +474,10 @@ class RedditExtractor(SocialExtractorBase):
                         )
                         if post:
                             posts.append(post)
+                            self._processed_counter += 1
+                            # Safety: light jitter every few items to avoid burst patterns
+                            if self._processed_counter % 10 == 0:
+                                self._jitter_sleep()
                         elif idx % 10 == 0:
                             print(
                                 f"⚠️ Conversion returned None for item {idx} (ID: {item_id})"

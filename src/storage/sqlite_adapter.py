@@ -8,6 +8,9 @@ from __future__ import annotations
 import sqlite3
 from typing import Any, Dict, List
 from pathlib import Path
+from src.utils.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class SQLiteAdapter:
@@ -96,7 +99,7 @@ class SQLiteAdapter:
             self.conn.commit()
             return cur.rowcount > 0
         except Exception as e:
-            print(f"SQLite save failed: {e}")
+            logger.error(f"SQLite save failed: {e}")
             return False
 
     def save_github_trending_repo(self, repo_data: Dict[str, Any]) -> bool:

@@ -8,6 +8,7 @@ from typing import Dict, List, Optional
 from playwright.async_api import Browser, Page, async_playwright
 
 from .social_extractor_base import SocialExtractorBase, SocialPost
+from ..rate_limiting.rate_limit_config import RateLimitConfig
 
 
 def load_collection_config():
@@ -43,16 +44,47 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
         # Load configuration
         config = load_collection_config()
         self.extract_threads = config.get("twitter", {}).get("extract_threads", False)
+        # Safety/jitter and scroll caps
+        twitter_cfg = config.get("twitter", {})
+        self.jitter_ms: List[int] = twitter_cfg.get("jitter_ms", [300, 1200])
+        self.scroll_limit_cfg: Optional[int] = twitter_cfg.get("scroll_limit")
+
+    async def _jitter(self, extra_ms: int = 0):
+        """Sleep a random jitter to mimic human behavior."""
+        try:
+            low, high = (self.jitter_ms[0], self.jitter_ms[1]) if isinstance(self.jitter_ms, list) and len(self.jitter_ms) == 2 else (300, 1200)
+            delay = max(0, low) if low == high else __import__("random").randint(int(low), int(high))
+            await asyncio.sleep((delay + max(0, extra_ms)) / 1000)
+        except Exception:
+            # Best-effort; do not fail collection on jitter errors
+            await asyncio.sleep(0.3)
 
     def _load_cookies(self) -> Optional[List[Dict]]:
-        """Load cookies from file if it exists"""
+        """Load cookies from file if it exists - handles both list and dict formats"""
         try:
             cookie_path = Path(self.cookie_file)
             if cookie_path.exists():
                 with open(cookie_path, "r") as f:
-                    cookies = json.load(f)
-                print(f"🍪 Loaded {len(cookies)} cookies from {cookie_path}")
-                return cookies
+                    cookie_data = json.load(f)
+                
+                # Handle different cookie formats
+                if isinstance(cookie_data, list):
+                    # Direct list format
+                    cookies = cookie_data
+                elif isinstance(cookie_data, dict):
+                    # Dict format with "cookies" key (from posting services)
+                    cookies = cookie_data.get("cookies", cookie_data.get("data", []))
+                    if not cookies:
+                        # Try to extract individual cookies if format is different
+                        cookies = [cookie_data] if cookie_data else []
+                else:
+                    cookies = []
+                
+                if cookies:
+                    print(f"🍪 Loaded {len(cookies)} cookies from {cookie_path}")
+                    return cookies
+                else:
+                    print(f"⚠️ No valid cookies found in {cookie_path}")
         except Exception as e:
             print(f"⚠️ Could not load cookies: {e}")
         return None
@@ -68,6 +100,19 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
         except Exception as e:
             print(f"⚠️ Could not save cookies: {e}")
 
+    async def _refresh_and_save_cookies(self) -> bool:
+        """Refresh and save cookies after successful authentication."""
+        try:
+            if self.context and self.is_authenticated:
+                cookies = await self.context.cookies()
+                if cookies:
+                    self._save_cookies(cookies)
+                    print(f"✅ Refreshed and saved {len(cookies)} cookies")
+                    return True
+        except Exception as e:
+            print(f"⚠️ Failed to refresh cookies: {e}")
+        return False
+
     async def _try_cookie_authentication(self) -> bool:
         """Try to authenticate using existing cookies"""
         cookies = self._load_cookies()
@@ -81,16 +126,19 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
             await self.context.add_cookies(cookies)
 
             # Navigate to X.com home to test if cookies work
+            await self._jitter()
             await self.page.goto(
                 "https://x.com/home", wait_until="domcontentloaded", timeout=60000
             )
-            await self.page.wait_for_timeout(5000)
+            await self._jitter(500)
 
             # Check if we're logged in - if URL is /home and not /login, we're good
             current_url = self.page.url
             if '/login' not in current_url and '/home' in current_url:
                 print("✅ Cookie authentication successful!")
                 self.is_authenticated = True
+                # AUTO-REFRESH: Always refresh cookies even if cookie auth worked
+                await self._refresh_and_save_cookies()
                 return True
             
             # Also try to find timeline
@@ -99,8 +147,11 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
                 if element:
                     print("✅ Cookie authentication successful!")
                     self.is_authenticated = True
+                    # AUTO-REFRESH: Always refresh cookies even if cookie auth worked
+                    await self._refresh_and_save_cookies()
                     return True
-            except:
+            except Exception as e:
+                print(f"⚠️ Timeline check failed: {e}")
                 pass
 
             print("❌ Cookie authentication failed - cookies may be expired")
@@ -132,20 +183,35 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
                 if not self.page or self.page.is_closed():
                     self.page = await self.context.new_page()
 
-                # Try cookie authentication first
+                # Try cookie authentication first (PRIORITY - avoids rate limiting)
+                print("🍪 Attempting cookie-based authentication (avoids rate limiting)...")
                 if await self._try_cookie_authentication():
-                    self.is_authenticated = True
+                    # Cookies already refreshed in _try_cookie_authentication
+                    print("✅ Cookie authentication successful - bypassing password login")
                     return True
+                else:
+                    print("⚠️  Cookie authentication failed - cookies may be expired or missing")
 
                 if not self.password:
                     print("❌ Cookie authentication failed and no password provided.")
+                    print("💡 Tip: Use valid cookies or wait for rate limit to expire")
+                    print("💡 To get cookies: log in once manually or wait for automatic refresh")
                     return False
 
+                # Check if cookies exist but are expired
+                cookies_exist = Path(self.cookie_file).exists() if self.cookie_file else False
+                if cookies_exist:
+                    print("⚠️  Cookies exist but authentication failed - they may be expired")
+                    print("💡 Tip: Twitter is likely rate limiting. Wait 15-30 minutes or use fresh cookies")
+                    print("   If rate limiting persists, consider waiting longer or using a different account")
+
                 print("🔐 Falling back to password authentication...")
+                print("⚠️  Note: Password login may fail due to rate limiting/anti-bot detection")
+                await self._jitter()
                 await self.page.goto(
                     "https://x.com/login", wait_until="domcontentloaded", timeout=60000
                 )
-                await self.page.wait_for_timeout(3000)
+                await self._jitter(300)
 
                 # Step 1: Enter username
                 username_selector = 'input[name="text"], input[autocomplete="username"]'
@@ -167,8 +233,8 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
                     # For now, we will assume it's asking for the username again
                     await verification_input.fill(self.username)
                     await self.page.click('button:has-text("Next")')
-                except:
-                    print("✅ No special verification prompt detected.")
+                except Exception as e:
+                    print(f"✅ No special verification prompt detected: {e}")
 
                 # Step 3: Enter password
                 password_selector = (
@@ -182,33 +248,123 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
                 login_button_selector = 'button[data-testid="LoginForm_Login_Button"]'
                 await self.page.wait_for_selector(login_button_selector, timeout=10000)
                 await self.page.click(login_button_selector)
+                
+                # Wait a bit for response
+                await self._jitter(1000)
+
+                # Check for error messages (rate limiting, etc.)
+                try:
+                    # Check for common error messages
+                    error_selectors = [
+                        'div[role="alert"]',
+                        '[data-testid="error"]',
+                        'span:has-text("Could not log you in")',
+                        'span:has-text("Try again later")',
+                        'span:has-text("Something went wrong")',
+                    ]
+                    
+                    for selector in error_selectors:
+                        try:
+                            error_element = await self.page.query_selector(selector)
+                            if error_element:
+                                error_text = await error_element.inner_text()
+                                if error_text and ("could not log" in error_text.lower() or "try again later" in error_text.lower() or "rate limit" in error_text.lower()):
+                                    print(f"⚠️ Twitter rate limiting/error detected: {error_text}")
+                                    # Take screenshot for debugging
+                                    await self.page.screenshot(path=f"logs/twitter_auth_error_{attempt + 1}.png")
+                                    raise Exception(f"Twitter authentication blocked: {error_text}")
+                        except Exception as e:
+                            if "Twitter authentication blocked" in str(e):
+                                raise  # Re-raise our custom error
+                            continue
+                except Exception as check_error:
+                    if "Twitter authentication blocked" in str(check_error):
+                        raise  # Re-raise our custom error
+                    # Otherwise, continue to normal verification
 
                 # Step 5: Verify login success
                 home_timeline_selector = '[data-testid="primaryColumn"]'
-                await self.page.wait_for_selector(home_timeline_selector, timeout=30000)
+                try:
+                    await self.page.wait_for_selector(home_timeline_selector, timeout=30000)
+                except Exception as e:
+                    # Check if we're still on login page (authentication failed)
+                    current_url = self.page.url
+                    page_text = await self.page.evaluate("document.body.innerText")
+                    
+                    if 'login' in current_url.lower() or 'signin' in current_url.lower():
+                        print(f"❌ Still on login page. URL: {current_url}")
+                        # Check for specific error messages in page
+                        if "could not log" in page_text.lower() or "try again later" in page_text.lower():
+                            await self.page.screenshot(path=f"logs/twitter_auth_failed_{attempt + 1}.png")
+                            raise Exception("Twitter authentication blocked - rate limiting or anti-bot detection. Please wait and try again later.")
+                        raise Exception(f"Authentication failed - still on login page")
+                    raise
 
                 self.is_authenticated = True
                 print(f"✅ Successfully logged in to Twitter as {self.username}")
 
+                # AUTO-SAVE: Always save cookies after successful password auth
                 cookies = await self.context.cookies()
                 self._save_cookies(cookies)
+                print(f"✅ Saved {len(cookies)} fresh cookies")
 
                 return True
 
             except Exception as e:
+                error_msg = str(e)
                 print(f"❌ Authentication attempt {attempt + 1} failed: {e}")
-                await self.page.screenshot(
-                    path=f"logs/auth_failure_attempt_{attempt + 1}.png"
-                )
-                if self.page and not self.page.is_closed():
-                    await self.page.close()
-                if self.context:
-                    await self.context.close()
-                    self.context = None
-                if attempt >= max_retries - 1:
-                    print("❌ All authentication attempts failed.")
-                    return False
-                await asyncio.sleep(5)  # Wait before retrying
+                
+                # Take screenshot for debugging
+                try:
+                    if self.page and not self.page.is_closed():
+                        await self.page.screenshot(
+                            path=f"logs/auth_failure_attempt_{attempt + 1}.png"
+                        )
+                except Exception as e:
+                    print(f"⚠️ Screenshot failed: {e}")
+                    pass
+                
+                # Check if it's a rate limiting error
+                if ("rate limit" in error_msg.lower() or 
+                    "try again later" in error_msg.lower() or 
+                    "could not log" in error_msg.lower() or
+                    "temporarily restricted" in error_msg.lower()):
+                    
+                    print("⚠️  Twitter rate limiting/anti-bot detection detected!")
+                    print("💡 This means Twitter is blocking automated login attempts.")
+                    print()
+                    print("🔧 Solutions:")
+                    print("   1. WAIT: Wait 30-60 minutes (or longer) before trying again")
+                    print("   2. USE COOKIES: Ensure valid cookies exist - they bypass login")
+                    print("   3. MANUAL LOGIN: Log in manually once to refresh cookies")
+                    print("   4. SKIP FOR NOW: Focus on Threads collection (has valid cookies)")
+                    print()
+                    
+                    if attempt == 0:
+                        # On first attempt, suggest waiting longer
+                        print("⏭️  Skipping further retries (rate limit detected)")
+                        print("💡 Run collection again later, or use cookies to bypass")
+                        return False
+                    
+                    wait_time = 60 * (attempt + 1)  # Longer wait: 60s, 120s, 180s
+                    print(f"⏳ Waiting {wait_time} seconds before retry...")
+                    await asyncio.sleep(wait_time)
+                    
+                    # Don't clean up browser on rate limit - keep it for retry
+                    continue
+                else:
+                    # Regular retry with shorter wait
+                    if self.page and not self.page.is_closed():
+                        await self.page.close()
+                    if self.context:
+                        await self.context.close()
+                        self.context = None
+                    if attempt >= max_retries - 1:
+                        print("❌ All authentication attempts failed.")
+                        if "rate limit" in error_msg.lower() or "try again later" in error_msg.lower():
+                            print("💡 Tip: Twitter may be rate limiting. Wait 15-30 minutes and try again.")
+                        return False
+                    await asyncio.sleep(5)  # Wait before retrying
         return False
 
     async def _scroll_page(self):
@@ -238,21 +394,22 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
 
         try:
             # Navigate to bookmarks
+            await self._jitter()
             await self.page.goto(
                 "https://x.com/i/bookmarks",
                 wait_until="domcontentloaded",
                 timeout=60000,
             )
-            await self.page.wait_for_timeout(5000)
+            await self._jitter(500)
 
             # Check if bookmarks page loaded
             try:
                 await self.page.wait_for_selector(
                     '[data-testid="primaryColumn"]', timeout=15000
                 )
-            except:
+            except Exception as e:
                 print(
-                    "❌ Could not access bookmarks page - check if account has bookmarks enabled"
+                    f"❌ Could not access bookmarks page - check if account has bookmarks enabled: {e}"
                 )
                 return []
 
@@ -260,7 +417,12 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
 
             # Improved scrolling mechanism
             scroll_attempts = 0
-            max_scroll_attempts = 50  # Increased for more scrolling
+            max_scroll_attempts = 50  # default upper bound
+            if self.scroll_limit_cfg:
+                try:
+                    max_scroll_attempts = max(1, min(max_scroll_attempts, int(self.scroll_limit_cfg)))
+                except Exception:
+                    pass
             no_new_content_count = 0
             last_tweet_count = 0
 
@@ -288,8 +450,8 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
                             # Validate element is still attached to DOM
                             try:
                                 await tweet_element.bounding_box()
-                            except:
-                                print(f"⚠️ Tweet element {i} no longer valid, skipping")
+                            except Exception as e:
+                                print(f"⚠️ Tweet element {i} no longer valid, skipping: {e}")
                                 continue
 
                             # Extract tweet data with thread handling
@@ -297,11 +459,16 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
                                 tweet_element
                             )
                             if tweet_data:
-                                # Check if we've reached the stop post
-                                if stop_at_post_id and tweet_data.post_id == stop_at_post_id:
-                                    print(f"🛑 Reached stop post ID: {stop_at_post_id}")
-                                    stop_post_encountered = True
-                                    break
+                                # Check if we've reached the stop post (normalize for comparison)
+                                if stop_at_post_id:
+                                    # Normalize both IDs by removing twitter_ prefix
+                                    normalized_tweet_id = tweet_data.post_id.replace('twitter_', '')
+                                    normalized_stop_id = str(stop_at_post_id).replace('twitter_', '')
+                                    
+                                    if normalized_tweet_id == normalized_stop_id:
+                                        print(f"🛑 Reached stop post ID: {stop_at_post_id} (matched: {tweet_data.post_id})")
+                                        stop_post_encountered = True
+                                        break
 
                                 # Check if we already processed this tweet
                                 if tweet_data.post_id in processed_tweet_ids:
@@ -369,7 +536,7 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
                             scroll_attempts += 1
                             print("📜 Scrolling to load more content...")
                             await self._scroll_page()
-                            await self.page.wait_for_timeout(2000)
+                            await self._jitter(200)
                             print(f"📈 Progress: {len(posts)}/{limit} tweets extracted")
                         else:
                             print("🛑 No more tweets loading, stopping...")
@@ -389,6 +556,10 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
                     await self.page.wait_for_timeout(3000)
 
             print(f"✅ Retrieved {len(posts)} bookmarked tweets from Twitter")
+            
+            # AUTO-REFRESH: Refresh cookies after successful collection
+            await self._refresh_and_save_cookies()
+            
             return posts
 
         except Exception as e:
@@ -407,12 +578,13 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
 
         try:
             # Navigate to likes page
+            await self._jitter()
             await self.page.goto(
                 f"https://x.com/{self.username}/likes",
                 wait_until="domcontentloaded",
                 timeout=15000,
             )
-            await self.page.wait_for_timeout(3000)
+            await self._jitter(300)
 
             # Similar scrolling logic as bookmarks
             tweets_collected = 0
@@ -442,7 +614,7 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
                 await self.page.evaluate(
                     "window.scrollTo(0, document.body.scrollHeight)"
                 )
-                await self.page.wait_for_timeout(2000)
+                await self._jitter(200)
                 scroll_attempts += 1
 
                 new_tweet_count = len(
@@ -683,7 +855,8 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
                             if clean_target == clean_found:
                                 target_author_found = True
                                 break
-                except:
+                except Exception as e:
+                    print(f"⚠️ Error checking author: {e}")
                     continue
 
             if not target_author_found:
@@ -783,8 +956,8 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
                         await self.page.goto("https://x.com/i/bookmarks", wait_until="load", timeout=30000)
                         await self.page.wait_for_timeout(2000)
                         print("✅ Force navigated back to bookmarks")
-                    except:
-                        print("❌ Failed to return to bookmarks")
+                    except Exception as e:
+                        print(f"❌ Failed to return to bookmarks: {e}")
 
                 return full_content
             else:
@@ -798,14 +971,15 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
             await self.page.goto(current_url, wait_until="load", timeout=30000)
             await self.page.wait_for_timeout(2000)
             print("✅ Returned to bookmarks page after failed extraction")
-        except:
+        except Exception as e:
+            print(f"⚠️ Failed to return to original page: {e}")
             # Force return to bookmarks
             try:
                 await self.page.goto("https://x.com/i/bookmarks", wait_until="load", timeout=30000)
                 await self.page.wait_for_timeout(2000)
                 print("✅ Force navigated back to bookmarks after failure")
-            except:
-                print("❌ Failed to return to bookmarks after thread extraction failure")
+            except Exception as e2:
+                print(f"❌ Failed to return to bookmarks after thread extraction failure: {e2}")
 
         return None
 
@@ -829,86 +1003,216 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
             # Main tweet content - extract BEFORE and AFTER "Show more" click
             content = ""
             
-            # Click "Show more" to expand truncated tweets
+            # ALWAYS try to expand tweets - more aggressive approach
             expanded = False
             try:
                 # IMPORTANT: Scroll tweet into view first
-                try:
-                    await tweet_element.scroll_into_view_if_needed()
-                    await self.page.wait_for_timeout(500)
-                except:
-                    pass
+                await tweet_element.scroll_into_view_if_needed()
+                await self.page.wait_for_timeout(1000)
                 
-                # Try multiple selectors for "Show more" button
+                print("🔍 Aggressively checking for truncated content...")
+                
+                # First, get initial content to check if it's truncated
+                initial_text_element = await tweet_element.query_selector('[data-testid="tweetText"]')
+                initial_content = ""
+                if initial_text_element:
+                    initial_content = await initial_text_element.inner_text()
+                    print(f"📄 Initial content length: {len(initial_content)} chars")
+                
+                # Try multiple comprehensive selectors for "Show more" button
                 show_more_selectors = [
                     '[data-testid="tweet-text-show-more-button"]',
                     'div[role="button"]:has-text("Show more")',
                     'span:has-text("Show more")',
                     '[dir="ltr"]:has-text("Show more")',
+                    '[aria-label*="Show more"]',
+                    'button:has-text("Show more")',
+                    'a:has-text("Show more")',
+                    # More generic selectors
+                    'div[tabindex="0"]:has-text("Show more")',
+                    'span[role="button"]:has-text("Show more")',
+                    '[data-testid*="show-more"]'
                 ]
                 
-                for selector in show_more_selectors:
+                # Also try looking for ellipsis or truncated indicators
+                truncation_indicators = [
+                    'span:has-text("…")',
+                    'div:has-text("…")',
+                    '[data-testid*="truncate"]'
+                ]
+                
+                print(f"🔍 Found {len(show_more_selectors)} show more selectors to try")
+                
+                for i, selector in enumerate(show_more_selectors):
                     try:
-                        show_more_button = await tweet_element.query_selector(selector)
-                        if show_more_button:
-                            # Make sure button is visible
+                        # Look for show more buttons within this tweet element
+                        show_more_buttons = await tweet_element.query_selector_all(selector)
+                        print(f"   Selector {i+1} ({selector}): Found {len(show_more_buttons)} elements")
+                        
+                        for j, button in enumerate(show_more_buttons):
                             try:
-                                is_visible = await show_more_button.is_visible()
+                                # Multiple checks to ensure we have the right button
+                                is_visible = await button.is_visible()
                                 if not is_visible:
+                                    print(f"     Button {j+1}: Not visible, skipping")
                                     continue
-                            except:
-                                pass
-                            
-                            print("🔽 Clicking 'Show more' to expand full tweet...")
-                            # Force click even if obscured
-                            await show_more_button.click(force=True)
-                            await self.page.wait_for_timeout(2000)  # Increased wait time
-                            expanded = True
-                            print("✅ Tweet expanded")
+                                
+                                # Get button text and attributes
+                                button_text = await button.inner_text()
+                                aria_label = await button.get_attribute('aria-label') or ""
+                                
+                                print(f"     Button {j+1}: text='{button_text}', aria_label='{aria_label}'")
+                                
+                                # Check if this looks like a show more button
+                                text_lower = button_text.lower()
+                                if (('show' in text_lower and 'more' in text_lower) or 
+                                    'show more' in aria_label.lower() or
+                                    'expand' in text_lower):
+                                    
+                                    print(f"🔽 Clicking 'Show more' button {j+1}: '{button_text}'...")
+                                    
+                                    # Scroll button into view again
+                                    await button.scroll_into_view_if_needed()
+                                    await self.page.wait_for_timeout(500)
+                                    
+                                    # Try multiple click methods
+                                    try:
+                                        await button.click(force=True)
+                                        print("     ✅ Direct click successful")
+                                    except Exception as click_error:
+                                        print(f"     ⚠️ Direct click failed: {click_error}")
+                                        try:
+                                            await button.evaluate("el => el.click()")
+                                            print("     ✅ JavaScript click successful")
+                                        except Exception as js_error:
+                                            print(f"     ❌ JavaScript click failed: {js_error}")
+                                            continue
+                                    
+                                    # Wait for expansion
+                                    await self.page.wait_for_timeout(3000)
+                                    
+                                    # Verify expansion worked by checking content length
+                                    new_text_element = await tweet_element.query_selector('[data-testid="tweetText"]')
+                                    if new_text_element:
+                                        new_content = await new_text_element.inner_text()
+                                        if len(new_content) > len(initial_content):
+                                            expanded = True
+                                            print(f"✅ Tweet expanded! Content grew from {len(initial_content)} to {len(new_content)} chars")
+                                            break
+                                        else:
+                                            print(f"⚠️ Content didn't expand: {len(new_content)} chars (was {len(initial_content)})")
+                                    
+                                    expanded = True  # Assume success if no error
+                                    break
+                                    
+                            except Exception as btn_e:
+                                print(f"     Button {j+1} failed: {btn_e}")
+                                continue
+                        
+                        if expanded:
                             break
+                            
                     except Exception as e:
-                        # print(f"   Debug: selector {selector} failed: {e}")
+                        print(f"   Selector {i+1} failed: {e}")
                         continue
+                        
+                # If no show more buttons found, still try to extract anyway
+                if not expanded:
+                    print("ℹ️ No 'Show more' buttons found - proceeding with current content")
+                    
             except Exception as e:
-                pass  # Ignore if not found or error clicking
+                print(f"⚠️ Show more detection error: {e}")
 
             # Extract tweet content (AFTER expansion if button was clicked)
             try:
                 # If we expanded, wait a bit longer and re-query the element
                 if expanded:
-                    await self.page.wait_for_timeout(1000)  # Extra wait for DOM update
+                    await self.page.wait_for_timeout(1500)  # Extra wait for DOM update
+                    print("⏳ Waiting for DOM to update after expansion...")
                 
                 # Query for text element (fresh query after expansion)
-                text_element = await tweet_element.query_selector(
-                    '[data-testid="tweetText"]'
-                )
+                text_element = await tweet_element.query_selector('[data-testid="tweetText"]')
                 
                 if text_element:
+                    print("📄 Found tweet text element, extracting content...")
                     # Try to get ALL text content, including nested spans
                     content = await text_element.inner_text()
+                    print(f"📝 Initial extraction: {len(content)} chars")
                     
-                    # If still seems truncated, try getting all text nodes
-                    if content and (content.endswith('…') or len(content) < 280):
-                        try:
-                            # Get all text from nested elements too
-                            all_spans = await text_element.query_selector_all('span')
-                            if all_spans:
-                                texts = []
-                                for span in all_spans:
-                                    text = await span.inner_text()
-                                    if text and text not in texts:  # Avoid duplicates
-                                        texts.append(text)
-                                if texts:
-                                    alt_content = ' '.join(texts)
-                                    if len(alt_content) > len(content):
-                                        content = alt_content
-                        except:
-                            pass
+                    # Always try to get comprehensive content even if not truncated
+                    try:
+                        # Get all spans and build comprehensive text
+                        all_spans = await text_element.query_selector_all('span')
+                        if all_spans:
+                            print(f"🔍 Found {len(all_spans)} spans, building comprehensive text...")
+                            texts = []
+                            for i, span in enumerate(all_spans[:50]):  # Limit to avoid too many
+                                try:
+                                    span_text = await span.inner_text()
+                                    if span_text and span_text.strip() and span_text not in texts:
+                                        texts.append(span_text.strip())
+                                except Exception as e:
+                                    continue
+                            
+                            if texts:
+                                # Join and clean up the text
+                                alt_content = ' '.join(texts)
+                                # Remove common duplicates and clean up
+                                alt_content = ' '.join(alt_content.split())
+                                
+                                original_length = len(content)
+                                if len(alt_content) > len(content):
+                                    content = alt_content
+                                    improvement = len(content) - original_length
+                                    print(f"✅ Comprehensive extraction: {len(content)} chars (improved by {improvement})")
+                                else:
+                                    print(f"ℹ️ Comprehensive extraction same length: {len(alt_content)} chars")
+                    except Exception as span_error:
+                        print(f"⚠️ Span extraction error: {span_error}")
+                    
+                    # Check if content still looks truncated
+                    if content and (content.endswith('…') or content.endswith('...')):
+                        print("⚠️ Content still appears truncated, trying alternative selectors...")
+                        # Try alternative selectors
+                        alt_selectors = [
+                            '[data-testid="tweetText"] div',
+                            '[data-testid="tweetText"] p',
+                            'div[lang] span',
+                            '[dir="auto"] span'
+                        ]
+                        
+                        for alt_selector in alt_selectors:
+                            try:
+                                alt_elements = await tweet_element.query_selector_all(alt_selector)
+                                if alt_elements:
+                                    alt_texts = []
+                                    for el in alt_elements:
+                                        try:
+                                            el_text = await el.inner_text()
+                                            if el_text and el_text not in alt_texts:
+                                                alt_texts.append(el_text)
+                                        except Exception:
+                                            continue
+                                    if alt_texts:
+                                        alt_content = ' '.join(alt_texts)
+                                        if len(alt_content) > len(content):
+                                            content = alt_content
+                                            print(f"✅ Alternative extraction improved length to {len(content)} chars")
+                                            break
+                            except Exception:
+                                continue
                 else:
+                    print("❌ No tweet text element found")
                     content = ""
                 
-                if expanded:
-                    print(f"📝 Extracted expanded content: {len(content)} chars")
+                # Final logging
+                if content:
+                    print(f"🎯 Final content extracted: {len(content)} chars")
+                    if len(content) < 50:
+                        print("⚠️ WARNING: Very short content - may be truncated")
+                else:
+                    print("❌ No content extracted")
+                    
             except Exception as e:
                 print(f"⚠️ Error extracting tweet text: {e}")
                 content = ""
@@ -974,7 +1278,7 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
                             text = await handle_text.inner_text()
                             if text.startswith('@'):
                                 author_handle = text.split()[0]  # Get first @mention
-                    except:
+                    except Exception:
                         pass
                 
                 # Last resort: try to get from link element's href
@@ -993,7 +1297,7 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
                                         username = parts[1]
                                         if username and username not in ['i', 'home']:
                                             author_handle = f"@{username}"
-                    except:
+                    except Exception:
                         pass
                         
             except Exception as e:
@@ -1345,7 +1649,7 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
                 return int(float(text.replace("M", "")) * 1000000)
             else:
                 return int(text.replace(",", ""))
-        except:
+        except (ValueError, TypeError) as e:
             return 0
 
     def _parse_count(self, count_str: str) -> int:
@@ -1361,7 +1665,7 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
         else:
             try:
                 return int(count_str)
-            except:
+            except (ValueError, TypeError):
                 return 0
 
     async def extract_single_tweet(self, tweet_url: str) -> Optional[SocialPost]:

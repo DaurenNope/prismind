@@ -6,6 +6,9 @@ Handles post insertion and data mapping
 import uuid
 from typing import Dict, Any
 from datetime import datetime
+from src.utils.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class PostInserter:
@@ -31,22 +34,42 @@ class PostInserter:
             if not post_data:
                 return {}
             
+            # FILTER OUT FIELDS THAT DON'T EXIST IN SUPABASE SCHEMA
+            # Based on actual Supabase schema - only keep fields that exist
+            supabase_schema_fields = {
+                'id', 'post_id', 'title', 'content', 'url', 'platform', 'author', 'author_handle',
+                'created_at', 'ai_summary', 'folder_category', 'category', 'subcategory', 'topic', 
+                'content_type', 'post_type', 'media_urls', 'hashtags', 'mentions', 'is_saved',
+                'analyzed_at', 'sentiment', 'key_concepts', 'tags', 'analysis_model', 'value_score',
+                'smart_tags', 'is_deleted', 'updated_at', 'is_rewrite_candidate', 'content_quality_score',
+                'embedding', 'embedding_model', 'language', 'collected_at'
+            }
+            
+            # Create clean post data with ONLY fields that exist in Supabase schema
+            clean_post_data = {k: v for k, v in post_data.items() if k in supabase_schema_fields}
+
+            filtered_count = len(post_data) - len(clean_post_data)
+            logger.debug(f"🧹 Schema filter: kept {len(clean_post_data)}/{len(post_data)} fields")
+            if filtered_count > 0:
+                filtered_fields = set(post_data.keys()) - supabase_schema_fields
+                logger.debug(f"   Removed fields: {sorted(filtered_fields)}")
+            
             # Ensure we have required fields
-            if not post_data.get('title') and not post_data.get('content'):
+            if not clean_post_data.get('title') and not clean_post_data.get('content'):
                 return {}
             
             # Check for duplicates before inserting
-            content = post_data.get('content', '')
-            author = post_data.get('author', '')
-            platform = post_data.get('platform', '')
-            url = post_data.get('url', '')
+            content = clean_post_data.get('content', '')
+            author = clean_post_data.get('author', '')
+            platform = clean_post_data.get('platform', '')
+            url = clean_post_data.get('url', '')
             
             if self.duplicate_checker.check_duplicate_post(content, author, platform, url=url):
-                print(f"Duplicate detected: {author} - {content[:50]}...")
+                logger.info(f"Duplicate detected: {author} - {content[:50]}...")
                 return {}  # Return empty dict to indicate duplicate
             
             # Generate post_id from URL or create a unique one
-            post_id = post_data.get('post_id')
+            post_id = clean_post_data.get('post_id')
             if not post_id and url:
                 # Simple approach: use last part of URL as post_id
                 post_id = url.split('/')[-1] if '/' in url else url
@@ -55,7 +78,7 @@ class PostInserter:
                 post_id = str(uuid.uuid4())[:8]
             
             # Map fields to match the actual Supabase table schema
-            mapped_data = self._map_post_data(post_data, post_id)
+            mapped_data = self._map_post_data(clean_post_data, post_id)
             # Ensure JSON-serializable values (convert datetimes to isoformat)
             for k, v in list(mapped_data.items()):
                 if isinstance(v, datetime):
@@ -75,7 +98,7 @@ class PostInserter:
             error_msg = str(e)
             if 'row-level security' not in error_msg.lower():
                 # Only log non-RLS errors (RLS means not configured, expected)
-                print(f"Supabase insert failed: {error_msg[:100]}")
+                logger.error(f"Supabase insert failed: {error_msg[:100]}")
             return {}
     
     def _map_post_data(self, post_data: Dict[str, Any], post_id: str) -> Dict[str, Any]:
@@ -98,79 +121,41 @@ class PostInserter:
             post_data.get('author', '').split()[0]  # Fallback: use first word of author
         )
         
+        # ESSENTIAL FIELDS ONLY - no more bloated schema issues!
         mapped_data = {
             'post_id': post_id,
-            'title': post_data.get('title') or post_data.get('content', '')[:100] or '',  # Use content preview if no title
             'content': post_data.get('content') or '',
             'url': post_data.get('url') or '',
             'platform': post_data.get('platform') or '',
             'author': post_data.get('author') or '',
             'author_handle': author_handle,
             'created_at': post_data.get('created_at', datetime.now().isoformat()),
-            
-            # Use actual data from post, with fallbacks
-            'post_type': post_data.get('post_type') or 'post',
-            'content_type': post_data.get('content_type') or 'text',
+            'language': post_data.get('language', 'en'),
             'is_saved': post_data.get('is_saved', True),
-            'is_deleted': post_data.get('deleted', False) or post_data.get('is_deleted', False),
-            'is_rewrite_candidate': post_data.get('is_rewrite_candidate', False),
-            'is_time_sensitive': post_data.get('is_time_sensitive', False),
-            
-            # Convert arrays properly
-            'media_urls': to_pg_array(post_data.get('media_urls')),
-            'hashtags': to_pg_array(post_data.get('hashtags')),
-            'mentions': to_pg_array(post_data.get('mentions')),
-            'smart_tags': to_pg_array(post_data.get('smart_tags')),
-            'target_social_media': to_pg_array(post_data.get('target_social_media')),
         }
         
-        # Add optional fields if provided (don't override with None)
-        optional_fields = [
-            'category', 'subcategory', 'topic', 'summary', 'ai_summary',
-            'sentiment', 'value_score', 'content_quality_score',
-            'folder_category', 'saved_at', 'analyzed_at', 'key_concepts', 
-            'tags', 'analysis_model', 'num_comments', 'upvote_ratio',
-            'time_sensitivity_reason', 'embedding_model', 'language'
-        ]
+        # Add analysis fields that exist in Supabase schema
+        analysis_fields_mapping = {
+            'ai_summary': 'ai_summary',
+            'value_score': 'value_score', 
+            'quality_score': 'content_quality_score',  # Schema uses content_quality_score
+            'sentiment': 'sentiment',
+            'key_concepts': 'key_concepts',
+            'tags': 'tags',
+            'category': 'category',
+            'analysis_model': 'analysis_model',
+            'embedding': 'embedding',
+            'embedding_model': 'embedding_model'
+        }
         
-        for field in optional_fields:
-            value = post_data.get(field)
+        for source_field, target_field in analysis_fields_mapping.items():
+            value = post_data.get(source_field)
             if value is not None and value != '':
-                # Convert lists to PG arrays
-                if isinstance(value, list):
-                    mapped_data[field] = to_pg_array(value)
+                # Convert lists to PG arrays for array fields
+                if target_field in ['key_concepts', 'tags'] and isinstance(value, list):
+                    mapped_data[target_field] = to_pg_array(value)
                 else:
-                    mapped_data[field] = value
-        
-        # Handle embedding vector specially (it's a list of floats, not a PG array)
-        if 'embedding' in post_data and post_data['embedding']:
-            # Embedding is already a list of floats, keep as-is for pgvector
-            mapped_data['embedding'] = post_data['embedding']
-        
-        # Filter out any fields that analyzer produces but Supabase schema doesn't have
-        # These are useful internally but not stored: action_items, actionable_items, 
-        # learning_value, practical_applications, follow_up_research, quality_indicators,
-        # related_skills, why_valuable, complexity_level, time_to_consume, confidence_score,
-        # sentiment_scores, ai_service, intelligent_value_score, actionable_insights,
-        # learning_recommendations, suggested_tags, analysis_version, topics (use topic instead)
-        fields_to_remove = [
-            'action_items', 'actionable_items', 'learning_value', 'practical_applications',
-            'follow_up_research', 'quality_indicators', 'related_skills', 'why_valuable',
-            'complexity_level', 'time_to_consume', 'confidence_score', 'sentiment_scores',
-            'ai_service', 'intelligent_value_score', 'actionable_insights',
-            'learning_recommendations', 'suggested_tags', 'analysis_version', 'topics',
-            'username'  # Use author_handle instead
-        ]
-        for field in fields_to_remove:
-            mapped_data.pop(field, None)
-        
-        # Handle engagement separately (it's a dict that might need JSON)
-        if 'engagement' in post_data and post_data['engagement']:
-            engagement = post_data['engagement']
-            if isinstance(engagement, dict):
-                # Extract specific engagement metrics if available
-                mapped_data['num_comments'] = engagement.get('comments') or engagement.get('num_comments')
-                mapped_data['upvote_ratio'] = engagement.get('upvote_ratio')
+                    mapped_data[target_field] = value
         
         return mapped_data
     
