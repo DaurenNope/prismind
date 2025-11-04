@@ -59,8 +59,18 @@ class Orchestrator:
             try:
                 count = await self.collect_platform(name)
                 results[name] = count
+                try:
+                    from src.database.database_agent import DatabaseAgent
+                    DatabaseAgent().record_collection_result(name, count, success=True)
+                except Exception:
+                    pass
             except Exception as exc:
                 results["errors"].append(f"{name}: {exc}")
+                try:
+                    from src.database.database_agent import DatabaseAgent
+                    DatabaseAgent().record_collection_result(name, 0, success=False, failure_reason=str(exc)[:200])
+                except Exception:
+                    pass
 
         # Bounded concurrency
         semaphore = asyncio.Semaphore(3)
@@ -108,46 +118,91 @@ class Orchestrator:
         except Exception:
             supabase_manager = None
 
-        # Get existing IDs and URLs to avoid duplicates
-        existing_posts = self.storage.get_posts(limit=10000)
-        existing_ids = {
-            post.get("post_id") for post in existing_posts if post.get("post_id")
-        }
-        existing_urls = {post.get("url") for post in existing_posts if post.get("url")}
+        # Get existing IDs and URLs to avoid duplicates (Supabase-first, no local fallback to avoid phantom duplicates)
+        existing_ids = set()
+        existing_urls = set()
+        if supabase_manager:
+            try:
+                result = (
+                    supabase_manager.client
+                    .table("posts")
+                    .select("post_id,url")
+                    .eq("platform", platform)
+                    .order("created_at", desc=True)
+                    .limit(10000)
+                    .execute()
+                )
+                for row in (result.data or []):
+                    pid = (row.get("post_id") or "").strip()
+                    url = (row.get("url") or "").strip()
+                    if pid:
+                        if platform == "reddit":
+                            # Add both raw and fullname variants
+                            if pid.startswith("t3_"):
+                                existing_ids.add(pid)
+                                existing_ids.add(pid.replace("t3_", ""))
+                            else:
+                                existing_ids.add(pid)
+                                existing_ids.add(f"t3_{pid}")
+                        else:
+                            existing_ids.add(pid)
+                    if url:
+                        existing_urls.add(url)
+            except Exception:
+                # keep sets empty if Supabase unavailable to avoid false duplicates
+                pass
 
         if platform == "twitter":
             from src.services.collection.platform_collectors import (
                 collect_twitter_bookmarks,
             )
 
-            return await collect_twitter_bookmarks(
+            count = await collect_twitter_bookmarks(
                 db_manager=shim_db,
                 existing_ids=existing_ids,
                 existing_urls=existing_urls,
                 supabase_manager=supabase_manager,
             )
+            try:
+                from src.database.database_agent import DatabaseAgent
+                DatabaseAgent().record_collection_result(platform, count, success=True)
+            except Exception:
+                pass
+            return count
         if platform == "reddit":
             from src.services.collection.platform_collectors import (
                 collect_reddit_bookmarks,
             )
 
-            return await collect_reddit_bookmarks(
+            count = await collect_reddit_bookmarks(
                 db_manager=shim_db,
                 existing_ids=existing_ids,
                 existing_urls=existing_urls,
                 supabase_manager=supabase_manager,
             )
+            try:
+                from src.database.database_agent import DatabaseAgent
+                DatabaseAgent().record_collection_result(platform, count, success=True)
+            except Exception:
+                pass
+            return count
         if platform == "threads":
             from src.services.collection.platform_collectors import (
                 collect_threads_bookmarks,
             )
 
-            return await collect_threads_bookmarks(
+            count = await collect_threads_bookmarks(
                 db_manager=shim_db,
                 existing_ids=existing_ids,
                 existing_urls=existing_urls,
                 supabase_manager=supabase_manager,
             )
+            try:
+                from src.database.database_agent import DatabaseAgent
+                DatabaseAgent().record_collection_result(platform, count, success=True)
+            except Exception:
+                pass
+            return count
         if platform == "rss":
             # RSS discovery is separate from bookmarks collection
             # This should not be called when collecting bookmarks

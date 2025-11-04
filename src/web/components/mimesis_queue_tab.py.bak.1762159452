@@ -21,8 +21,7 @@ def render():
     # Twitter credentials
     twitter_username = os.getenv("TWITTER_USERNAME", "")
     twitter_api_key = os.getenv("TWITTER_API_KEY", "")
-    # Prefer TWITTER_COOKIE_FILE; support legacy TWITTER_COOKIES_FILE
-    twitter_cookies_file = os.getenv("TWITTER_COOKIE_FILE", "") or os.getenv("TWITTER_COOKIES_FILE", "")
+    twitter_cookies_file = os.getenv("TWITTER_COOKIES_FILE", "")
     if not twitter_cookies_file and twitter_username:
         twitter_cookies_file = f"config/twitter_cookies_{twitter_username}.json"
     
@@ -274,21 +273,21 @@ def render():
                         raise
                 else:
                     # Schedule for later
-                    db = MimesisDB()
-                    dt = datetime.now(timezone.utc) + timedelta(minutes=when)
-
-                    payload = {
+            db = MimesisDB()
+            dt = datetime.now(timezone.utc) + timedelta(minutes=when)
+                    
+            payload = {
                         "personality_key": persona,
-                        "persona_key": persona,
-                        "platform": platform,
-                        "content": content,
+                "persona_key": persona,
+                "platform": platform,
+                "content": content,
                         "content_type": "single_tweet" if platform in ["twitter", "threads"] else "telegram_message",
                         "scheduled_time": dt.isoformat(),
-                    }
-                    row = db.insert_scheduled(payload)
-
+            }
+            row = db.insert_scheduled(payload)
+                    
                     st.success(f"⏱️ **Scheduled!** Will post in {when} minutes.")
-
+                    
                     with st.expander("📋 Post Details"):
                         st.json({
                             "id": row.get('id'),
@@ -297,10 +296,10 @@ def render():
                             "status": "Scheduled",
                         })
                     
-            except ConnectionError as e:
+        except ConnectionError as e:
                 st.error("⚠️ **Connection Error**")
                 st.info("Supabase might be temporarily down. Check https://status.supabase.com")
-            except Exception as e:
+        except Exception as e:
                 st.error(f"❌ **Error:** {str(e)}")
                 import traceback
                 with st.expander("🔍 Debug Info"):
@@ -313,16 +312,16 @@ def render():
         use_recent_only = st.checkbox("Use most recent posts only", value=True, key="gen_recent")
 
         if st.button("🔮 Generate Post", key="gen_button"):
-            dbm = get_database_manager()
-            try:
-                posts = dbm.get_posts(limit=limit)
-                if not posts:
-                    st.info("No source posts available.")
+        dbm = get_database_manager()
+        try:
+            posts = dbm.get_posts(limit=limit)
+        if not posts:
+            st.info("No source posts available.")
                 else:
-                    gen = PersonaGenerator()
-                    created = gen.generate_and_schedule(
+        gen = PersonaGenerator()
+        created = gen.generate_and_schedule(
                         persona, gen_platform, posts, schedule_in_minutes=0
-                    )
+        )
                     st.success(f"Generated {len(created)} post(s). Check your account!")
             except Exception as e:
                 st.error(f"Generation failed: {e}")

@@ -2,6 +2,24 @@
 
 All notable changes to the collection system are documented in this file.
 
+## [2.1.0] - 2025-11-04
+
+### ✅ Remark
+- FULLY WORKING COLLECTIONS
+
+### Added
+- DatabaseAgent: collection metrics tracking, staleness detection, optional notifications, and triggers.
+- Performance tracking scaffolding: `posted_content`, `posted_metrics`, poller service, basic analytics UI.
+
+### Improved
+- Reddit collector: faster runs via early-stop and comment fetching only for newest posts (up to 20), opt-in top comments.
+- Threads extractor: saves refreshed cookies; UI shows last collections and health/freshness.
+- Headless defaults optimized for VPS; local override supported.
+
+### Notes
+- Supabase is primary DB; collection state advances only on successful Supabase insert.
+- Poller uses stub fetchers except Threads basic DOM; extend for Twitter/Telegram next.
+
 ## [2.0.0] - 2024-01-09
 
 ### 🎉 Major Release - Performance & Reliability Overhaul

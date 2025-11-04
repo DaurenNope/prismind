@@ -38,21 +38,34 @@ class DuplicateDetector:
         
         if self.db:
             try:
-                # Load all posts (no limit) - duplicate detection needs complete dataset
-                # If database is too large, this might be slow, but it's necessary for accuracy
-                all_posts = self.db.get_all_posts()
-                logger.info(f"Loading {len(all_posts)} posts into duplicate detection cache...")
+                # Try different methods based on db_manager type
+                all_posts = None
                 
-                for post in all_posts:
-                    if post.get('url'):
-                        normalized_url = self.normalize_url(post['url'])
-                        self._url_cache.add(normalized_url)
+                # Check for NewDatabaseManager (has get_all_posts)
+                if hasattr(self.db, 'get_all_posts'):
+                    all_posts = self.db.get_all_posts()
+                # Check for StorageFacade (has get_posts)
+                elif hasattr(self.db, 'get_posts'):
+                    all_posts = self.db.get_posts(limit=10000)  # Reasonable limit for duplicate detection
+                else:
+                    logger.warning(f"Database manager {type(self.db)} has no get_all_posts or get_posts method")
+                    return
+                
+                if all_posts:
+                    logger.info(f"Loading {len(all_posts)} posts into duplicate detection cache...")
                     
-                    if post.get('content'):
-                        content_hash = self.hash_content(post['content'])
-                        self._content_hash_cache.add(content_hash)
-                
-                logger.info(f"✅ Loaded {len(self._url_cache)} URLs and {len(self._content_hash_cache)} content hashes into cache")
+                    for post in all_posts:
+                        if post.get('url'):
+                            normalized_url = self.normalize_url(post['url'])
+                            self._url_cache.add(normalized_url)
+                        
+                        if post.get('content'):
+                            content_hash = self.hash_content(post['content'])
+                            self._content_hash_cache.add(content_hash)
+                    
+                    logger.info(f"✅ Loaded {len(self._url_cache)} URLs and {len(self._content_hash_cache)} content hashes into cache")
+                else:
+                    logger.warning(f"Database manager doesn't have get_all_posts() or get_posts() method - skipping cache initialization")
             except Exception as e:
                 logger.warning(f"Cache initialization failed: {e}")
     
@@ -116,9 +129,18 @@ class DuplicateDetector:
                 # Then check database for Threads posts specifically
                 if self.db:
                     try:
-                        # Get all Threads posts (no limit - need complete check)
-                        threads_posts = self.db.get_posts_by_platform('threads', limit=None) if hasattr(self.db, 'get_posts_by_platform') else self.db.get_all_posts()
-                        threads_posts = [p for p in threads_posts if p.get('platform', '').lower() == 'threads']
+                        # Get Threads posts - try different methods based on db_manager type
+                        if hasattr(self.db, 'get_posts_by_platform'):
+                            threads_posts = self.db.get_posts_by_platform('threads', limit=None)
+                        elif hasattr(self.db, 'get_posts'):
+                            # Get all posts and filter for Threads
+                            all_posts = self.db.get_posts(limit=10000)
+                            threads_posts = [p for p in all_posts if p.get('platform', '').lower() == 'threads']
+                        elif hasattr(self.db, 'get_all_posts'):
+                            all_posts = self.db.get_all_posts()
+                            threads_posts = [p for p in all_posts if p.get('platform', '').lower() == 'threads']
+                        else:
+                            return self.is_duplicate_url(url)  # Fallback
                         
                         for post in threads_posts:
                             existing_url = post.get('url', '')
@@ -214,7 +236,14 @@ class DuplicateDetector:
         # Check SQLite if available (check all posts for accuracy)
         if self.db:
             try:
-                all_posts = self.db.get_all_posts()
+                # Check if db_manager has get_all_posts method
+                if hasattr(self.db, 'get_all_posts'):
+                    all_posts = self.db.get_all_posts()
+                elif hasattr(self.db, 'get_posts'):
+                    all_posts = self.db.get_posts(limit=10000)
+                else:
+                    return False
+                
                 for post in all_posts:
                     if post.get('url') and self.normalize_url(post['url']) == normalized:
                         self._url_cache.add(normalized)  # Add to cache

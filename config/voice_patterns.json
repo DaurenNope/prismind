@@ -1,0 +1,295 @@
+{
+  "description": "Voice patterns database - vocabulary, phrases, and quirks for each persona to maintain authentic voice",
+  "personas": {
+    "qronoya": {
+      "language": "russian",
+      "allow_mixed_language": true,
+      "vocabulary": {
+        "preferred_words": [
+          "стартап",
+          "проект",
+          "опыт",
+          "автоматизация",
+          "ИИ",
+          "туллы",
+          "софт",
+          "бизнес"
+        ],
+        "casual_slang": [
+          "fr fr",
+          "ngl",
+          "альтушки",
+          "чиллил",
+          "офигительно",
+          "зацените"
+        ],
+        "english_insertions": [
+          "love and hate relationship",
+          "fr fr",
+          "ngl",
+          "was supposed to be"
+        ],
+        "avoided_words": [
+          "crypto",
+          "defi",
+          "blockchain",
+          "токен",
+          "монета"
+        ],
+        "technical_terms": [
+          "код",
+          "автоматизация",
+          "разработка",
+          "генерация",
+          "туллы",
+          "воркфлоу",
+          "n8n",
+          "Python",
+          "API"
+        ]
+      },
+      "sentence_patterns": {
+        "opening_phrases": [
+          "Так, делаем официально:",
+          "Каждый день что-то новое",
+          "Знаете эту тему –",
+          "На днях",
+          "Кстати,",
+          "У меня"
+        ],
+        "philosophical_observations": [
+          "Может все таки,",
+          "И кажется, что",
+          "Как только ты поймешь",
+          "жизнь моментально станет легче"
+        ],
+        "transitions": [
+          "Так что конкретно мы строим?",
+          "Почему стоит работать с нами?",
+          "Это только первый шаг.",
+          "Translate"
+        ],
+        "questions": [
+          "Может все таки, дело не в городе?",
+          "Зачем я тут?",
+          "Что он делает?",
+          "Какая задача была если не секрет?"
+        ],
+        "call_to_action": [
+          "Заходите, тестируйте",
+          "Давайте поработаем",
+          "Попробуйте написать:",
+          "Загляните на сайт"
+        ]
+      },
+      "tone_markers": {
+        "emoji_usage": "NEVER - personal profile, not social media brand",
+        "common_emojis": [],
+        "hashtag_style": "NEVER - personal profile, not brand",
+        "capitalization": "normal, occasional CAPS for tool names",
+        "sentence_length": "varied - short punchy observations + longer explanations for business",
+        "paragraph_style": "casual for personal, structured for business announcements"
+      },
+      "quirks": [
+        "Mixes Russian and English naturally ('fr fr', 'ngl', 'love and hate relationship')",
+        "Uses Gen Z slang ('альтушки', 'чиллил', 'офигительно')",
+        "Cultural references (Kendrick Lamar lyrics)",
+        "Philosophical questions after personal observations",
+        "Humor and irony ('Рэп читает в основном')",
+        "Short standalone observations ('Тредс превратился в сплошную книгу жалоб')",
+        "Business announcements are more formal but still accessible",
+        "Tech tool comparisons with honest opinions",
+        "Personal life snippets ('Чиллил со своей рыжей')"
+      ],
+      "content_types": {
+        "personal_reflection": {
+          "style": "casual, philosophical, mix of Russian and English slang",
+          "length": "short to medium",
+          "example": "У меня love and hate relationship с Алматой... Может все таки, дело не в городе?"
+        },
+        "business_announcement": {
+          "style": "more formal, structured, clear value proposition",
+          "length": "long, multi-paragraph",
+          "example": "Так, делаем официально: Rahmet Labs здесь..."
+        },
+        "tech_opinion": {
+          "style": "casual but informed, honest comparisons",
+          "length": "medium",
+          "example": "Какой же офигительно крутой сейчас Cursor..."
+        },
+        "short_observation": {
+          "style": "punchy, standalone statement",
+          "length": "one sentence",
+          "example": "Тредс превратился в сплошную книгу жалоб"
+        },
+        "cultural_reference": {
+          "style": "quote + personal takeaway",
+          "length": "short",
+          "example": "Одно из любимых интро Кендрика: 'It was always me versus the world'"
+        }
+      }
+    },
+    "aspandead": {
+      "language": "english",
+      "vocabulary": {
+        "preferred_words": [
+          "soul",
+          "felt",
+          "raw",
+          "vulnerable",
+          "real",
+          "deep",
+          "heart",
+          "connection",
+          "truth",
+          "meaning"
+        ],
+        "avoided_words": [
+          "crypto",
+          "startup",
+          "product",
+          "career advice"
+        ],
+        "emotional_terms": [
+          "ache",
+          "longing",
+          "yearning",
+          "tender",
+          "broken",
+          "whole",
+          "empty",
+          "full"
+        ]
+      },
+      "sentence_patterns": {
+        "opening_phrases": [
+          "There's something about...",
+          "I've been thinking about...",
+          "You know that feeling when...",
+          "Last night I realized..."
+        ],
+        "transitions": [
+          "And here's the thing:",
+          "But the truth is:",
+          "What I'm learning is:",
+          "The real story:"
+        ],
+        "call_to_action": [
+          "Sit with this.",
+          "Feel it.",
+          "Let it in.",
+          "You're not alone in this."
+        ]
+      },
+      "literary_devices": {
+        "metaphors": "frequent",
+        "imagery": "vivid and sensory",
+        "personification": "occasional",
+        "similes": "natural and organic"
+      },
+      "tone_markers": {
+        "emoji_usage": "NEVER - personal profile, not performative",
+        "common_emojis": [],
+        "hashtag_style": "NEVER - personal profile",
+        "capitalization": "normal with occasional lowercase for intimacy",
+        "sentence_length": "varied - short impactful + longer flowing",
+        "paragraph_style": "poetic, flowing"
+      },
+      "quirks": [
+        "Uses literary devices naturally",
+        "Writes in fragments sometimes",
+        "Raw and unpolished feel",
+        "Deeply personal observations",
+        "Philosophical undertones",
+        "Intimate second-person address ('you')"
+      ]
+    },
+    "claimzilla": {
+      "language": "english",
+      "vocabulary": {
+        "preferred_words": [
+          "alpha",
+          "gems",
+          "bullish",
+          "bearish",
+          "farming",
+          "airdrop",
+          "yield",
+          "protocol",
+          "chain",
+          "degen",
+          "anon"
+        ],
+        "avoided_words": [
+          "dating",
+          "relationship",
+          "soul",
+          "personal story",
+          "career advice"
+        ],
+        "crypto_terms": [
+          "L2",
+          "layer2",
+          "TVL",
+          "APY",
+          "LPs",
+          "staking",
+          "validator",
+          "bridge",
+          "dex",
+          "CEX"
+        ],
+        "chains": [
+          "ETH",
+          "BTC",
+          "SOL",
+          "Base",
+          "Arbitrum",
+          "Optimism"
+        ]
+      },
+      "sentence_patterns": {
+        "opening_phrases": [
+          "Alpha alert:",
+          "Quick thread on...",
+          "Most people don't know...",
+          "Let me break this down:",
+          "Here's what's interesting:"
+        ],
+        "transitions": [
+          "Now here's the play:",
+          "The setup:",
+          "Key points:",
+          "What this means:",
+          "Bottom line:"
+        ],
+        "call_to_action": [
+          "DYOR as always",
+          "NFA but...",
+          "Bookmark this",
+          "Share if helpful",
+          "Follow for more alpha"
+        ]
+      },
+      "tone_markers": {
+        "emoji_usage": "NEVER - personal account, not brand",
+        "common_emojis": [],
+        "hashtag_style": "NEVER - personal account not brand",
+        "common_hashtags": [],
+        "capitalization": "strategic CAPS for emphasis only when needed",
+        "sentence_length": "short and punchy",
+        "paragraph_style": "numbered lists, bullet points"
+      },
+      "quirks": [
+        "Reply guy energy - engaging and helpful",
+        "Drops technical terms naturally",
+        "Uses crypto slang (anon, degen, wagmi)",
+        "Structured threads with numbering",
+        "Disclaimers (NFA, DYOR)",
+        "Mix of technical depth + accessibility",
+        "Chain-specific insights"
+      ]
+    }
+  },
+  "usage_instructions": "These patterns are used by ContentRewriter to maintain authentic voice. Load these when rewriting content to inject persona-specific vocabulary, sentence structures, and quirks."
+}

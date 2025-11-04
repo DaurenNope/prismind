@@ -42,6 +42,8 @@ from src.web.components.unified_feed_tab import render_unified_feed
 from src.web.components.publishing_page import render_publishing_page
 from src.web.components.settings_page import render_settings_page
 from src.web.components.collection_tab import render_collection_tab
+from src.web.components.persona_pipeline_tab import render_persona_pipeline_tab
+from src.web.components.system_status_tab import render_system_status_tab
 from src.pipeline.orchestrator import get_orchestrator
 from src.services.analysis_runner import analyze_recent_posts
 from src.publishing.worker import get_publisher_worker
@@ -134,9 +136,8 @@ def render_analysis_reminder():
                 st.write("")  # Spacing
                 st.write("")  # Spacing
                 if st.button("🤖 Analyze Now", key="quick_analyze_btn", type="primary"):
-                    # This will be handled by the analysis tab when opened
                     st.info(
-                        "Please go to the 🤖 Analysis tab to start analyzing posts!"
+                        "Please use the 🎭 Persona Pipeline tab to start analyzing posts."
                     )
 
             with col3:
@@ -292,9 +293,9 @@ def main():
     # Check for unanalyzed posts and show reminder
     render_analysis_reminder()
 
-    # New minimal navigation: Feed, Collect, Publishing, Settings
-    tab_feed, tab_collect, tab_pub, tab_settings = st.tabs(
-        ["📰 Feed", "📥 Collect", "📝 Publishing", "⚙️ Settings"]
+    # New minimal navigation: Feed, Collect, Persona Pipeline, Publishing, Settings
+    tab_feed, tab_collect, tab_persona, tab_pub, tab_perf, tab_system, tab_settings = st.tabs(
+        ["📰 Feed", "📥 Collect", "🎭 Persona Pipeline", "📝 Publishing", "📈 Perf", "🩺 System", "⚙️ Settings"]
     )
 
     with tab_feed:
@@ -303,8 +304,18 @@ def main():
     with tab_collect:
         render_collection_tab()
 
+    with tab_persona:
+        render_persona_pipeline_tab()
+
     with tab_pub:
         render_publishing_page()
+
+    with tab_perf:
+        from src.web.components.publishing_analytics_tab import render_publishing_analytics_tab
+        render_publishing_analytics_tab()
+
+    with tab_system:
+        render_system_status_tab()
 
     with tab_settings:
         render_settings_tab()

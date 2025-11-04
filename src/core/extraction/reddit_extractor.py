@@ -428,35 +428,7 @@ class RedditExtractor(SocialExtractorBase):
                     except Exception as e:
                         print(f"⚠️ Error logging item {i}: {e}")
 
-                # Check if first item is already in existing_ids - if so, we can skip everything
-                if existing_ids and saved_items:
-                    first_item = saved_items[0]
-                    first_id = str(getattr(first_item, "id", "")).replace("t3_", "")
-                    
-                    if first_id and first_id in {str(id_).replace("t3_", "") for id_ in existing_ids}:
-                        print(f"🛑 First post {first_id} already exists - nothing new to collect!")
-                        return [], None
-                    
-                    # Otherwise, filter and STOP at first duplicate
-                    filtered_items = []
-                    existing_base_ids = {str(id_).replace("t3_", "").replace("reddit_", "") for id_ in existing_ids}
-                    
-                    for item in saved_items:
-                        try:
-                            item_id = str(getattr(item, "id", "")).replace("t3_", "")
-                            
-                            if item_id and item_id in existing_base_ids:
-                                print(f"🛑 Hit existing post {item_id} - stopping collection")
-                                break  # STOP here, don't process more
-                            
-                            filtered_items.append(item)
-                        except Exception:
-                            continue
-                    
-                    saved_items = filtered_items
-                    print(f"✅ Found {len(saved_items)} new posts")
-
-                # Convert items to SocialPost objects
+                # Convert items to SocialPost objects with early-stop on seen IDs
                 print(
                     f"🔄 Converting {len(saved_items)} items to SocialPost objects..."
                 )
@@ -468,6 +440,15 @@ class RedditExtractor(SocialExtractorBase):
                             print(
                                 f"🔄 Converting item {idx}/{len(saved_items)} (ID: {item_id})..."
                             )
+
+                        # Early-stop if we hit known existing ID to avoid extra work
+                        if existing_ids:
+                            # support raw and fullname (t3_*) variants
+                            raw_id = str(item_id or "").strip()
+                            full_id = raw_id if raw_id.startswith("t3_") else f"t3_{raw_id}"
+                            if raw_id in existing_ids or full_id in existing_ids:
+                                print(f"🛑 Early stop at known ID: {full_id}")
+                                break
 
                         post = self._convert_reddit_item(
                             item, is_saved=not self.read_only_mode
@@ -684,10 +665,14 @@ class RedditExtractor(SocialExtractorBase):
         try:
             # Handle both submissions (posts) and comments
             if isinstance(item, praw.models.Submission):  # It's a submission
-                # Extract top comments immediately during scraping
-                top_comments = self.get_top_comments(
-                    item.id, limit=10
-                )  # Increased from 5 to 10
+                # Optional: fetch top comments (disabled by default for speed)
+                import os
+                fetch_comments = os.getenv("REDDIT_FETCH_TOP_COMMENTS", "false").lower() in ("1", "true", "yes", "on")
+                top_comments = []
+                if fetch_comments:
+                    top_comments = self.get_top_comments(
+                        item.id, limit=10
+                    )
 
                 # Build enhanced content with valuable comments
                 enhanced_content = (

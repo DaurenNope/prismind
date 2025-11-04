@@ -1,3 +1,54 @@
+#!/usr/bin/env python3
+import streamlit as st
+from datetime import datetime
+
+from src.database.database_agent import DatabaseAgent
+
+
+def render_publishing_analytics_tab():
+    st.header("📈 Publishing Analytics")
+
+    try:
+        agent = DatabaseAgent()
+        col_a, col_b, col_c = st.columns(3)
+        window = col_a.selectbox("Window", ["24h", "7d", "30d"], index=1)
+        platform = col_b.selectbox("Platform", ["All", "twitter", "reddit", "threads"], index=0)
+        persona = col_c.text_input("Persona filter", "")
+
+        minutes = {"24h": 24*60, "7d": 7*24*60, "30d": 30*24*60}[window]
+        plat_arg = None if platform == "All" else platform
+        person_arg = persona.strip() or None
+
+        top = agent.get_top_posts(since_minutes=minutes, limit=50, platform=plat_arg, persona=person_arg)
+        cohorts = agent.get_performance_cohorts(window_minutes=minutes)
+
+        st.subheader("Top Posts")
+        if top:
+            cols = [
+                {"platform": t.get("platform"),
+                 "persona": t.get("persona"),
+                 "posted_at": t.get("posted_at"),
+                 "engagement": round(float(t.get("engagement_score") or 0), 4),
+                 "likes": t.get("total_likes"),
+                 "comments": t.get("total_comments"),
+                 "shares": t.get("total_shares"),
+                 "bookmarks": t.get("total_bookmarks"),
+                 "url": t.get("url")}
+                for t in top
+            ]
+            st.dataframe(cols, use_container_width=True)
+        else:
+            st.info("No posted content found in the selected window.")
+
+        st.subheader("Cohorts (avg engagement)")
+        c1, c2, c3 = st.columns(3)
+        c1.json(cohorts.get("platform", {}))
+        c2.json(cohorts.get("persona", {}))
+        c3.json(cohorts.get("has_media", {}))
+
+    except Exception as e:
+        st.error(f"Analytics unavailable: {e}")
+
 import streamlit as st
 from datetime import datetime, timedelta, timezone
 

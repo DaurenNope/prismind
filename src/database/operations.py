@@ -112,7 +112,8 @@ class DatabaseOperations:
                     'analyzed_at': 'TIMESTAMP',
                     'recommended_personas': 'TEXT',
                     'persona_match_scores': 'TEXT',
-                    'persona_candidacy': 'TEXT'
+                    'persona_candidacy': 'TEXT',
+                    'analysis_model': 'TEXT'
                 }
                 
                 for col_name, col_type in columns_to_add.items():

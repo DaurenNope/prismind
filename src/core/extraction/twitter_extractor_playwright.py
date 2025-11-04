@@ -90,71 +90,262 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
         return None
 
     def _save_cookies(self, cookies: List[Dict]):
-        """Save cookies to file"""
+        """
+        Save cookies to file in Playwright storage_state format
+        
+        This ensures compatibility with storage_state loading (sophisticated approach like Threads)
+        """
         try:
             cookie_path = Path(self.cookie_file)
             cookie_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Convert to Playwright storage_state format
+            # storage_state expects: {"cookies": [...], "origins": [...]}
+            storage_state = {
+                "cookies": cookies,
+                "origins": []
+            }
+            
             with open(cookie_path, "w") as f:
-                json.dump(cookies, f)
-            print(f"🍪 Saved {len(cookies)} cookies to {cookie_path}")
+                json.dump(storage_state, f, indent=2)
+            print(f"🍪 Saved {len(cookies)} cookies in storage_state format to {cookie_path}")
         except Exception as e:
             print(f"⚠️ Could not save cookies: {e}")
 
     async def _refresh_and_save_cookies(self) -> bool:
-        """Refresh and save cookies after successful authentication."""
+        """
+        Refresh and save cookies using storage_state (sophisticated approach like Threads)
+        
+        This saves the entire browser state (cookies, localStorage, etc.)
+        Automatically called after successful operations to keep cookies fresh.
+        """
         try:
             if self.context and self.is_authenticated:
-                cookies = await self.context.cookies()
-                if cookies:
-                    self._save_cookies(cookies)
-                    print(f"✅ Refreshed and saved {len(cookies)} cookies")
-                    return True
+                cookie_path = Path(self.cookie_file)
+                cookie_path.parent.mkdir(parents=True, exist_ok=True)
+                
+                # Use storage_state to save (saves cookies + browser state)
+                # This is Playwright's native format - most reliable
+                await self.context.storage_state(path=str(cookie_path))
+                print(f"✅ Refreshed and saved browser state to {cookie_path}")
+                
+                # Verify cookies were saved
+                if cookie_path.exists():
+                    try:
+                        with open(cookie_path, 'r') as f:
+                            saved_data = json.load(f)
+                            cookie_count = len(saved_data.get('cookies', []))
+                            print(f"✅ Verified: Saved {cookie_count} cookies in storage_state format")
+                            return True
+                    except Exception as verify_error:
+                        print(f"⚠️ Could not verify saved cookies: {verify_error}")
+                        return True  # Still return True as save likely succeeded
+                else:
+                    print(f"⚠️ Cookie file not found after save: {cookie_path}")
+                    return False
+            else:
+                print("⚠️ Cannot refresh cookies: context not available or not authenticated")
+                return False
         except Exception as e:
             print(f"⚠️ Failed to refresh cookies: {e}")
+            import traceback
+            traceback.print_exc()
         return False
+    
+    async def _auto_refresh_cookies_if_needed(self) -> bool:
+        """
+        Automatically refresh cookies if needed (before they expire)
+        
+        Checks cookie freshness and refreshes proactively.
+        This prevents authentication failures due to expired cookies.
+        """
+        try:
+            if not self.context or not self.is_authenticated:
+                return False
+            
+            cookie_path = Path(self.cookie_file)
+            if not cookie_path.exists():
+                # No cookies to refresh
+                return False
+            
+            # Check when cookies were last refreshed
+            import os
+            import time
+            cookie_age = time.time() - cookie_path.stat().st_mtime
+            
+            # Refresh if cookies are older than 1 hour (proactive refresh)
+            # Twitter cookies typically last much longer, but refreshing keeps them fresh
+            if cookie_age > 3600:  # 1 hour
+                print(f"🔄 Cookies are {int(cookie_age/60)} minutes old - refreshing proactively...")
+                return await self._refresh_and_save_cookies()
+            
+            return True
+        except Exception as e:
+            print(f"⚠️ Auto-refresh check failed: {e}")
+            return False
+    
+    def _check_cookie_freshness(self) -> bool:
+        """
+        Check if cookies are fresh enough to use without refresh
+        
+        Returns True if cookies are fresh, False if they should be refreshed.
+        """
+        try:
+            cookie_path = Path(self.cookie_file)
+            if not cookie_path.exists():
+                return False
+            
+            # Check cookie file age
+            import os
+            import time
+            cookie_age = time.time() - cookie_path.stat().st_mtime
+            
+            # Consider cookies fresh if less than 6 hours old
+            # This is conservative - Twitter cookies typically last days/weeks
+            is_fresh = cookie_age < 21600  # 6 hours
+            
+            if not is_fresh:
+                print(f"⚠️ Cookies are {int(cookie_age/3600)} hours old - may need refresh")
+            
+            return is_fresh
+        except Exception as e:
+            print(f"⚠️ Could not check cookie freshness: {e}")
+            return True  # Assume fresh if we can't check
+    
+    def _validate_cookie_format(self) -> bool:
+        """
+        Validate that cookies are in the correct storage_state format (like Threads)
+        
+        Returns True if cookies are in the correct format, False otherwise.
+        """
+        try:
+            cookie_path = Path(self.cookie_file)
+            if not cookie_path.exists():
+                return False
+            
+            with open(cookie_path, 'r') as f:
+                cookie_data = json.load(f)
+            
+            # Check if it's in storage_state format: {"cookies": [...], "origins": [...]}
+            if not isinstance(cookie_data, dict):
+                print(f"⚠️ Cookie file is not in storage_state format (expected dict, got {type(cookie_data)})")
+                return False
+            
+            if 'cookies' not in cookie_data:
+                print(f"⚠️ Cookie file missing 'cookies' key (not in storage_state format)")
+                return False
+            
+            cookies = cookie_data.get('cookies', [])
+            if not isinstance(cookies, list):
+                print(f"⚠️ Cookie file 'cookies' is not a list (expected list, got {type(cookies)})")
+                return False
+            
+            # Validate cookie structure
+            for cookie in cookies:
+                if not isinstance(cookie, dict):
+                    print(f"⚠️ Invalid cookie format: expected dict, got {type(cookie)}")
+                    return False
+                if 'name' not in cookie or 'value' not in cookie:
+                    print(f"⚠️ Invalid cookie: missing 'name' or 'value'")
+                    return False
+            
+            print(f"✅ Cookie file validated: {len(cookies)} cookies in storage_state format")
+            return True
+            
+        except json.JSONDecodeError as e:
+            print(f"⚠️ Cookie file is not valid JSON: {e}")
+            return False
+        except Exception as e:
+            print(f"⚠️ Could not validate cookie format: {e}")
+            return False
 
     async def _try_cookie_authentication(self) -> bool:
-        """Try to authenticate using existing cookies"""
-        cookies = self._load_cookies()
-        if not cookies:
+        """
+        Try to authenticate using existing cookies - SOPHISTICATED approach like Threads
+        
+        Uses storage_state (Playwright's native cookie/state management) for reliable authentication.
+        """
+        cookie_path = Path(self.cookie_file)
+        if not cookie_path.exists():
+            print("⚠️  Cookie file not found - skipping cookie authentication")
             return False
 
         try:
-            print("🍪 Attempting cookie-based authentication...")
+            # Validate cookie format (sophisticated approach like Threads)
+            if not self._validate_cookie_format():
+                print("⚠️  Cookie file is not in storage_state format - will attempt to convert on next save")
+                # Don't fail - we'll try to use it anyway and fix it on save
+            
+            # Check cookie freshness
+            is_fresh = self._check_cookie_freshness()
+            if not is_fresh:
+                print("🔄 Cookies are old - will refresh after successful authentication")
+            
+            print("🍪 Attempting cookie-based authentication (using storage_state)...")
+            
+            # Ensure browser is initialized (should already be, but check)
+            if not self.browser or not self.browser.is_connected():
+                print("⚠️  Browser not initialized - cannot use storage_state")
+                return False
 
-            # Set cookies in the browser context
-            await self.context.add_cookies(cookies)
+            # IMPORTANT: Use storage_state directly - this is the sophisticated approach (like Threads)
+            # This loads cookies AND browser state (localStorage, sessionStorage, etc.)
+            # This creates a NEW context with the saved state - this is the key!
+            self.context = await self.browser.new_context(
+                storage_state=str(cookie_path),
+                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            )
+            self.page = await self.context.new_page()
 
-            # Navigate to X.com home to test if cookies work
+            # Navigate directly to home page (like Threads does)
             await self._jitter()
             await self.page.goto(
-                "https://x.com/home", wait_until="domcontentloaded", timeout=60000
+                "https://x.com/home", 
+                wait_until='domcontentloaded', 
+                timeout=60000
             )
-            await self._jitter(500)
+            await asyncio.sleep(3)  # Wait for page to load
 
-            # Check if we're logged in - if URL is /home and not /login, we're good
+            # Check for rate limiting errors on page
+            page_text = await self.page.evaluate("document.body.innerText")
+            if re.search(r'g;\d+:-\d+:[a-zA-Z0-9]+:\d+', page_text):
+                print("⚠️  Rate limiting error detected in page - cookies may be expired or account is rate limited")
+                await self.page.screenshot(path="logs/twitter_cookie_auth_rate_limit.png")
+                return False
+
+            # Simple check: are we on login page? (like Threads does)
             current_url = self.page.url
-            if '/login' not in current_url and '/home' in current_url:
-                print("✅ Cookie authentication successful!")
-                self.is_authenticated = True
-                # AUTO-REFRESH: Always refresh cookies even if cookie auth worked
-                await self._refresh_and_save_cookies()
-                return True
-            
-            # Also try to find timeline
+            if 'login' in current_url.lower() or 'signin' in current_url.lower():
+                print("❌ Cookie authentication failed - redirected to login page (cookies expired)")
+                return False
+
+            # Check for timeline (logged in indicator)
             try:
-                element = await self.page.wait_for_selector('[data-testid="primaryColumn"]', timeout=10000)
-                if element:
-                    print("✅ Cookie authentication successful!")
+                timeline_element = await self.page.wait_for_selector(
+                    '[data-testid="primaryColumn"]', 
+                    timeout=5000
+                )
+                if timeline_element:
+                    print("✅ Cookie authentication successful! (found timeline)")
                     self.is_authenticated = True
-                    # AUTO-REFRESH: Always refresh cookies even if cookie auth worked
-                    await self._refresh_and_save_cookies()
+                    # AUTO-REFRESH: Save fresh cookies using storage_state
+                    await self.context.storage_state(path=str(cookie_path))
+                    print(f"✅ Refreshed and saved browser state to {cookie_path}")
                     return True
-            except Exception as e:
-                print(f"⚠️ Timeline check failed: {e}")
+            except Exception:
                 pass
 
-            print("❌ Cookie authentication failed - cookies may be expired")
+            # Also check URL - if we're on /home, we're likely logged in
+            if '/home' in current_url and '/login' not in current_url:
+                print("✅ Cookie authentication successful! (on home page)")
+                self.is_authenticated = True
+                # AUTO-REFRESH: Save fresh cookies using storage_state
+                await self.context.storage_state(path=str(cookie_path))
+                print(f"✅ Refreshed and saved browser state to {cookie_path}")
+                return True
+
+            # If we got here, authentication likely failed
+            print("❌ Cookie authentication failed - could not verify login status")
             return False
 
         except Exception as e:
@@ -162,10 +353,24 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
             return False
 
     async def authenticate(self, max_retries: int = 3) -> bool:
-        """Authenticate with Twitter using Playwright, with retries and more robust selectors."""
+        """Authenticate with Twitter using Playwright, with retries and more robust selectors.
+        
+        Uses sophisticated cookie management like Threads:
+        - Checks cookie freshness before attempting auth
+        - Uses storage_state for reliable cookie loading
+        - Auto-refreshes cookies after successful authentication
+        """
         for attempt in range(max_retries):
             try:
                 print(f"🔄 Authentication attempt {attempt + 1}/{max_retries}...")
+                
+                # Check cookie freshness before attempting auth
+                cookie_path = Path(self.cookie_file)
+                if cookie_path.exists():
+                    is_fresh = self._check_cookie_freshness()
+                    if not is_fresh:
+                        print("🔄 Cookies are old but will attempt to use them (will refresh if auth succeeds)")
+                
                 if not self.playwright:
                     self.playwright = await async_playwright().start()
 
@@ -175,22 +380,27 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
                         args=["--no-sandbox", "--disable-dev-shm-usage"],
                     )
 
-                if not self.context:
-                    self.context = await self.browser.new_context(
-                        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-                    )
-
-                if not self.page or self.page.is_closed():
-                    self.page = await self.context.new_page()
-
                 # Try cookie authentication first (PRIORITY - avoids rate limiting)
-                print("🍪 Attempting cookie-based authentication (avoids rate limiting)...")
+                # Use sophisticated storage_state approach (like Threads)
+                # This will create context with storage_state if cookies exist
+                print("🍪 Attempting cookie-based authentication using storage_state (avoids rate limiting)...")
                 if await self._try_cookie_authentication():
-                    # Cookies already refreshed in _try_cookie_authentication
+                    # Cookies already refreshed in _try_cookie_authentication via storage_state
+                    # Context and page are already created in _try_cookie_authentication
                     print("✅ Cookie authentication successful - bypassing password login")
                     return True
                 else:
                     print("⚠️  Cookie authentication failed - cookies may be expired or missing")
+                    
+                    # Context wasn't created in _try_cookie_authentication (cookies failed)
+                    # Create context for password login
+                    if not self.context:
+                        self.context = await self.browser.new_context(
+                            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                        )
+                    
+                    if not self.page or self.page.is_closed():
+                        self.page = await self.context.new_page()
 
                 if not self.password:
                     print("❌ Cookie authentication failed and no password provided.")
@@ -249,34 +459,72 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
                 await self.page.wait_for_selector(login_button_selector, timeout=10000)
                 await self.page.click(login_button_selector)
                 
-                # Wait a bit for response
-                await self._jitter(1000)
+                # Wait longer for response (error messages may take time to appear)
+                await asyncio.sleep(3)  # Wait 3 seconds for error to appear
 
-                # Check for error messages (rate limiting, etc.)
+                # Check for error messages (rate limiting, etc.) - comprehensive check
                 try:
-                    # Check for common error messages
+                    # Get full page text to check for errors
+                    page_text = await self.page.evaluate("document.body.innerText")
+                    page_html = await self.page.content()
+                    
+                    # Check for specific error patterns
+                    error_patterns = [
+                        "could not log you in",
+                        "try again later",
+                        "rate limit",
+                        "g;.*:.*:.*:.*:1",  # Twitter error identifier pattern
+                        "something went wrong",
+                        "temporarily restricted",
+                        "suspended",
+                        "blocked"
+                    ]
+                    
+                    # Check page text
+                    page_text_lower = page_text.lower()
+                    for pattern in error_patterns:
+                        if pattern.startswith("g;"):
+                            # Check for Twitter error identifier pattern
+                            if re.search(r'g;\d+:-\d+:[a-zA-Z0-9]+:\d+', page_text):
+                                error_msg = "Twitter authentication blocked - rate limiting detected"
+                                print(f"⚠️ {error_msg}")
+                                await self.page.screenshot(path=f"logs/twitter_auth_error_{attempt + 1}.png")
+                                raise Exception(error_msg)
+                        elif pattern in page_text_lower:
+                            # Extract full error message
+                            error_msg = f"Twitter authentication blocked: {pattern}"
+                            print(f"⚠️ {error_msg}")
+                            await self.page.screenshot(path=f"logs/twitter_auth_error_{attempt + 1}.png")
+                            raise Exception(error_msg)
+                    
+                    # Also check for error elements (more specific selectors)
                     error_selectors = [
                         'div[role="alert"]',
                         '[data-testid="error"]',
+                        '[data-testid="errorDetail"]',
                         'span:has-text("Could not log you in")',
                         'span:has-text("Try again later")',
                         'span:has-text("Something went wrong")',
+                        '[class*="error"]',
+                        '[class*="Error"]',
                     ]
                     
                     for selector in error_selectors:
                         try:
-                            error_element = await self.page.query_selector(selector)
-                            if error_element:
+                            error_elements = await self.page.query_selector_all(selector)
+                            for error_element in error_elements:
                                 error_text = await error_element.inner_text()
-                                if error_text and ("could not log" in error_text.lower() or "try again later" in error_text.lower() or "rate limit" in error_text.lower()):
-                                    print(f"⚠️ Twitter rate limiting/error detected: {error_text}")
-                                    # Take screenshot for debugging
-                                    await self.page.screenshot(path=f"logs/twitter_auth_error_{attempt + 1}.png")
-                                    raise Exception(f"Twitter authentication blocked: {error_text}")
+                                if error_text:
+                                    error_text_lower = error_text.lower()
+                                    if any(pattern in error_text_lower for pattern in error_patterns if not pattern.startswith("g;")):
+                                        print(f"⚠️ Twitter rate limiting/error detected: {error_text}")
+                                        await self.page.screenshot(path=f"logs/twitter_auth_error_{attempt + 1}.png")
+                                        raise Exception(f"Twitter authentication blocked: {error_text}")
                         except Exception as e:
                             if "Twitter authentication blocked" in str(e):
                                 raise  # Re-raise our custom error
                             continue
+                            
                 except Exception as check_error:
                     if "Twitter authentication blocked" in str(check_error):
                         raise  # Re-raise our custom error
@@ -290,11 +538,19 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
                     # Check if we're still on login page (authentication failed)
                     current_url = self.page.url
                     page_text = await self.page.evaluate("document.body.innerText")
+                    page_text_lower = page_text.lower()
+                    
+                    # Check for Twitter error identifier pattern
+                    if re.search(r'g;\d+:-\d+:[a-zA-Z0-9]+:\d+', page_text):
+                        error_msg = "Twitter authentication blocked - rate limiting detected (error identifier found)"
+                        print(f"❌ {error_msg}")
+                        await self.page.screenshot(path=f"logs/twitter_auth_failed_{attempt + 1}.png")
+                        raise Exception(error_msg)
                     
                     if 'login' in current_url.lower() or 'signin' in current_url.lower():
                         print(f"❌ Still on login page. URL: {current_url}")
                         # Check for specific error messages in page
-                        if "could not log" in page_text.lower() or "try again later" in page_text.lower():
+                        if any(pattern in page_text_lower for pattern in ["could not log", "try again later", "rate limit", "something went wrong"]):
                             await self.page.screenshot(path=f"logs/twitter_auth_failed_{attempt + 1}.png")
                             raise Exception("Twitter authentication blocked - rate limiting or anti-bot detection. Please wait and try again later.")
                         raise Exception(f"Authentication failed - still on login page")
@@ -303,10 +559,15 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
                 self.is_authenticated = True
                 print(f"✅ Successfully logged in to Twitter as {self.username}")
 
-                # AUTO-SAVE: Always save cookies after successful password auth
-                cookies = await self.context.cookies()
-                self._save_cookies(cookies)
-                print(f"✅ Saved {len(cookies)} fresh cookies")
+                # AUTO-SAVE: Save browser state using storage_state (sophisticated approach like Threads)
+                # This ensures cookies are always fresh after authentication
+                cookie_path = Path(self.cookie_file)
+                cookie_path.parent.mkdir(parents=True, exist_ok=True)
+                await self.context.storage_state(path=str(cookie_path))
+                print(f"✅ Saved browser state to {cookie_path} (includes cookies + localStorage)")
+                
+                # Verify cookies were saved properly
+                await self._refresh_and_save_cookies()
 
                 return True
 
@@ -324,26 +585,34 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
                     print(f"⚠️ Screenshot failed: {e}")
                     pass
                 
-                # Check if it's a rate limiting error
-                if ("rate limit" in error_msg.lower() or 
+                # Check if it's a rate limiting error (including Twitter error identifier pattern)
+                has_rate_limit_pattern = (
+                    "rate limit" in error_msg.lower() or 
                     "try again later" in error_msg.lower() or 
                     "could not log" in error_msg.lower() or
-                    "temporarily restricted" in error_msg.lower()):
-                    
+                    "temporarily restricted" in error_msg.lower() or
+                    "twitter authentication blocked" in error_msg.lower() or
+                    re.search(r'g;\d+:-\d+:[a-zA-Z0-9]+:\d+', error_msg) is not None
+                )
+                
+                if has_rate_limit_pattern:
                     print("⚠️  Twitter rate limiting/anti-bot detection detected!")
+                    print(f"   Error: {error_msg[:200]}")  # Show first 200 chars
                     print("💡 This means Twitter is blocking automated login attempts.")
                     print()
                     print("🔧 Solutions:")
-                    print("   1. WAIT: Wait 30-60 minutes (or longer) before trying again")
+                    print("   1. WAIT: Wait 1-2 hours (or longer) before trying again")
                     print("   2. USE COOKIES: Ensure valid cookies exist - they bypass login")
-                    print("   3. MANUAL LOGIN: Log in manually once to refresh cookies")
+                    print("      Check: cookies/twitter_cookies_cryptoniard.json")
+                    print("   3. MANUAL LOGIN: Log in manually once in browser to refresh cookies")
                     print("   4. SKIP FOR NOW: Focus on Threads collection (has valid cookies)")
+                    print("   5. CHECK COOKIES: Run: python scripts/manage_cookies.py")
                     print()
                     
                     if attempt == 0:
                         # On first attempt, suggest waiting longer
                         print("⏭️  Skipping further retries (rate limit detected)")
-                        print("💡 Run collection again later, or use cookies to bypass")
+                        print("💡 Run collection again later (wait 1-2 hours), or use cookies to bypass")
                         return False
                     
                     wait_time = 60 * (attempt + 1)  # Longer wait: 60s, 120s, 180s
@@ -395,23 +664,62 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
         try:
             # Navigate to bookmarks
             await self._jitter()
-            await self.page.goto(
-                "https://x.com/i/bookmarks",
-                wait_until="domcontentloaded",
-                timeout=60000,
-            )
-            await self._jitter(500)
+            print("🌐 Navigating to bookmarks page...")
+            try:
+                # Try networkidle first (better if it works)
+                await self.page.goto(
+                    "https://x.com/i/bookmarks",
+                    wait_until="networkidle",
+                    timeout=30000,  # Shorter timeout for networkidle
+                )
+            except Exception as e:
+                # Fallback to load if networkidle times out (Twitter keeps polling)
+                print(f"⚠️ networkidle timed out (normal for dynamic pages), using load instead: {e}")
+                await self.page.goto(
+                    "https://x.com/i/bookmarks",
+                    wait_until="load",
+                    timeout=60000,
+                )
+            await self._jitter(2000)  # Wait longer for initial load and dynamic content
 
             # Check if bookmarks page loaded
             try:
+                print("⏳ Waiting for page structure to load...")
                 await self.page.wait_for_selector(
                     '[data-testid="primaryColumn"]', timeout=15000
                 )
+                print("✅ Page structure loaded")
             except Exception as e:
                 print(
                     f"❌ Could not access bookmarks page - check if account has bookmarks enabled: {e}"
                 )
                 return []
+
+            # Wait for tweets to start loading (they load dynamically)
+            print("⏳ Waiting for tweets to load...")
+            await self._jitter(2000)  # Give extra time for tweets to load
+            
+            # Try to wait for at least one tweet element to appear (with timeout)
+            try:
+                print("🔍 Looking for tweet elements...")
+                await self.page.wait_for_selector(
+                    'article[data-testid="tweet"]', 
+                    timeout=10000,
+                    state="attached"  # Don't require visible, just attached to DOM
+                )
+                print("✅ Tweets detected on page")
+            except Exception as e:
+                print(f"⚠️ No tweets found immediately: {e}")
+                print("   This might be normal - will try scrolling to load more")
+                # Take screenshot for debugging
+                try:
+                    screenshot_path = "logs/twitter_bookmarks_no_tweets.png"
+                    Path("logs").mkdir(parents=True, exist_ok=True)
+                    await self.page.screenshot(path=screenshot_path, full_page=True)
+                    print(f"📸 Screenshot saved: {screenshot_path}")
+                except Exception as screenshot_error:
+                    print(f"⚠️ Could not take screenshot: {screenshot_error}")
+                # Don't return - continue and try scrolling
 
             print(f"📥 Starting to extract Twitter bookmarks (target: {limit})...")
 
@@ -506,6 +814,12 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
                                     print(
                                         f"✅ Extracted NEW tweet {len(posts)}: @{tweet_data.author_handle}"
                                     )
+                                    
+                                    # Periodic cookie refresh during collection (sophisticated approach like Threads)
+                                    # Refresh cookies every 10 tweets to keep them fresh
+                                    if len(posts) % 10 == 0:
+                                        print(f"🔄 Refreshing cookies periodically (every 10 tweets)...")
+                                        await self._auto_refresh_cookies_if_needed()
                                 else:
                                     print(
                                         f"⏭️ Skipped duplicate tweet: {tweet_data.post_id}"
@@ -527,16 +841,40 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
 
                     # Check if we should scroll for more content
                     if len(posts) < limit and not stop_post_encountered:
-                        if no_new_content_count >= 3:
-                            print("🛑 No new content loaded after 3 attempts, stopping...")
+                        if no_new_content_count >= 5:  # Increased from 3 to 5
+                            print("🛑 No new content loaded after 5 attempts, stopping...")
                             break
+
+                        # Periodic cookie refresh during scrolling (sophisticated approach like Threads)
+                        # Refresh cookies every 5 scroll attempts to keep them fresh
+                        if scroll_attempts > 0 and scroll_attempts % 5 == 0:
+                            print(f"🔄 Refreshing cookies periodically (every 5 scrolls)...")
+                            await self._auto_refresh_cookies_if_needed()
+
+                        # If no tweets found at all yet, try scrolling anyway (might trigger loading)
+                        if current_tweet_count == 0 and scroll_attempts < 3:
+                            print(f"📜 No tweets found yet, scrolling to trigger loading (attempt {scroll_attempts + 1})...")
+                            scroll_attempts += 1
+                            await self._scroll_page()
+                            await self._jitter(1000)  # Wait longer after scroll
+                            await self.page.wait_for_timeout(2000)  # Extra wait for content
+                            continue  # Go back to check for tweets
 
                         if current_tweet_count > last_tweet_count:
                             last_tweet_count = current_tweet_count
                             scroll_attempts += 1
                             print("📜 Scrolling to load more content...")
                             await self._scroll_page()
-                            await self._jitter(200)
+                            await self._jitter(500)  # Increased wait time
+                            await self.page.wait_for_timeout(1000)  # Extra wait for dynamic content
+                            print(f"📈 Progress: {len(posts)}/{limit} tweets extracted")
+                        elif current_tweet_count == last_tweet_count and current_tweet_count > 0:
+                            # Same count but we have tweets - might need more scrolling
+                            scroll_attempts += 1
+                            print("📜 Scrolling to load more tweets...")
+                            await self._scroll_page()
+                            await self._jitter(500)
+                            await self.page.wait_for_timeout(1500)
                             print(f"📈 Progress: {len(posts)}/{limit} tweets extracted")
                         else:
                             print("🛑 No more tweets loading, stopping...")
@@ -557,8 +895,13 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
 
             print(f"✅ Retrieved {len(posts)} bookmarked tweets from Twitter")
             
-            # AUTO-REFRESH: Refresh cookies after successful collection
-            await self._refresh_and_save_cookies()
+            # AUTO-REFRESH: Refresh cookies after successful collection (sophisticated approach like Threads)
+            # This keeps cookies fresh and prevents expiration issues
+            refresh_success = await self._refresh_and_save_cookies()
+            if refresh_success:
+                print("✅ Cookies refreshed and saved after collection")
+            else:
+                print("⚠️ Cookie refresh failed (but collection succeeded)")
             
             return posts
 

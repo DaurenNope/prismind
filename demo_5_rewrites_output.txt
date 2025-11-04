@@ -1,0 +1,75 @@
+INFO - Logging system initialized
+
+====================================================================================================
+🎨 GENERATING 5 REWRITES - PERSONAL VOICE EDITION
+====================================================================================================
+
+✅ Ollama (Qwen 1.5B - Fast) initialized
+✅ Mistral AI initialized
+✅ Google Gemini initialized
+🧠 Intelligent Content Analyzer initialized with 3 AI services
+INFO - Loaded 15 voice examples for qronoya
+INFO - Loaded 15 voice examples for aspandead
+INFO - Loaded 15 voice examples for claimzilla
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+E0000 00:00:1762193622.121512 22690505 alts_credentials.cc:93] ALTS creds ignored. Not running on GCP and untrusted ALTS is not enabled.
+
+====================================================================================================
+POST #1: Chinese AI startups catching up
+====================================================================================================
+
+📝 ORIGINAL:
+----------------------------------------------------------------------------------------------------
+Chinese AI startups: 1/6th of US funding, bad press, sanctions, brain drain, communism, little English proficiency. But after using Manus AI, Deepseek, Trae, Kling, Vidu, & Ying, I think the US is in trouble. At this pace, China will dominate AI.
+----------------------------------------------------------------------------------------------------
+🔍 Analyzing twitter post: demo_1
+⚠️ Ollama request timed out
+⚠️ ollama analysis failed: Ollama analysis timed out
+⚠️ mistral analysis failed: Mistral API error: 401
+⚠️ gemini analysis failed: 400 API key not valid. Please pass a valid API key. [reason: "API_KEY_INVALID"
+domain: "googleapis.com"
+metadata {
+  key: "service"
+  value: "generativelanguage.googleapis.com"
+}
+, locale: "en-US"
+message: "API key not valid. Please pass a valid API key."
+]
+INFO - Use pytorch device_name: mps
+INFO - Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+INFO - Embedding model 'all-MiniLM-L6-v2' loaded successfully with 384 dimensions
+INFO - Use pytorch device_name: mps
+INFO - Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+INFO - ✅ Loaded semantic model: all-MiniLM-L6-v2
+INFO - Loaded persona: qronoya_examples
+INFO - Loaded persona: aspandead
+INFO - Loaded persona: qronoya
+INFO - Loaded persona: test_developer
+INFO - Loaded persona: skeptical_builder
+INFO - Loaded persona: aspandead_examples
+INFO - Loaded persona: claimzilla
+INFO - Loaded persona: practical_skeptic
+INFO - Loaded persona: claimzilla_examples
+INFO - Loaded persona: observational_writer
+INFO - Loaded persona: cryptoniard
+INFO - Loaded 11 personas
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00,  5.39it/s]Batches: 100%|██████████| 1/1 [00:00<00:00,  5.38it/s]
+✅ Analysis complete - Value Score: 3.0/10
+INFO - 🎯 Matched 1 persona(s) for this content
+INFO -    • qronoya: 50 points (2 interest matches, complexity match (Intermediate), 1 keyword signals, professional/career focus)
+Traceback (most recent call last):
+  File "/Users/mac/Documents/Development/prismind/demo_5_rewrites_readable.py", line 160, in <module>
+    asyncio.run(rewrite_5_posts())
+  File "/Users/mac/.pyenv/versions/3.11.12/lib/python3.11/asyncio/runners.py", line 190, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/Users/mac/.pyenv/versions/3.11.12/lib/python3.11/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mac/.pyenv/versions/3.11.12/lib/python3.11/asyncio/base_events.py", line 654, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/Users/mac/Documents/Development/prismind/demo_5_rewrites_readable.py", line 92, in rewrite_5_posts
+    persona_id = best_match['persona']
+                 ~~~~~~~~~~^^^^^^^^^^^
+TypeError: tuple indices must be integers or slices, not str

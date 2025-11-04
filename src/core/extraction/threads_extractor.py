@@ -370,7 +370,15 @@ class ThreadsExtractor(SocialExtractorBase):
                 await self.pw.stop()
             return False
 
-    async def get_saved_posts(self, username: str = None, password: str = None, limit: int = 50, cookies_path: str = "cookies/threads_cookies.json") -> List[SocialPost]:
+    async def get_saved_posts(
+        self,
+        username: str = None,
+        password: str = None,
+        limit: int = 50,
+        cookies_path: str = "cookies/threads_cookies.json",
+        stop_at_post_id: Optional[str] = None,
+        existing_ids: Optional[set] = None,
+    ) -> List[SocialPost]:
         """
         Fetch saved/bookmarked Threads posts.
         If already authenticated (has self.page), uses existing session.
@@ -406,6 +414,8 @@ class ThreadsExtractor(SocialExtractorBase):
 
             # Extract post links by scrolling
             post_links = set()
+            reached_stop_id = False
+            consecutive_seen = 0
             scroll_attempts = 5
             
             logging.info(f"Scrolling to load saved posts (max {scroll_attempts} scrolls)...")
@@ -420,10 +430,34 @@ class ThreadsExtractor(SocialExtractorBase):
                 for link in links:
                     if not link.startswith('http'):
                         link = f"https://www.threads.net{link}"
+                    # Early-stop: if this link corresponds to the last collected id, break
+                    try:
+                        code = link.strip('/').split('/')[-1]
+                    except Exception:
+                        code = None
+                    if stop_at_post_id and code and code == stop_at_post_id:
+                        reached_stop_id = True
+                        post_links.add(link)
+                        break
+                    # Duplicate detection vs existing IDs
+                    if existing_ids and code and (code in existing_ids):
+                        # Stop immediately on first seen duplicate (chronological feed)
+                        reached_stop_id = True
+                        post_links.add(link)
+                        break
+                    else:
+                        consecutive_seen = 0
                     post_links.add(link)
                 
                 new_found = len(post_links) - before_count
                 logging.info(f"  Scroll {i+1}/{scroll_attempts}: Found {new_found} new posts (total: {len(post_links)})")
+                if reached_stop_id:
+                    logging.info("🛑 Detected last collected post in scroll - stopping early")
+                    break
+                # keep consecutive check as a fallback (should rarely trigger now)
+                if consecutive_seen >= 1 and len(post_links) >= 1:
+                    logging.info("🛑 Duplicate detected - stopping early")
+                    break
                 
                 # Scroll down
                 await page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
@@ -438,10 +472,28 @@ class ThreadsExtractor(SocialExtractorBase):
                 logging.warning("No saved post links found. Either no saved posts exist or page structure changed.")
                 return []
 
+            # Filter out already-seen before scraping
+            filtered = []
+            for u in post_links:
+                try:
+                    c = u.strip('/').split('/')[-1]
+                except Exception:
+                    c = None
+                if existing_ids and c and (c in existing_ids):
+                    continue
+                filtered.append(u)
             # Limit to requested number
-            urls_to_scrape = list(post_links)[:limit]
-            logging.info(f"Found {len(post_links)} total saved posts, will scrape {len(urls_to_scrape)}")
+            urls_to_scrape = filtered[:limit]
+            logging.info(f"Found {len(post_links)} total, {len(filtered)} new; will scrape {len(urls_to_scrape)}")
             
+            # Refresh and save cookies/state for future sessions
+            try:
+                if hasattr(self, 'context') and self.context:
+                    await self.context.storage_state(path=cookies_path)
+                    logging.info(f"✅ Refreshed and saved browser state to {cookies_path}")
+            except Exception as _save_err:
+                logging.debug(f"Could not save Threads cookies: {_save_err}")
+
             # Close the authentication browser before scraping
             if hasattr(self, 'browser') and self.browser:
                 await self.browser.close()

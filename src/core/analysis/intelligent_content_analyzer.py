@@ -137,12 +137,25 @@ class IntelligentContentAnalyzer:
         # 1. Core Content Analysis
         try:
             core_analysis = self._analyze_core_content(post)
+            # Ensure core_analysis is always a dict
+            if not isinstance(core_analysis, dict):
+                print(f"⚠️ Core content analysis returned non-dict (type: {type(core_analysis)}), using fallback")
+                core_analysis = self._basic_analysis(post, self.sentiment_analyzer.polarity_scores(post.content or ""))
             analysis.update(core_analysis)
         except Exception as e:
             print(f"⚠️ Core content analysis failed: {e}")
             # Use basic analysis as fallback
             core_analysis = self._basic_analysis(post, self.sentiment_analyzer.polarity_scores(post.content or ""))
-            analysis.update(core_analysis)
+            if isinstance(core_analysis, dict):
+                analysis.update(core_analysis)
+            else:
+                print(f"⚠️ Fallback analysis also failed, using minimal dict")
+                analysis.update({
+                    'summary': str(post.content)[:200] if post.content else '',
+                    'category': 'General',
+                    'key_concepts': [],
+                    'sentiment': 'neutral'
+                })
         
         # 2. Comment Analysis (Reddit only)
         if include_comments and post.platform == 'reddit':
@@ -193,7 +206,15 @@ class IntelligentContentAnalyzer:
                 'post_id': post.post_id,
                 'platform': post.platform,
                 'analyzed_at': datetime.now().isoformat(),
-                'analysis_version': 'fallback'
+                'analysis_version': 'fallback',
+                # Ensure persona matching can still work with fallback analysis
+                'summary': str(post.content)[:200] if post.content else '',
+                'category': post.hashtags[0] if post.hashtags else 'General',
+                'key_concepts': post.hashtags[:5] if post.hashtags else [],
+                'tags': post.hashtags if post.hashtags else [],
+                'sentiment': 'neutral',
+                'content_quality_score': 5.0,
+                'intelligent_value_score': 5.0
             }
         
         # 4. Advanced Value Scoring

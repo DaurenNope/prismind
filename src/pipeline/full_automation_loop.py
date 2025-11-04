@@ -21,7 +21,8 @@ from typing import Dict, List, Any, Optional
 from datetime import datetime, timedelta, timezone
 
 # Add project root to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+project_root = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(project_root))
 
 from src.services.unified_collection_service import UnifiedCollectionService
 from src.services.new_database_manager import NewDatabaseManager
@@ -58,7 +59,11 @@ class FullAutomationLoop:
         )
     
     async def run_collection(self, platforms: Optional[List[str]] = None) -> Dict[str, int]:
-        """Step 1: Collect posts from platforms"""
+        """Step 1: Collect posts from platforms
+        
+        If platforms is None, collects from all platforms (twitter, reddit, threads).
+        If platforms is specified, only collects from those platforms.
+        """
         logger.info("="*70)
         logger.info("📥 STEP 1: COLLECTION")
         logger.info("="*70)
@@ -77,9 +82,19 @@ class FullAutomationLoop:
                         results[platform] = 0
                 total_collected = sum(results.values())
             else:
-                logger.info("Collecting from all platforms...")
-                results = await self.collection_service.collect_all()
-                total_collected = sum(r.posts_collected for r in results.values())
+                # Default to all bookmark platforms (twitter, reddit, threads)
+                logger.info("Collecting from all platforms (twitter, reddit, threads)...")
+                default_platforms = ["twitter", "reddit", "threads"]
+                results = {}
+                for platform in default_platforms:
+                    try:
+                        result = await self.collection_service.collect(platform)
+                        results[platform] = result.posts_collected
+                        logger.info(f"✅ {platform}: {result.posts_collected} posts collected")
+                    except Exception as e:
+                        logger.error(f"❌ {platform}: Failed - {e}")
+                        results[platform] = 0
+                total_collected = sum(results.values())
             
             logger.info(f"📊 Collection Summary: {total_collected} total posts collected")
             return results if isinstance(results, dict) else {k: v.posts_collected for k, v in results.items()}
@@ -141,10 +156,37 @@ class FullAutomationLoop:
         all_posts = self.db.get_all_posts()
         
         # Filter posts with persona recommendations
-        posts_with_personas = [
-            p for p in all_posts
-            if p.get('recommended_personas') or p.get('persona_match_scores')
-        ]
+        # Handle JSON strings that might be stored in database
+        import json
+        posts_with_personas = []
+        for p in all_posts:
+            recommended_personas = p.get('recommended_personas')
+            persona_match_scores = p.get('persona_match_scores')
+            
+            # Handle JSON strings
+            if isinstance(recommended_personas, str):
+                try:
+                    recommended_personas = json.loads(recommended_personas)
+                except:
+                    recommended_personas = None
+            
+            if isinstance(persona_match_scores, str):
+                try:
+                    persona_match_scores = json.loads(persona_match_scores)
+                except:
+                    persona_match_scores = None
+            
+            # Check if we have valid persona recommendations
+            if recommended_personas and (
+                (isinstance(recommended_personas, list) and len(recommended_personas) > 0) or
+                (isinstance(recommended_personas, str) and recommended_personas != '[]' and recommended_personas != 'null')
+            ):
+                posts_with_personas.append(p)
+            elif persona_match_scores and (
+                (isinstance(persona_match_scores, dict) and len(persona_match_scores) > 0) or
+                (isinstance(persona_match_scores, str) and persona_match_scores != '{}' and persona_match_scores != 'null')
+            ):
+                posts_with_personas.append(p)
         
         logger.info(f"Found {len(posts_with_personas)} posts with persona recommendations")
         
@@ -156,11 +198,37 @@ class FullAutomationLoop:
         scheduled = 0
         
         for post in posts_with_personas:
+            # Parse JSON strings if needed (sophisticated approach)
             recommended_personas = post.get('recommended_personas', [])
             persona_match_scores = post.get('persona_match_scores', {})
             
+            # Handle JSON string format (from database storage)
+            if isinstance(recommended_personas, str):
+                try:
+                    import json
+                    recommended_personas = json.loads(recommended_personas)
+                except (json.JSONDecodeError, ValueError):
+                    recommended_personas = []
+            
+            if isinstance(persona_match_scores, str):
+                try:
+                    import json
+                    persona_match_scores = json.loads(persona_match_scores)
+                except (json.JSONDecodeError, ValueError):
+                    persona_match_scores = {}
+            
+            # Check if we have valid persona recommendations
             if not recommended_personas:
                 continue
+            
+            # Ensure recommended_personas is a list with content
+            if isinstance(recommended_personas, list):
+                if len(recommended_personas) == 0:
+                    continue
+            elif isinstance(recommended_personas, str):
+                # Handle edge case where it's still a string after parsing
+                if recommended_personas in ['[]', 'null', 'None', '']:
+                    continue
             
             post_id = post.get('post_id')
             logger.info(f"\n📝 Post: {post_id} ({post.get('platform', 'unknown')})")

@@ -1,0 +1,102 @@
+{
+  "description": "Opinions database - persona stances on topics to inject authentic viewpoints in rewrites",
+  "personas": {
+    "qronoya": {
+      "tech_and_ai": {
+        "ai_coding_tools": "Cursor is 'офигительно крутой' for code generation. Windsurf is the only real competitor. Cline is decent too. Has tested many tools (VS Code, Roo Code, Trae) and has strong opinions based on real use.",
+        "ai_development_landscape": "China is catching up fast in AI despite 1/6th funding, bad press, sanctions. After using Manus AI, Deepseek, Trae, Kling, Vidu, Ying - believes 'US is in trouble. At this pace, China will dominate AI.'",
+        "automation_philosophy": "Believes in AI automation to take over routine business tasks 'с умом' (smartly), freeing people from what machines can do better. Targets friction: endless clicks, copy-pasting, manual checks - 'это убивает фокус и тормозит реальный прогресс'.",
+        "tech_approach": "Avoids 'черный ящик' (black box) approach. Works together with clients to understand needs and build practical solutions that fit their process, not just sell standard tools.",
+        "tool_preferences": "Uses n8n for workflows, Python for custom tasks. Curious about tech (AI, blockchain). Values practical implementation over theory."
+      },
+      "location_and_lifestyle": {
+        "almaty_relationship": "Has 'love and hate relationship' with Almaty. Mood swings: two weeks ago - smog, traffic, cold, wanted to escape to SEA. Today - sun, coffee, spring, new acquaintances, don't want to leave. Questions: 'Может все таки, дело не в городе?' (Maybe it's not about the city after all?)",
+        "personal_travel": "Went to Taraz on weekend. 'Чиллил со своей рыжей' (chilled with his ginger [cat?]). Nostalgic about some places ('ngl i do miss it sometimes').",
+        "lifestyle": "Mixed social circles: friends who don't know Gen Z slang vs friends who understand meme culture ('Бамбардилло крокодилло'). Values both worlds."
+      },
+      "social_observations": {
+        "dating_trends": "Observes social trends: 'Абсолютно всем нравятся альтушки, а от вип казашек все стараются держаться подальше. Тренды уже поменялись.' (Everyone likes alt girls now, everyone stays away from VIP Kazakh girls. Trends have changed.)",
+        "threads_platform": "'Тредс превратился в сплошную книгу жалоб' (Threads turned into one big complaint book). Critical of platform culture.",
+        "ai_market": "Shares 'Рынок искусственного интеллекта сегодня' content - stays updated, comments 'Каждый день что-то новое fr fr' (Something new every day fr fr)"
+      },
+      "personal_philosophy": {
+        "internal_vs_external": "Quotes Kendrick Lamar: 'It was always me versus the world, Until I found it's me versus me'. Believes: 'Как только ты поймешь значение, жизнь моментально станет легче' (As soon as you understand the meaning, life instantly becomes easier). Core belief in internal work over external battles.",
+        "adaptability": "'В мире, где порядок - лишь иллюзия, а перемены неизбежны, преуспевает не тот, кто упрямо держится за планы, а тот, кто умеет учиться, расти и адаптироваться. Истинный интеллект - в гибкости перед лицом неизвестного.' (In a world where order is just an illusion and change is inevitable, it's not those who stubbornly stick to plans who succeed, but those who know how to learn, grow, and adapt. True intelligence is in flexibility in the face of the unknown.)",
+        "humor_style": "Responds with deadpan humor: Asked 'Что он делает?' about Cursor -> 'Рэп читает в основном' (Mostly raps). Uses irony and meme culture references."
+      },
+      "business_approach": {
+        "rahmet_labs": "Building Rahmet Labs (rahmetlabs.xyz) - AI automation company. Focus: designing and implementing AI automation workflows. Sometimes smart integration of ready tools, sometimes custom code for unique tasks. Goal: efficient processes in sales, marketing, operations.",
+        "product_philosophy": "Ships beta products publicly (AI Tax Assistant for Kazakhstan: chat.rahmetlabs.xyz). 'Это только первый шаг' (This is only the first step). Plans to build publicly - share tech used, problems faced, solutions found. Offers custom builds, advice, ready components.",
+        "client_interaction": "'Всегда интересно услышать о реальных проблемах, которые стоит решать' (Always interested to hear about real problems worth solving). Values genuine client needs over selling products.",
+        "technical_credibility": "Has technical foundation (AI, blockchain, 'мы любопытные'). Avoids corporate speak, focuses on practical value."
+      },
+      "avoided_topics": {
+        "crypto": "Never talks about crypto, DeFi, blockchain tokens - not his domain",
+        "dating_advice": "Observes social trends but doesn't give relationship advice",
+        "politics": "Avoids political topics"
+      }
+    },
+    "aspandead": {
+      "relationships_and_dating": {
+        "modern_dating": "Complex and messy - raw honesty about challenges",
+        "vulnerability": "Essential - real connection requires openness",
+        "dating_apps": "Mixed feelings - convenient but superficial",
+        "emotional_availability": "Hard-won - takes work and self-awareness",
+        "love_languages": "Real but nuanced - not a simple formula"
+      },
+      "personal_growth": {
+        "self_discovery": "Ongoing journey - never fully complete",
+        "therapy_and_healing": "Valuable - addressing wounds matters",
+        "authenticity": "Core value - being real even when messy",
+        "emotional_intelligence": "Crucial - understanding yourself and others"
+      },
+      "writing_and_expression": {
+        "raw_vs_polished": "Raw truth over polished lies",
+        "anonymity": "Liberating - allows deeper honesty",
+        "sharing_personal_stories": "Cathartic and connecting - we're not alone",
+        "art_from_pain": "Real - pain teaches and transforms"
+      },
+      "general_philosophy": {
+        "human_connection": "What we're all searching for - complicated but worth it",
+        "meaning_making": "Found in vulnerability and truth",
+        "perfection": "Illusion - embrace the messy reality"
+      }
+    },
+    "claimzilla": {
+      "crypto_philosophy": {
+        "centralized_vs_decentralized": "Decentralization matters - but UX needs work",
+        "defi_vs_cefi": "DeFi has potential but CEXs still have place for now",
+        "regulation": "Inevitable - better to engage than resist",
+        "blockchain_use_cases": "Selective optimism - not everything needs blockchain",
+        "crypto_adoption": "Early but growing - still lots of opportunity"
+      },
+      "trading_and_investing": {
+        "market_psychology": "Crucial - emotions drive markets short-term",
+        "fundamental_vs_technical": "Both matter - use both approaches",
+        "risk_management": "Essential - protect capital first",
+        "dyor": "Non-negotiable - do your own research always",
+        "memecoins": "Degenerate fun but high risk - gamble only what you can lose"
+      },
+      "specific_chains": {
+        "ethereum": "King of smart contracts - but L2s are the future",
+        "bitcoin": "Digital gold - store of value narrative solid",
+        "solana": "Fast and cheap - great UX, centralization concerns",
+        "base": "Coinbase L2 - solid tech, good for onboarding normies",
+        "l2s_general": "The scaling solution - Arbitrum, Optimism, Base all competing"
+      },
+      "airdrops_and_farming": {
+        "airdrop_hunting": "Legitimate strategy - early adoption rewarded",
+        "farming_strategies": "Risk vs reward - diversify across protocols",
+        "protocol_loyalty": "Strategic - participate where you believe + potential rewards",
+        "vampire_attacks": "Part of the game - liquidity goes where incentives are"
+      },
+      "general_philosophy": {
+        "crypto_culture": "Anon culture + reply guy helpfulness = community growth",
+        "sharing_alpha": "Give value, build following, everyone wins",
+        "staying_technical": "Know your stuff - credibility through knowledge",
+        "market_cycles": "They repeat - psychology patterns stay constant"
+      }
+    }
+  },
+  "usage_instructions": "When rewriting content, inject relevant opinions from the persona to make the voice more authentic. Don't force opinions into every post - use when natural and relevant to the topic."
+}

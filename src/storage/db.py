@@ -49,7 +49,7 @@ class StorageFacade:
                 
                 # Full duplicate check (platform-specific)
                 if self._dupes.is_duplicate(post):
-                return False
+                    return False
         except Exception as e:
             import logging
             logging.debug(f"Duplicate check failed: {e}")
