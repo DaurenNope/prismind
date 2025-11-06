@@ -6,6 +6,7 @@ Provides unified collection interface with real-time progress
 
 import asyncio
 import os
+import uuid
 import streamlit as st
 from datetime import datetime, timedelta
 from typing import Optional
@@ -22,6 +23,11 @@ from src.services.new_database_manager import NewDatabaseManager
 def render_collection_tab():
     """Render the collection tab in Streamlit"""
     st.header("📥 Collection Manager")
+
+    # Unique key base per session to avoid DuplicateWidgetID when this tab is rendered
+    if 'collection_tab_key_base' not in st.session_state:
+        st.session_state.collection_tab_key_base = uuid.uuid4().hex
+    key_base = st.session_state.collection_tab_key_base
 
     # Initialize service
     if "collection_service" not in st.session_state:
@@ -58,8 +64,8 @@ def render_collection_tab():
     col1, col2 = st.columns([2, 1])
 
     with col1:
-        # Deterministic unique key for selectbox
-        unique_key = "collection_tab_select_platform"
+        # Deterministic, session-namespaced key for selectbox
+        unique_key = f"{key_base}_collection_tab_select_platform"
         platform = st.selectbox(
             "Select Platform",
             options=["threads", "twitter", "reddit"],
@@ -75,8 +81,8 @@ def render_collection_tab():
         st.write("")  # Spacing
         st.write("")  # Spacing
         # Unique key for checkbox to avoid DuplicateWidgetID
-        # Deterministic unique key for checkbox
-        collect_all = st.checkbox("Collect All", value=False, key="collection_tab_collect_all")
+        # Deterministic, session-namespaced key for checkbox
+        collect_all = st.checkbox("Collect All", value=False, key=f"{key_base}_collection_tab_collect_all")
 
     # Collection button
     if service.is_collecting():
