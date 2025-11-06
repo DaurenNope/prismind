@@ -6,6 +6,7 @@ Provides unified collection interface with real-time progress
 
 import asyncio
 import os
+import uuid
 import streamlit as st
 from datetime import datetime, timedelta
 from typing import Optional
@@ -80,10 +81,8 @@ def render_collection_tab():
         st.write("")  # Spacing
         st.write("")  # Spacing
         # Unique key for checkbox to avoid DuplicateWidgetID
-        if 'collection_checkbox_counter' not in st.session_state:
-            st.session_state.collection_checkbox_counter = 0
-        st.session_state.collection_checkbox_counter += 1
-        cb_key = f"collect_all_checkbox_{key_suffix}_{st.session_state.collection_checkbox_counter}"
+        # Use a UUID to ensure uniqueness across multiple renders/containers
+        cb_key = f"collect_all_checkbox_{key_suffix}_{uuid.uuid4().hex}"
         collect_all = st.checkbox("Collect All", value=False, key=cb_key)
 
     # Collection button
