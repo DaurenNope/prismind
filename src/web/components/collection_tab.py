@@ -58,9 +58,13 @@ def render_collection_tab():
     col1, col2 = st.columns([2, 1])
 
     with col1:
-        # Ensure unique key across app by namespacing with UI mode
+        # Ensure unique key across app by namespacing with UI mode and a counter
         new_ui = os.getenv("NEW_UI", "true").lower() in ("true", "1", "yes")
         key_suffix = "inbox" if new_ui else "legacy"
+        if 'collection_select_counter' not in st.session_state:
+            st.session_state.collection_select_counter = 0
+        st.session_state.collection_select_counter += 1
+        unique_key = f"collection_platform_select_{key_suffix}_{st.session_state.collection_select_counter}"
         platform = st.selectbox(
             "Select Platform",
             options=["threads", "twitter", "reddit"],
@@ -69,7 +73,7 @@ def render_collection_tab():
                 "twitter": "🐦 Twitter",
                 "reddit": "📱 Reddit",
             }.get(x, x),
-            key=f"collection_platform_select_{key_suffix}",
+            key=unique_key,
         )
 
     with col2:
