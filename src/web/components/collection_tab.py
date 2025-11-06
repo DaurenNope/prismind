@@ -5,6 +5,7 @@ Provides unified collection interface with real-time progress
 """
 
 import asyncio
+import os
 import streamlit as st
 from datetime import datetime, timedelta
 from typing import Optional
@@ -57,6 +58,9 @@ def render_collection_tab():
     col1, col2 = st.columns([2, 1])
 
     with col1:
+        # Ensure unique key across app by namespacing with UI mode
+        new_ui = os.getenv("NEW_UI", "true").lower() in ("true", "1", "yes")
+        key_suffix = "inbox" if new_ui else "legacy"
         platform = st.selectbox(
             "Select Platform",
             options=["threads", "twitter", "reddit"],
@@ -65,7 +69,7 @@ def render_collection_tab():
                 "twitter": "🐦 Twitter",
                 "reddit": "📱 Reddit",
             }.get(x, x),
-            key="collection_platform_select",
+            key=f"collection_platform_select_{key_suffix}",
         )
 
     with col2:
