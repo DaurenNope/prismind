@@ -65,6 +65,7 @@ def render_collection_tab():
                 "twitter": "🐦 Twitter",
                 "reddit": "📱 Reddit",
             }.get(x, x),
+            key="collection_platform_select",
         )
 
     with col2:
