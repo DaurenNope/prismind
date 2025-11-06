@@ -17,7 +17,8 @@ def render_publishing_page():
     render_status_bar()
 
     # Feature flag to enable new UI layout
-    new_ui = os.getenv("NEW_UI", "false").lower() in ("true", "1", "yes")
+    # Default NEW_UI on; can disable via NEW_UI=false
+    new_ui = os.getenv("NEW_UI", "true").lower() in ("true", "1", "yes")
 
     if new_ui:
         # New IA: Inbox (Collection) is first; Triage prominent
