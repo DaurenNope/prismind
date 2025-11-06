@@ -242,19 +242,16 @@ class SupabaseManager:
             # ONLY SEND FIELDS THAT EXIST IN SUPABASE SCHEMA
             # Based on your exact schema definition
             supabase_schema_fields = {
-                'post_id', 'title', 'content', 'url', 'platform', 'author', 'author_handle',
-                'created_at', 'ai_summary', 'folder_category', 'category', 'subcategory', 'topic', 
-                'content_type', 'post_type', 'media_urls', 'hashtags', 'mentions', 'is_saved',
-                'analyzed_at', 'sentiment', 'key_concepts', 'tags', 'analysis_model', 'value_score',
-                'smart_tags', 'is_deleted', 'updated_at', 'is_rewrite_candidate', 'content_quality_score',
-                'embedding', 'embedding_model', 'language', 'collected_at'
+                'post_id','title','content','url','platform','author','author_handle',
+                'created_at','ai_summary','topic','content_type','post_type','media_urls',
+                'hashtags','mentions','is_saved','analyzed_at','sentiment','key_concepts',
+                'tags','analysis_model','value_score','quality_score','embedding',
+                'embedding_model','language'
             }
             
-            # First apply field mappings (e.g., quality_score -> content_quality_score)
+            # First apply field mappings (currently identity; schema uses quality_score)
             mapped_data = {}
-            field_mappings = {
-                'quality_score': 'content_quality_score',  # Map to schema field name
-            }
+            field_mappings = {}
             
             for key, value in post_data.items():
                 if value is not None:
@@ -282,6 +279,10 @@ class SupabaseManager:
                         )
                     else:
                         clean_data[key] = value
+
+            # Final guard: strip deprecated/removed columns
+            if 'content_quality_score' in clean_data:
+                clean_data.pop('content_quality_score', None)
 
             # Debug logging for schema filtering
             original_count = len(post_data)
@@ -678,25 +679,8 @@ class SupabaseManager:
                     )
                 )
 
-            # Get category suggestions
-            category_response = (
-                self.client.table(self.table_name)
-                .select("category")
-                .ilike("category", f"%{partial_query}%")
-                .limit(limit)
-                .execute()
-            )
-
-            if category_response.data:
-                suggestions["categories"] = list(
-                    set(
-                        [
-                            item["category"]
-                            for item in category_response.data
-                            if item["category"]
-                        ]
-                    )
-                )
+            # Category column dropped; skip category suggestions
+            suggestions["categories"] = []
 
             # Get platform suggestions
             platform_response = (
@@ -737,21 +721,8 @@ class SupabaseManager:
         Returns:
             List of post dictionaries in the specified category
         """
-        try:
-            response = (
-                self.client.table(self.table_name)
-                .select("*")
-                .eq("category", category)
-                .limit(limit)
-                .order("created_at", desc=True)
-                .execute()
-            )
-
-            return response.data if response.data else []
-
-        except Exception as e:
-            logger.error(f"Error getting posts by category: {e}")
-            return []
+        # Category column dropped; keep method for compatibility returning empty
+        return []
 
     def get_top_posts(self, limit: int = 10) -> List[Dict[str, Any]]:
         """

@@ -50,26 +50,55 @@ class ThreadsExtractor(SocialExtractorBase):
             self.pw = await async_playwright().start()
             self.browser = await self.pw.chromium.launch(headless=True)
             
-            # Use storage_state to load cookies - this is the key!
-            self.context = await self.browser.new_context(
-                storage_state=cookies_path,
-                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
-            )
+            # Prefer detecting storage_state format; otherwise manually add cookies
+            try:
+                with open(cookies_path, 'r') as _f:
+                    _data = json.load(_f)
+                is_storage_state = isinstance(_data, dict) and ("cookies" in _data or "origins" in _data)
+            except Exception:
+                is_storage_state = False
+            
+            if is_storage_state:
+                # Load as storage_state
+                self.context = await self.browser.new_context(
+                    storage_state=cookies_path,
+                    user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+                )
+            else:
+                # Create context and load cookies manually (JSON jar or raw string)
+                self.context = await self.browser.new_context(
+                    user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+                )
+                try:
+                    self._load_json_cookies(self.context, cookies_path)
+                except Exception:
+                    # Fall back to raw cookies format
+                    self._load_raw_cookies(self.context, cookies_path)
+            
             self.page = await self.context.new_page()
             
-            # Go directly to saved posts
+            # Go directly to saved posts – try threads.net first, then fallback to threads.com
             logging.info("Navigating to saved posts with cookies...")
-            await self.page.goto("https://www.threads.com/saved", wait_until='domcontentloaded', timeout=20000)
-            await asyncio.sleep(3)
-            
-            # Simple check: are we on login page?
-            current_url = self.page.url
-            if 'login' in current_url:
-                logging.info("Cookie auth failed - redirected to login")
+            saved_urls = [
+                "https://www.threads.net/saved",
+                "https://www.threads.com/saved",
+            ]
+            auth_ok = False
+            for saved_url in saved_urls:
+                try:
+                    await self.page.goto(saved_url, wait_until='domcontentloaded', timeout=20000)
+                    await asyncio.sleep(3)
+                    current_url = self.page.url
+                    if 'login' not in current_url:
+                        logging.info(f"✅ Cookie authentication successful! URL: {current_url}")
+                        auth_ok = True
+                        break
+                except Exception as nav_err:
+                    logging.info(f"Saved URL failed {saved_url}: {nav_err}")
+            if not auth_ok:
+                logging.info("Cookie auth failed to land on saved page; will require login.")
                 return False
             
-            # Success! We're on the saved page
-            logging.info(f"✅ Cookie authentication successful! URL: {current_url}")
             return True
             
         except Exception as e:
@@ -494,13 +523,7 @@ class ThreadsExtractor(SocialExtractorBase):
             except Exception as _save_err:
                 logging.debug(f"Could not save Threads cookies: {_save_err}")
 
-            # Close the authentication browser before scraping
-            if hasattr(self, 'browser') and self.browser:
-                await self.browser.close()
-            if hasattr(self, 'pw') and self.pw:
-                await self.pw.stop()
-            
-            # Scrape the posts
+            # Scrape the posts using a fresh lightweight context; keep auth session open
             return await self.scrape_posts_from_urls_async(urls_to_scrape)
 
         except Exception as e:
@@ -519,7 +542,20 @@ class ThreadsExtractor(SocialExtractorBase):
         posts = []
         async with async_playwright() as pw:
             browser = await pw.chromium.launch()
-            context = await browser.new_context(viewport={"width": 1920, "height": 1080})
+            # Reuse storage state if available for more consistent rendering
+            context_kwargs = {
+                "viewport": {"width": 1920, "height": 1080},
+                "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+                "locale": "en-US",
+            }
+            try:
+                if hasattr(self, "context") and self.context:
+                    state = await self.context.storage_state()
+                    context = await browser.new_context(storage_state=state, **context_kwargs)
+                else:
+                    context = await browser.new_context(**context_kwargs)
+            except Exception:
+                context = await browser.new_context(**context_kwargs)
             page = await context.new_page()
 
             for url in urls:
@@ -634,105 +670,465 @@ class ThreadsExtractor(SocialExtractorBase):
             },
         )
 
-    async def _scrape_thread_data_async(self, url: str, page) -> Optional[SocialPost]:
+    async def _scrape_thread_data_async(self, url: str, page, force_dom: bool = False) -> Optional[SocialPost]:
         """
         Async version of _scrape_thread_data for use within async context.
         """
         try:
-            # Extract post code from URL for ID
-            post_code = url.strip('/').split('/')[-1]
+            def _sanitize_threads_content(raw: str) -> str:
+                """Reduce Threads content to the original post text.
+                - Remove 'Translate' duplicates
+                - Drop likely comments/replies and noisy lines (usernames-only, short interjections)
+                - Remove UI artifacts (pagination like 1/3, username/time blocks like 'yeraly.ndr', 'AI Threads', '1d')
+                - De-duplicate repeated sentences
+                - Collapse whitespace and limit to first 800 chars
+                """
+                if not raw:
+                    return raw
+                import re
+                text = raw
+                # Remove repeated 'Translate' sections and duplicated sentences around it
+                text = re.sub(r"\bTranslate\b", "", text)
+                # Remove pagination markers like "1 / 3" or "1/3"
+                text = re.sub(r"\b\d+\s*/\s*\d+\b", " ", text)
+                # Remove short time markers like "1d", "2h"
+                text = re.sub(r"\b\d+\s*[dhm]\b", " ", text, flags=re.I)
+                # Split into lines/segments, filter
+                segs = re.split(r"[\n\r]+|\s{2,}", text)
+                cleaned = []
+                seen = set()
+                for s in segs:
+                    t = s.strip()
+                    if not t:
+                        continue
+                    # Drop short noise, pure usernames, or domain-only embeds
+                    if len(t) < 6:
+                        continue
+                    if re.fullmatch(r"@\w+", t):
+                        continue
+                    # Drop likely username/display-name blocks without @ and with dots/underscores
+                    if re.fullmatch(r"[A-Za-z0-9._-]{3,32}", t):
+                        continue
+                    # Drop section labels
+                    if t.lower() in ("ai threads", "threads", "original", "more"):
+                        continue
+                    if re.fullmatch(r"[\w.-]+\.(com|net|org|io|ai)(/.*)?", t, re.I):
+                        continue
+                    # Drop obvious comment markers
+                    if t.startswith("=== ") or t.lower().startswith("top valuable comments"):
+                        break
+                    # De-duplicate segments
+                    if t in seen:
+                        continue
+                    seen.add(t)
+                    cleaned.append(t)
+                # Heuristic: keep only the first 2-3 sentences of the main post
+                main = " ".join(cleaned)
+                # Sentence-level de-duplication
+                sentences = re.split(r"(?<=[\.!?…])\s+", main)
+                uniq_sent = []
+                seen_sent = set()
+                for sent in sentences:
+                    s = sent.strip()
+                    if not s:
+                        continue
+                    key = re.sub(r"\s+", " ", s.lower())
+                    if key in seen_sent:
+                        continue
+                    seen_sent.add(key)
+                    uniq_sent.append(s)
+                main = " ".join(uniq_sent)
+                # Aggressive comment detection: stop at ANY comment/reply indicator
+                comment_patterns = [
+                    r'(?i)(comments?:|replies?:|top valuable)',
+                    r'💬',
+                    r'^\s*@\w+\s*:',
+                    r'(?i)^(reply|comment)\s*:',
+                    r'^\d+\s*(comment|reply|replies)',
+                    r'Show all comments',
+                    r'View \d+ replies',
+                    r'Reply to',
+                    r'Replying to'
+                ]
+                import re
+                earliest_comment = len(main)
+                for pattern in comment_patterns:
+                    match = re.search(pattern, main, re.IGNORECASE | re.MULTILINE)
+                    if match:
+                        earliest_comment = min(earliest_comment, match.start())
+                
+                # Cut off at comment markers (keep at least 100 chars before comment)
+                if earliest_comment < len(main) and earliest_comment > 100:
+                    main = main[:earliest_comment].strip()
+                
+                # Also check for simple text markers
+                cut_markers = [
+                    "💬", "Comments:", "TOP VALUABLE COMMENTS", "Score:", "Reply:", "Replies:",
+                    "Show all", "View replies", "Replying to"
+                ]
+                for m in cut_markers:
+                    idx = main.find(m)
+                    if idx > 100:  # Keep at least 100 chars before marker
+                        main = main[:idx]
+                        break
+                # Strip leading username prefix like "handle " or "handle:"
+                main = re.sub(r'^([A-Za-z0-9._-]{2,32})\s*[:•\-–—]\s+', '', main)
+                # If it still starts with a lone username token, drop it
+                main = re.sub(r'^[A-Za-z0-9._-]{2,32}\s+', '', main)
+                # Normalize spaces
+                main = re.sub(r"\s+", " ", main).strip()
+                return main[:4000]  # Increased from 800 to 4000
+            # Extract post code from URL for ID and normalize /media suffix
+            parts = url.strip('/').split('/')
+            post_code = parts[-1]
+            if post_code == 'media' and len(parts) >= 2:
+                post_code = parts[-2]
+                # Canonicalize URL without /media
+                url = '/'.join(parts[:-1])
             
             logging.info(f"Scraping Threads post: {post_code}")
             
             # Navigate to the post
-            await page.goto(url, timeout=30000)
-            await page.wait_for_timeout(3000)  # Wait for content to load
+            await page.goto(url, wait_until='domcontentloaded', timeout=40000)
+            try:
+                # Wait for article/main to appear (robust wait)
+                await page.wait_for_selector('article, [role="article"], div[role="main"]', timeout=8000)
+            except Exception:
+                await page.wait_for_timeout(2000)
             
-            # BEST METHOD: Extract from meta tags (most reliable!)
+            # Note: Threads doesn't use "See more" buttons like Twitter/X - posts are fully displayed by default
+            
+            # BEST METHOD: Extract from JSON-LD (most reliable and complete!)
             content = ""
             author = "Unknown Author"
             author_handle = "unknown"
             
-            # Try to get content from meta description (most reliable)
+            # CRITICAL: Extract author from URL FIRST as baseline (before any extraction)
+            # This ensures we always have a fallback even if DOM selectors fail
             try:
-                meta_desc = await page.query_selector('meta[name="description"]')
-                if meta_desc:
-                    content = await meta_desc.get_attribute('content')
-                    if content:
-                        content = content.strip()
-                        logging.info(f"✅ Extracted content from meta tag: {content[:50]}...")
+                # URL format: https://www.threads.net/@username/post/code
+                url_parts = url.split('/@')
+                if len(url_parts) > 1:
+                    user_and_rest = url_parts[1]
+                    username = user_and_rest.split('/')[0]
+                    if username:
+                        author_handle = username  # Set as baseline
+                        author = username  # Set as baseline
+                        logging.debug(f"Set author baseline from URL: @{author_handle}")
             except Exception as e:
-                logging.debug(f"Meta description extraction failed: {e}")
+                logging.debug(f"URL-based author extraction (baseline) failed: {e}")
             
-            # Fallback: try og:description
-            if not content or len(content) < 10:
-                try:
-                    og_desc = await page.query_selector('meta[property="og:description"]')
-                    if og_desc:
-                        content = await og_desc.get_attribute('content')
-                        if content:
-                            content = content.strip()
-                            logging.info(f"✅ Extracted content from og:description: {content[:50]}...")
-                except Exception as e:
-                    logging.debug(f"OG description extraction failed: {e}")
+            # Priority 1: Try JSON-LD structured data
+            try:
+                json_ld_scripts = await page.query_selector_all('script[type="application/ld+json"]')
+                for script in json_ld_scripts:
+                    try:
+                        script_content = await script.inner_text()
+                        if script_content:
+                            import json
+                            data = json.loads(script_content)
+                            # Look for articleBody or text
+                            if isinstance(data, dict):
+                                article_body = data.get('articleBody') or data.get('text') or ''
+                                if article_body and len(article_body) > 20:
+                                    content = article_body.strip()
+                                    # Also try to get author from JSON-LD (only if better than baseline)
+                                    author_data = data.get('author', {})
+                                    if isinstance(author_data, dict):
+                                        author_name = author_data.get('name') or author_data.get('alternateName') or ''
+                                        # Only update if we found a valid author name (not generic)
+                                        if author_name and author_name not in ("Thread", "Unknown Author", "Unknown"):
+                                            author = author_name
+                                    # Try to extract handle from URL in JSON-LD
+                                    json_url = data.get('url', '')
+                                    if json_url and '/@' in json_url:
+                                        url_parts = json_url.split('/@')
+                                        if len(url_parts) > 1:
+                                            handle_from_json = url_parts[1].split('/')[0]
+                                            # Only update if we got a valid handle (not generic)
+                                            if handle_from_json and handle_from_json not in ("Thread", "unknown"):
+                                                author_handle = handle_from_json
+                                    if content:
+                                        logging.info(f"✅ Extracted content from JSON-LD: {content[:50]}...")
+                                        break
+                            elif isinstance(data, list):
+                                # Sometimes JSON-LD is an array
+                                for item in data:
+                                    if isinstance(item, dict):
+                                        article_body = item.get('articleBody') or item.get('text') or ''
+                                        if article_body and len(article_body) > 20:
+                                            content = article_body.strip()
+                                            author_data = item.get('author', {})
+                                            if isinstance(author_data, dict):
+                                                author_name = author_data.get('name') or author_data.get('alternateName') or ''
+                                                if author_name:
+                                                    author = author_name
+                                            if content:
+                                                logging.info(f"✅ Extracted content from JSON-LD (array): {content[:50]}...")
+                                                break
+                                if content:
+                                    break
+                    except Exception as e:
+                        logging.debug(f"JSON-LD parsing failed: {e}")
+                        continue
+            except Exception as e:
+                logging.debug(f"JSON-LD extraction failed: {e}")
+            
+            # Priority 2: Try meta description (fallback) — skip entirely if force_dom
+            if not force_dom:
+                if not content or len(content) < 20:
+                    try:
+                        meta_desc = await page.query_selector('meta[name="description"]')
+                        if meta_desc:
+                            meta_content = await meta_desc.get_attribute('content')
+                            if meta_content:
+                                content = meta_content.strip()
+                                logging.info(f"✅ Extracted content from meta tag: {content[:50]}...")
+                    except Exception as e:
+                        logging.debug(f"Meta description extraction failed: {e}")
+                if not content or len(content) < 20:
+                    try:
+                        og_desc = await page.query_selector('meta[property="og:description"]')
+                        if og_desc:
+                            og_content = await og_desc.get_attribute('content')
+                            if og_content:
+                                content = og_content.strip()
+                                logging.info(f"✅ Extracted content from og:description: {content[:50]}...")
+                    except Exception as e:
+                        logging.debug(f"OG description extraction failed: {e}")
             created_at = datetime.now(timezone.utc)
             engagement = {}
             media_urls = []
             hashtags = []
             mentions = []
             
-            # DOM extraction fallback (only if meta tags failed or are too short)
-            # Use meta tag content length as reference - if DOM gives more, prefer it
-            meta_content_length = len(content) if content else 0
-            
-            # Try different selectors for post content
-            content_selectors = [
-                '[data-pressable-container="true"] span',
-                'article span',
-                '[role="article"] span',
-                'div[dir="auto"] span',
-                'span[dir="auto"]',
-                'div[style*="text"] span'
-            ]
-            
-            # Collect ALL text elements, not just first 3
-            all_texts = []
-            for selector in content_selectors:
-                try:
-                    elements = await page.query_selector_all(selector)
-                    if elements:
-                        # Get text from all matching elements
-                        texts = []
-                        seen_texts = set()  # Avoid duplicates
-                        for elem in elements:
-                            text = await elem.inner_text()
-                            text = text.strip()
-                            # Only meaningful text (length > 10) and not already seen
-                            if text and len(text) > 10 and text not in seen_texts:
-                                texts.append(text)
-                                seen_texts.add(text)
-                        
-                        if texts:
-                            # Use ALL texts, not just first 3
-                            combined_text = " ".join(texts)
-                            # Filter out spam patterns (repeated usernames, etc.)
-                            # Split by common separators and filter short/spam-like segments
-                            import re
-                            # Remove very short segments that might be UI elements
-                            segments = re.split(r'\s{2,}|\n', combined_text)
-                            filtered_segments = [s.strip() for s in segments if len(s.strip()) > 20 and not re.match(r'^@\w+\s*$', s.strip())]
-                            filtered_content = " ".join(filtered_segments)
-                            
-                            # Use DOM content if it's longer than meta tag content
-                            if len(filtered_content) > meta_content_length:
-                                content = filtered_content
-                                logging.info(f"✅ Extracted full content from DOM ({len(filtered_content)} chars)")
+            # Guarded DOM fallback: only when JSON-LD/meta is missing/too short/truncated, or forced
+            enable_dom_fallback = bool(force_dom)
+            try:
+                # If content is missing or very short, enable DOM fallback
+                content_short = (not content) or (len(content) < 200)
+                # Aggressive truncation detection: check for ellipsis anywhere
+                content_truncated = False
+                if content:
+                    # Check for truncation markers: ellipsis at end, in middle, or common patterns
+                    content_truncated = (
+                        content.rstrip().endswith(('...', '…', '... and', '...и', '...и т.д.')) or
+                        ("..." in content) or
+                        ("…" in content) or
+                        (content.endswith('...') and len(content) < 300)  # Short content ending with ...
+                    )
+                else:
+                    content_truncated = True
+                # Enable if content is missing, too short, or clearly truncated
+                if force_dom or content_short or content_truncated:
+                    enable_dom_fallback = True
+                    logging.info(f"DOM fallback enabled: short={content_short}, truncated={content_truncated}, content_len={len(content) if content else 0}")
+            except Exception:
+                enable_dom_fallback = True
+            if enable_dom_fallback:
+                # Use meta tag content length as reference - if DOM gives more, prefer it
+                meta_content_length = len(content) if content else 0
+                # CRITICAL: Only extract from the FIRST article/post container, not replies
+                article_selectors = [
+                    'article:first-of-type',
+                    '[role="article"]:first-of-type',
+                    'div[data-pressable-container="true"]:first-of-type',
+                    'article',
+                    '[role="article"]'
+                ]
+                
+                main_article = None
+                for selector in article_selectors:
+                    try:
+                        # Get ONLY the first article element
+                        article = await page.query_selector(selector)
+                        if article:
+                            # Check if this is likely the main post (not a reply)
+                            # Replies usually have nested structure or different attributes
+                            article_text = await article.inner_text()
+                            if article_text and len(article_text.strip()) > 50:
+                                main_article = article
+                                logging.info(f"✅ Found main article with selector: {selector}")
                                 break
-                except Exception as e:
-                    logging.debug(f"Selector {selector} failed: {e}")
-                    continue
+                    except Exception as e:
+                        logging.debug(f"Article selector {selector} failed: {e}")
+                        continue
+                
+                if main_article:
+                    try:
+                        # First, extract the main post author handle for thread detection
+                        main_author_handle = author_handle or "unknown"
+                        
+                        # Extract text from main article and collect thread parts
+                        text_selectors = [
+                            '[dir="auto"]',
+                'span[dir="auto"]',
+                            'div[dir="auto"]'
+                        ]
+                        
+                        thread_parts = []  # Collect all parts of the thread
+                        seen_texts = set()
+                        import re
+                        
+                        # Extract main article content
+                        for text_selector in text_selectors:
+                            try:
+                                elements = await main_article.query_selector_all(text_selector)
+                                if not elements:
+                                    continue
+                                
+                                main_texts = []
+                                for elem in elements:
+                                    text = await elem.inner_text()
+                                    text = text.strip()
+                                    if (text and len(text) > 20
+                                        and text not in seen_texts
+                                        and not text.startswith('@')
+                                        and 'Translate' not in text
+                                        and not text.lower().startswith(('comments:', 'top valuable', 'replies:', 'reply:'))):
+                                        main_texts.append(text)
+                                        seen_texts.add(text)
+                        
+                                if main_texts:
+                                    thread_parts.append(" ".join(main_texts))
+                                break
+                            except Exception as e:
+                                logging.debug(f"Text selector {text_selector} failed: {e}")
+                                continue
+                        # Now look for thread continuation: articles from same author with pagination
+                        # Look for subsequent articles that might be thread parts
+                        all_articles = await page.query_selector_all('article, [role="article"]')
+                        
+                        for article in all_articles[1:]:  # Skip first (already processed)
+                            try:
+                                # Check if this article is from the same author
+                                article_author_elem = await article.query_selector('a[href*="@"] span, a[role="link"] span')
+                                if article_author_elem:
+                                    article_author_text = await article_author_elem.inner_text()
+                                    article_author_text = article_author_text.strip()
+                                    
+                                    # Extract handle from href or text
+                                    article_author_handle = None
+                                    try:
+                                        author_link = await article.query_selector('a[href*="@"]')
+                                        if author_link:
+                                            href = await author_link.get_attribute('href')
+                                            if href and '/@' in href:
+                                                article_author_handle = href.split('/@')[1].split('/')[0]
+                                    except:
+                                        pass
+                                    
+                                    # If we can't get handle from href, try to extract from text
+                                    if not article_author_handle and article_author_text:
+                                        if article_author_text.startswith('@'):
+                                            article_author_handle = article_author_text[1:]
+                                        elif article_author_text == main_author_handle:
+                                            article_author_handle = main_author_handle
+                                    
+                                    # Check if this is from the same author
+                                    if article_author_handle and article_author_handle == main_author_handle:
+                                        # Extract text from this article
+                                        article_texts = []
+                                        for text_selector in text_selectors:
+                                            try:
+                                                elements = await article.query_selector_all(text_selector)
+                                                if not elements:
+                                                    continue
+                                                for elem in elements:
+                                                    text = await elem.inner_text()
+                                                    text = text.strip()
+                                                    if (text and len(text) > 20 
+                                                        and text not in seen_texts
+                                                        and not text.startswith('@')
+                                                        and 'Translate' not in text):
+                                                        article_texts.append(text)
+                                                        seen_texts.add(text)
+                                                if article_texts:
+                                                    break
+                                            except:
+                                                continue
+                                        
+                                        if article_texts:
+                                            article_content = " ".join(article_texts)
+                                            # Check for pagination markers (1/5, 1/4, 1/3, etc.)
+                                            pagination_pattern = r'\b\d+\s*/\s*\d+\b'
+                                            has_pagination = bool(re.search(pagination_pattern, article_content))
+                                            
+                                            # If it has pagination, it's likely a thread part
+                                            if has_pagination:
+                                                thread_parts.append(article_content)
+                                                logging.info(f"✅ Found thread part {len(thread_parts)} from same author with pagination")
+                                            else:
+                                                # Stop at first non-pagination reply (might be comment)
+                                                break
+                                    else:
+                                        # Different author - stop here (this is a comment/reply)
+                                        break
+                                else:
+                                    # No author found - stop here
+                                    break
+                            except Exception as e:
+                                logging.debug(f"Thread part extraction failed: {e}")
+                                break
+                        
+                        if thread_parts:
+                            combined_text = " ".join(thread_parts)
+                            
+                            # Remove pagination markers from final content (they're just UI indicators)
+                            combined_text = re.sub(r'\b\d+\s*/\s*\d+\b', '', combined_text)
+                            
+                            # Aggressive comment detection: stop at ANY comment/reply from different author
+                            comment_patterns = [
+                                r'(?i)(comments?:|replies?:|top valuable)',
+                                r'💬',
+                                r'(?i)^(reply|comment)\s*:',
+                                r'^\d+\s*(comment|reply|replies)'
+                            ]
+                            
+                            # Find the earliest comment marker
+                            earliest_comment = len(combined_text)
+                            for pattern in comment_patterns:
+                                match = re.search(pattern, combined_text)
+                                if match:
+                                    earliest_comment = min(earliest_comment, match.start())
+                            
+                            # Cut off at comment markers (keep at least 100 chars before comment)
+                            if earliest_comment < len(combined_text) and earliest_comment > 100:
+                                combined_text = combined_text[:earliest_comment].strip()
+                            
+                            # Final sanitization: remove leading username prefixes
+                            combined_text = re.sub(r'^([A-Za-z0-9._-]{2,32})\s*[:•\-–—]\s+', '', combined_text)
+                            combined_text = re.sub(r'^[A-Za-z0-9._-]{2,32}\s+', '', combined_text)
+                            
+                            # Use if longer than meta content
+                            if len(combined_text) > meta_content_length:
+                                content = combined_text
+                                logging.info(f"✅ Extracted full thread content ({len(thread_parts)} parts, {len(combined_text)} chars)")
+                    except Exception as e:
+                        logging.debug(f"Main article extraction failed: {e}")
+                # If still no content, do a broad body innerText fallback
+                if (not content or len(content) < max(60, meta_content_length)):
+                    try:
+                        page_text = await page.evaluate('(sel) => document.body && document.body.innerText || ""', 'body')
+                        if page_text and len(page_text.strip()) > meta_content_length:
+                            content = page_text.strip()
+                            logging.info("✅ Fallback: extracted content from document.body.innerText")
+                    except Exception as e:
+                        logging.debug(f"Body innerText fallback failed: {e}")
+                # Retry once with a short re-navigation if content is still empty
+                if not content or len(content) < 60:
+                    try:
+                        await page.goto(url, wait_until='networkidle', timeout=40000)
+                        await page.wait_for_selector('article, [role="article"], div[role="main"]', timeout=6000)
+                        # Try body text again
+                        page_text = await page.evaluate('(sel) => document.body && document.body.innerText || ""', 'body')
+                        if page_text and len(page_text.strip()) > 0:
+                            content = page_text.strip()
+                            logging.info("✅ Retry fallback: extracted content after networkidle reload")
+                    except Exception:
+                        pass
             
-            # Try to extract author information
+            # Try to extract author information (only if better than URL baseline)
             author_selectors = [
                 'a[role="link"] span',
                 'h2 span',
@@ -746,14 +1142,17 @@ class ThreadsExtractor(SocialExtractorBase):
                     if elem:
                         author_text = await elem.inner_text()
                         author_text = author_text.strip()
-                        if author_text and not author_text.startswith('@') and len(author_text) < 50:
+                        # Only update if we found a valid author (not generic) and better than baseline
+                        if (author_text and not author_text.startswith('@') 
+                            and len(author_text) < 50
+                            and author_text not in ("Thread", "Unknown Author", "Unknown")):
                             author = author_text
                             break
                 except Exception as e:
                     logging.debug(f"Author selector {selector} failed: {e}")
                     continue
             
-            # Try to extract author handle
+            # Try to extract author handle (only if better than URL baseline)
             handle_selectors = [
                 'a[href*="@"] span',
                 'span:has-text("@")',
@@ -767,11 +1166,81 @@ class ThreadsExtractor(SocialExtractorBase):
                         handle_text = await elem.inner_text()
                         handle_text = handle_text.strip()
                         if handle_text.startswith('@'):
-                            author_handle = handle_text[1:]  # Remove @
+                            handle_value = handle_text[1:]  # Remove @
+                            # Only update if we got a valid handle (not generic)
+                            if handle_value and handle_value not in ("Thread", "unknown", "Unknown"):
+                                author_handle = handle_value
                             break
                 except Exception as e:
                     logging.debug(f"Handle selector {selector} failed: {e}")
                     continue
+            
+            # Final fallback: ALWAYS extract author/handle from URL if DOM selectors failed or returned generic values
+            # This ensures we never end up with "Thread" or "unknown" as the author
+            try:
+                # URL format: https://www.threads.net/@username/post/code
+                url_parts = url.split('/@')
+                if len(url_parts) > 1:
+                    user_and_rest = url_parts[1]
+                    username = user_and_rest.split('/')[0]
+                    if username:
+                        # Always override if we have generic values or if current values are generic
+                        # Also override if author_handle is empty or just whitespace
+                        if (not author_handle or 
+                            not author_handle.strip() or
+                            author_handle.lower() in ("unknown", "thread", "unknown author") or
+                            author_handle == "Thread"):
+                            author_handle = username
+                            logging.info(f"✅ Extracted author_handle from URL: @{author_handle}")
+                        
+                        if (not author or 
+                            not author.strip() or
+                            author.lower() in ("unknown author", "thread", "unknown") or
+                            author == "Thread"):
+                            author = username
+                            logging.info(f"✅ Extracted author from URL: {author}")
+            except Exception as e:
+                logging.debug(f"Final URL-based author extraction failed: {e}")
+            
+            # Auto-refresh if content looks truncated (only if we haven't already done force_dom)
+            # Check BEFORE final sanitization so we can refresh if needed
+            if not force_dom and content:
+                c = content.strip()
+                looks_truncated = (
+                    c.endswith("...") or c.endswith("…") or 
+                    ("..." in c) or ("…" in c) or
+                    (len(c) < 200) or
+                    (c.endswith("...") and len(c) < 300)
+                )
+                if looks_truncated:
+                    logging.info(f"🔄 Content looks truncated ({len(c)} chars), attempting DOM-only refresh...")
+                    try:
+                        # Check if page is still open
+                        try:
+                            _ = page.url
+                        except Exception:
+                            logging.debug("Page is closed, cannot auto-refresh")
+                        else:
+                            # Re-scrape with force_dom=True to get full content
+                            # We're already on the right page, so we can just re-extract
+                            refreshed = await self._scrape_thread_data_async(url, page, force_dom=True)
+                            if refreshed and getattr(refreshed, 'content', None):
+                                refreshed_content = (refreshed.content or '').strip()
+                                # Prefer refreshed if it's longer OR removes ellipses compared to original
+                                longer = len(refreshed_content) > len(c)
+                                fewer_ellipses = ("..." in c or "…" in c) and ("..." not in refreshed_content and "…" not in refreshed_content)
+                                if longer or fewer_ellipses:
+                                    content = refreshed_content[:4000]
+                                    # Also update author/handle if refreshed has better values
+                                    if getattr(refreshed, 'author', None) and refreshed.author not in ("Unknown Author", "Thread"):
+                                        author = refreshed.author
+                                    if getattr(refreshed, 'author_handle', None) and refreshed.author_handle not in ("unknown", "Thread"):
+                                        author_handle = refreshed.author_handle
+                                    logging.info(f"✅ Auto-refreshed truncated content: {len(c)} -> {len(content)} chars")
+                                else:
+                                    logging.debug(f"DOM refresh didn't improve content enough (old={len(c)}, new={len(refreshed_content)})")
+                    except Exception as refresh_err:
+                        logging.debug(f"Auto-refresh failed: {refresh_err}")
             
             # Try to extract engagement metrics
             try:
@@ -803,6 +1272,9 @@ class ThreadsExtractor(SocialExtractorBase):
             if not content or len(content) < 10:
                 content = f"Threads post {post_code} - Content extraction in progress"
                 logging.warning(f"Could not extract meaningful content from {url}")
+            
+            # Final content sanitization to avoid replies/translations/noise
+            content = _sanitize_threads_content(content)
             
             # Create the SocialPost object
             post = SocialPost(

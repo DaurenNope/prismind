@@ -55,8 +55,13 @@ async def collect_twitter_bookmarks(
 
         twitter_username = os.getenv("TWITTER_USERNAME")
         twitter_password = os.getenv("TWITTER_PASSWORD")
-        # Support both env names; prefer TWITTER_COOKIE_FILE
-        cookie_path_env = os.getenv("TWITTER_COOKIE_FILE") or os.getenv("TWITTER_COOKIES_FILE")
+        # Support multiple env names; prefer TWITTER_COOKIE_FILE
+        # Fallbacks: TWITTER_COOKIES_FILE, TWITTER_COOKIES_PATH
+        cookie_path_env = (
+            os.getenv("TWITTER_COOKIE_FILE")
+            or os.getenv("TWITTER_COOKIES_FILE")
+            or os.getenv("TWITTER_COOKIES_PATH")
+        )
 
         if not twitter_username:
             log("Twitter username not found in environment variables", "warning")
@@ -528,7 +533,7 @@ async def collect_reddit_bookmarks(
             except Exception as e:
                 log(f"Comment enrichment failed: {e}", "warning")
 
-        # Process and store new posts
+        # Process and store new posts (collection-only; no AI analysis here)
         successful_count = 0
         last_post_id = None
         last_post_url = None
@@ -576,7 +581,7 @@ async def collect_reddit_bookmarks(
                 # Success path: Supabase accepted the post
                 saved_to_supabase += 1
                 successful_count += 1
-
+                
                 # Update last post tracking
                 if post_dict.get("post_id"):
                     last_post_id = full_id
@@ -591,12 +596,12 @@ async def collect_reddit_bookmarks(
                         title=post_dict.get("title"),
                         author=post_dict.get("author"),
                     )
+                        
+                    last_post_url = post_dict.get("url") or last_post_url
+                    if existing_urls is not None and post_dict.get("url"):
+                        existing_urls.add(str(post_dict["url"]))
                     
-                last_post_url = post_dict.get("url") or last_post_url
-                if existing_urls is not None and post_dict.get("url"):
-                    existing_urls.add(str(post_dict["url"]))
-                
-                log(f"✅ Saved to Supabase: {last_post_id}")
+                    log(f"✅ Saved to Supabase: {last_post_id}")
 
             except Exception as e:
                 log(f"❌ Error processing Reddit post: {e}", "error")
@@ -649,11 +654,15 @@ async def collect_threads_bookmarks(
         state_manager.sync_state_from_main_db(force=False)  # Auto-recover state
         
         last_collected_id = state_manager.get_last_collected_post_id("threads")
-
-        if last_collected_id:
-            log(f"🔄 Incremental: stopping at {last_collected_id}")
+        force_recollect = os.getenv("THREADS_RECOLLECT", "false").lower() in ("1", "true", "yes")
+        if force_recollect:
+            last_collected_id = None
+            log("🧼 Recollect mode: processing all saved posts (ignoring last_collected_id)")
         else:
-            log("🆕 Full collection mode")
+            if last_collected_id:
+                log(f"🔄 Incremental: stopping at {last_collected_id}")
+            else:
+                log("🆕 Full collection mode")
 
         # Get Threads credentials from environment
         threads_username = os.getenv("THREADS_USERNAME")
@@ -691,12 +700,17 @@ async def collect_threads_bookmarks(
 
         # Collect saved posts
         log("Fetching Threads saved posts...")
+        # Allow limiting during tests via THREADS_SCRAPE_LIMIT
+        try:
+            scrape_limit = int(os.getenv("THREADS_SCRAPE_LIMIT", "50"))
+        except Exception:
+            scrape_limit = 50
         saved_posts = await extractor.get_saved_posts(
             username=threads_username,
             password=threads_password,
-            limit=50,
+            limit=scrape_limit,
             stop_at_post_id=last_collected_id,
-            existing_ids=existing_ids,
+            existing_ids=None if force_recollect else existing_ids,
         )
 
         if not saved_posts:
@@ -724,7 +738,7 @@ async def collect_threads_bookmarks(
                 break
             
             # Check if post already exists
-            if post_id in existing_ids or normalized_id in existing_ids or (existing_urls and url in existing_urls):
+            if not force_recollect and (post_id in existing_ids or normalized_id in existing_ids or (existing_urls and url in existing_urls)):
                 consecutive_seen += 1
                 log(f"⏭️ Skipping duplicate (seen in DB): id={post_id} url={url}")
                 # If we see duplicates back-to-back, assume we've reached the previously scraped range
@@ -737,7 +751,14 @@ async def collect_threads_bookmarks(
             consecutive_seen = 0
             new_posts.append(post)
 
+        # In recollect mode, ensure we process everything fetched
+        if force_recollect:
+            new_posts = saved_posts
+
         log(f"📋 Processing {len(new_posts)} new Threads posts")
+
+        # Respect ANALYZE_DURING_COLLECTION flag (default: off)
+        analyze_during_collection = os.environ.get("ANALYZE_DURING_COLLECTION", "false").lower() in ("true", "1", "yes")
 
         # Process and store new posts
         successful_count = 0
@@ -787,35 +808,94 @@ async def collect_threads_bookmarks(
                     "username": post_data.author_handle,
                     "language": detect_language(content),  # Add language detection
                     "created_at": post_data.created_at.isoformat() if post_data.created_at else datetime.now().isoformat(),
-                    "collected_at": datetime.now().isoformat(),
+                    # Optional enrichments when available
+                    "hashtags": getattr(post_data, 'hashtags', []) or [],
+                    "engagement": getattr(post_data, 'engagement', {}) or {},
+                    "media_urls": getattr(post_data, 'media_urls', []) or [],
+                    "post_type": getattr(post_data, 'post_type', 'post'),
                 }
 
-                # Analyze and store
-                if await analyze_and_store_post(
-                    db_manager, post_dict, supabase_manager
-                ):
-                    successful_count += 1
-                    
-                    # Update last post tracking
-                    if post_dict.get("post_id"):
-                        last_post_id = normalized_id
-                        existing_ids.add(str(post_dict["post_id"]))
-                        existing_ids.add(normalized_id)  # Also add normalized version
-                        
-                        # Mark post as scraped in state database
-                        state_manager.mark_post_scraped(
-                            post_id=normalized_id,
-                            platform="threads",
-                            url=post_dict.get("url"),
-                            title=post_dict.get("title"),
-                            author=post_dict.get("author"),
+                # If content looks truncated or too short, try a DOM-only refresh once
+                try:
+                    looks_truncated = False
+                    if content:
+                        c = content.strip()
+                        # More aggressive truncation detection: check for ellipsis anywhere, short content, or ends with common truncation patterns
+                        looks_truncated = (
+                            c.endswith("...") or c.endswith("…") or 
+                            ("..." in c) or ("…" in c) or
+                            (len(c) < 200) or  # Lower threshold - anything under 200 chars might be truncated
+                            c.endswith("...и") or c.endswith("...и т.д.") or
+                            (c.endswith("...") and len(c) < 300)
                         )
-                        
-                    last_post_url = post_dict.get("url") or last_post_url
-                    if existing_urls is not None and post_dict.get("url"):
-                        existing_urls.add(str(post_dict["url"]))
-                    
-                    log(f"✅ Collected and tracked Threads post: {post_id}")
+                    else:
+                        looks_truncated = True
+
+                    if looks_truncated:
+                        log(f"🔍 Detected truncated content for {post_id}: {len(content or '')} chars, attempting DOM refresh...")
+                        try:
+                            # Perform a fresh scrape in a new Playwright context; no dependency on existing page
+                            refreshed_posts = await extractor.scrape_posts_from_urls_async([post_data.url])
+                            refreshed = refreshed_posts[0] if refreshed_posts else None
+                            if refreshed and getattr(refreshed, 'content', None):
+                                refreshed_content = (refreshed.content or '').strip()
+                                log(f"🔍 DOM refresh returned {len(refreshed_content)} chars (original: {len(content or '')} chars)")
+                                # Only replace if refreshed is clearly better/longer (at least 20% improvement or 50+ chars)
+                                min_improvement = max(50, int(len(content or '') * 0.2))
+                                if len(refreshed_content) > len(content or '') + min_improvement:
+                                    post_dict.update({
+                                        'content': refreshed_content[:4000],
+                                        'author': getattr(refreshed, 'author', None) or post_dict.get('author'),
+                                        'username': getattr(refreshed, 'author_handle', None) or post_dict.get('username'),
+                                    })
+                                    content = post_dict['content']
+                                    log(f"🔁 ✅ Refreshed truncated Threads content via DOM: {len((post_data.content or ''))} -> {len(refreshed_content)} chars", "success")
+                                else:
+                                    log(f"⚠️ DOM refresh didn't improve content enough ({len(refreshed_content)} vs {len(content or '')} chars, need +{min_improvement})")
+                            else:
+                                log(f"⚠️ DOM refresh returned no content for {post_id}", "warning")
+                        except Exception as re_err:
+                            log(f"❌ Threads DOM refresh failed for {post_data.url}: {re_err}", "error")
+                except Exception as e:
+                    log(f"⚠️ Error checking truncation for {post_id}: {e}", "warning")
+
+                # Store without AI analysis
+                supabase_ok = False
+                if supabase_manager:
+                    try:
+                        supabase_ok = bool(supabase_manager.insert_post(post_dict))
+                    except Exception:
+                        supabase_ok = False
+                try:
+                    db_manager.add_post(post_dict)
+                except Exception:
+                    pass
+
+                if not supabase_ok:
+                    log("⚠️ Supabase insert failed; cached locally and will retry on next run")
+                    continue
+
+                successful_count += 1
+
+                # Update last post tracking
+                if post_dict.get("post_id"):
+                    last_post_id = normalized_id
+                    existing_ids.add(str(post_dict["post_id"]))
+                    existing_ids.add(normalized_id)  # Also add normalized version
+                    # Mark post as scraped in state database
+                    state_manager.mark_post_scraped(
+                        post_id=normalized_id,
+                        platform="threads",
+                        url=post_dict.get("url"),
+                        title=post_dict.get("title"),
+                        author=post_dict.get("author"),
+                    )
+
+                last_post_url = post_dict.get("url") or last_post_url
+                if existing_urls is not None and post_dict.get("url"):
+                    existing_urls.add(str(post_dict["url"]))
+
+                log(f"✅ Collected and tracked Threads post: {post_id}")
 
             except Exception as e:
                 log(f"❌ Error processing Threads post: {e}", "error")
@@ -849,3 +929,40 @@ async def collect_threads_bookmarks(
                 await extractor.close()
             except Exception:
                 pass
+
+
+async def analyze_threads_posts(db_manager, supabase_manager=None):
+    """
+    Run AI analysis on collected Threads posts
+    """
+    try:
+        # Global skip via env
+        if os.environ.get("SKIP_AI_ANALYSIS", "").lower() in ("true", "1", "yes"):
+            log("AI analysis skipped as SKIP_AI_ANALYSIS is set", "info")
+            return 0
+
+        # Get unanalyzed posts
+        unanalyzed_posts = db_manager.get_unanalyzed_posts("threads")
+        if not unanalyzed_posts:
+            log("No unanalyzed Threads posts found", "info")
+            return 0
+
+        log(f"Starting AI analysis on {len(unanalyzed_posts)} Threads posts...")
+        analyzed_count = 0
+
+        for post_dict in unanalyzed_posts:
+            try:
+                if await analyze_and_store_post(db_manager, post_dict, supabase_manager):
+                    analyzed_count += 1
+                    log(f"✅ Analyzed post: {post_dict.get('post_id')}")
+                else:
+                    log(f"❌ Failed to analyze post: {post_dict.get('post_id')}")
+            except Exception as e:
+                log(f"Error analyzing Threads post {post_dict.get('post_id')}: {e}", "error")
+                continue
+
+        log(f"AI analysis completed: {analyzed_count}/{len(unanalyzed_posts)} posts analyzed", "success")
+        return analyzed_count
+    except Exception as e:
+        log(f"Threads analysis failed: {e}", "error")
+        return 0

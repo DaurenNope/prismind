@@ -54,6 +54,15 @@ async def analyze_and_store_post(db_manager, post_dict, supabase_manager=None):
     Returns:
         bool: True if successfully stored, False otherwise
     """
+    # Global cancel check
+    try:
+        from src.services.cancel_manager import is_cancelled
+        if is_cancelled("analysis"):
+            log("Analysis cancelled by user", "warning")
+            return False
+    except Exception:
+        pass
+
     post_id = post_dict.get("post_id", "unknown")
     log(f"Processing post: {post_id}")
 
@@ -104,6 +113,45 @@ async def analyze_and_store_post(db_manager, post_dict, supabase_manager=None):
             "post_type": post_dict.get("post_type", "text")
         }
 
+        # Threads-specific sanitization before analysis (fallback cleanup)
+        try:
+            if (post_dict.get('platform') == 'threads') and post_dict.get('content'):
+                raw = str(post_dict.get('content') or '')
+                import re
+                text = raw
+                # Remove 'Translate' artifacts
+                text = re.sub(r"\bTranslate\b", " ", text)
+                # Remove pagination markers like 1/3, 2 / 5
+                text = re.sub(r"\b\d+\s*/\s*\d+\b", " ", text)
+                # Remove short time markers like 1d, 2h, 15m
+                text = re.sub(r"\b\d+\s*[dhm]\b", " ", text, flags=re.I)
+                # Split and filter segments
+                segs = re.split(r"[\n\r]+|\s{2,}", text)
+                cleaned = []
+                seen = set()
+                for s in segs:
+                    t = s.strip()
+                    if not t:
+                        continue
+                    if len(t) < 6:
+                        continue
+                    if re.fullmatch(r"@[A-Za-z0-9._-]+", t):
+                        continue
+                    if re.fullmatch(r"[\w.-]+\.(com|net|org|io|ai)(/.*)?", t, re.I):
+                        continue
+                    key = re.sub(r"\s+", " ", t.lower())
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    cleaned.append(t)
+                cleaned_text = re.sub(r"\s+", " ", " ".join(cleaned)).strip()
+                # If cleaned is reasonably better/longer or original looked truncated, replace
+                looked_truncated = raw.rstrip().endswith(('...', '…')) or ('...' in raw) or ('…' in raw)
+                if (len(cleaned_text) > max(len(raw), 150)) or looked_truncated:
+                    post_dict['content'] = cleaned_text[:4000]
+        except Exception:
+            pass
+
         # Perform AI analysis
         log(f"Analyzing content with AI...")
 
@@ -113,17 +161,66 @@ async def analyze_and_store_post(db_manager, post_dict, supabase_manager=None):
             # Start with original post data
             enhanced_post = dict(post_dict)
             
-            # Only add essential analysis fields - no more bloated columns!
+            # Only add essential analysis fields - lean schema
             essential_fields = {
-                'ai_summary': analysis_result.get('summary', ''),
+                'ai_summary': analysis_result.get('ai_summary') or analysis_result.get('summary', ''),
                 'value_score': analysis_result.get('value_score', 0.0),
-                'quality_score': analysis_result.get('content_quality_score', analysis_result.get('quality_score', 0.0)),
-                'sentiment': analysis_result.get('sentiment', ''),
+                'quality_score': analysis_result.get('quality_score', analysis_result.get('content_quality_score', 0.0)),
                 'key_concepts': analysis_result.get('key_concepts', []),
                 'tags': analysis_result.get('tags', []),
-                'category': analysis_result.get('category', '')
+                'topic': analysis_result.get('topic', ''),
+                'content_type': analysis_result.get('content_type', ''),
+                'language': analysis_result.get('language', ''),
+                'analyzed_at': analysis_result.get('analyzed_at'),
+                'analysis_model': analysis_result.get('analysis_model') or analysis_result.get('ai_service'),
+                # rewrite-focused
+                'rewrite_score': analysis_result.get('rewrite_score'),
+                'rewrite_readiness': analysis_result.get('rewrite_readiness'),
+                'rewrite_reasons': analysis_result.get('rewrite_reasons'),
+                'rewrite_risks': analysis_result.get('rewrite_risks'),
+                'analysis_confidence': analysis_result.get('analysis_confidence'),
+                'analysis_depth': analysis_result.get('analysis_depth'),
+                'needs_deep_analysis': analysis_result.get('needs_deep_analysis'),
+                # persona fit
+                'persona_fit_scores': analysis_result.get('persona_fit_scores'),
+                'persona_fit_reasons': analysis_result.get('persona_fit_reasons'),
+                'best_persona_key': analysis_result.get('best_persona_key'),
+                'best_persona_score': analysis_result.get('best_persona_score'),
+                'best_persona_reasons': analysis_result.get('best_persona_reasons'),
+                # time sensitivity
+                'time_sensitive': analysis_result.get('time_sensitive'),
+                'urgency_score': analysis_result.get('urgency_score'),
+                'relevance_window': analysis_result.get('relevance_window'),
+                'time_sensitive_reasons': analysis_result.get('time_sensitive_reasons'),
             }
             
+            # Coerce defaults for completeness
+            now_iso = datetime.now(timezone.utc).isoformat()
+            if not essential_fields.get('analyzed_at'):
+                essential_fields['analyzed_at'] = now_iso
+            if not essential_fields.get('analysis_model'):
+                essential_fields['analysis_model'] = 'analyzer-default'
+
+            # Lightweight language fallback if model omitted
+            if not essential_fields.get('language'):
+                txt = (post_dict.get('content') or '')[:500]
+                cyr = sum(1 for c in txt if '\u0400' <= c <= '\u04FF')
+                lat = sum(1 for c in txt if c.isalpha() and ord(c) < 128)
+                essential_fields['language'] = 'ru' if (cyr and cyr > 0.3 * (cyr + lat or 1)) else 'en'
+
+            # content_type fallback from media presence
+            if not essential_fields.get('content_type'):
+                urls = post_dict.get('media_urls') or []
+                if urls:
+                    if any(str(u).lower().endswith(('.mp4', '.mov', '.webm')) for u in urls):
+                        essential_fields['content_type'] = 'video'
+                    elif any(str(u).lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp')) for u in urls):
+                        essential_fields['content_type'] = 'image'
+                    else:
+                        essential_fields['content_type'] = 'link'
+                else:
+                    essential_fields['content_type'] = 'text'
+
             # Ensure list fields are actually lists
             for key in ("key_concepts", "tags"):
                 val = essential_fields.get(key)
@@ -132,6 +229,32 @@ async def analyze_and_store_post(db_manager, post_dict, supabase_manager=None):
                 elif not isinstance(val, list):
                     essential_fields[key] = [val] if val else []
             
+            # Media/content fallback to ensure non-empty content
+            try:
+                if not enhanced_post.get('content') or not str(enhanced_post.get('content')).strip():
+                    fallback_pieces = []
+                    # Prefer AI summary as a readable fallback
+                    if essential_fields.get('ai_summary'):
+                        fallback_pieces.append(str(essential_fields.get('ai_summary')))
+                    # Use hashtags if present
+                    ht = post_dict.get('hashtags') or []
+                    if isinstance(ht, list) and ht:
+                        fallback_pieces.append('#' + ' #'.join([str(h).strip('#') for h in ht[:8]]))
+                    # Include author handle
+                    ah = post_dict.get('author_handle') or post_dict.get('username')
+                    if ah:
+                        fallback_pieces.append(f"by @{str(ah).lstrip('@')}")
+                    # Include URL as last resort
+                    if post_dict.get('url'):
+                        fallback_pieces.append(str(post_dict.get('url')))
+                    fallback_text = ' \n'.join([p for p in fallback_pieces if p])
+                    if fallback_text:
+                        enhanced_post['content'] = fallback_text[:4000]
+                    else:
+                        enhanced_post['content'] = 'Content unavailable'
+            except Exception:
+                pass
+
             # Add only essential fields to the post
             enhanced_post.update(essential_fields)
 
@@ -160,8 +283,8 @@ async def analyze_and_store_post(db_manager, post_dict, supabase_manager=None):
             except Exception as embed_error:
                 log(f"Embedding generation error: {embed_error}", "debug")
             
-            # Track which AI service was used for analysis
-            if 'ai_service' in analysis_result:
+            # Ensure model marker
+            if 'analysis_model' not in enhanced_post and 'ai_service' in analysis_result:
                 enhanced_post['analysis_model'] = analysis_result['ai_service']
 
         except Exception as analysis_error:
@@ -171,17 +294,33 @@ async def analyze_and_store_post(db_manager, post_dict, supabase_manager=None):
         # Update post in local database instead of adding
         try:
             # Try to update the existing post with analysis data
-            local_updated = db_manager.update_post(post_id, enhanced_post)
-            if local_updated:
-                log(f"Updated post in local database successfully", "success")
-            else:
-                # If update fails (post doesn't exist), try to add it
-                local_stored = db_manager.add_post(enhanced_post)
-                if local_stored:
-                    log(f"Stored new post in local database successfully", "success")
-                else:
-                    log(f"Failed to store/update post in local database", "error")
-                    return False
+            local_updated = False
+            try:
+                if hasattr(db_manager, 'update_post'):
+                    local_updated = bool(db_manager.update_post(post_id, enhanced_post))
+            except Exception as e:
+                log(f"Local update failed: {e}", "warning")
+                local_updated = False
+
+            if not local_updated:
+                # If update did not apply (e.g., duplicate/ignored), try insert
+                try:
+                    local_stored = bool(db_manager.add_post(enhanced_post))
+                except Exception as e:
+                    log(f"Local insert failed: {e}", "warning")
+                    local_stored = False
+
+                if not local_stored:
+                    # Final existence check: consider success if row already exists
+                    try:
+                        if hasattr(db_manager, 'get_post_by_id') and db_manager.get_post_by_id(post_id):
+                            log("Post already existed; analysis update may have been a no-op", "info")
+                        else:
+                            log("Local store/update did not apply; proceeding anyway", "warning")
+                    except Exception:
+                        # If we cannot check existence, don't block pipeline
+                        log("Could not verify local existence; proceeding", "warning")
+            log(f"Local persistence complete", "success")
         except Exception as local_error:
             log(f"Local database operation failed: {local_error}", "error")
             return False

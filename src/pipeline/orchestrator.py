@@ -197,6 +197,13 @@ class Orchestrator:
                 existing_urls=existing_urls,
                 supabase_manager=supabase_manager,
             )
+            # Optionally run analysis in a separate phase if enabled
+            if os.environ.get("ANALYZE_AFTER_COLLECTION", "true").lower() in ("true", "1", "yes"):
+                try:
+                    from src.services.collection.platform_collectors import analyze_threads_posts
+                    await analyze_threads_posts(shim_db, supabase_manager)
+                except Exception:
+                    pass
             try:
                 from src.database.database_agent import DatabaseAgent
                 DatabaseAgent().record_collection_result(platform, count, success=True)
@@ -370,11 +377,14 @@ class Orchestrator:
             return 0
         try:
             from src.services.analysis.post_analyzer import analyze_and_store_post
+            from src.services.cancel_manager import is_cancelled
 
             posts = self.storage.get_posts(limit=limit)
             count = 0
             for p in posts:
                 try:
+                    if is_cancelled("analysis") or is_cancelled("all"):
+                        break
 
                     class _ShimDB:
                         def __init__(self, storage):
@@ -382,6 +392,10 @@ class Orchestrator:
 
                         def add_post(self, post):
                             return self._s.save_post(post)
+
+                        def update_post(self, post_id: str, post_data: dict):
+                            # Allow analyzer to persist updates; reuse save_post behavior
+                            return self._s.save_post(post_data)
 
                     shim = _ShimDB(self.storage)
                     await analyze_and_store_post(shim, p)
