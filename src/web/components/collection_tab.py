@@ -99,10 +99,10 @@ def render_collection_tab():
     else:
         if collect_all:
             button_label = "🚀 Collect from All Platforms"
-            button_key = "collect_all_button"
+            button_key = f"{key_base}_collect_all_button"
         else:
             button_label = f"📥 Collect from {platform.title()}"
-            button_key = f"collect_{platform}_button"
+            button_key = f"{key_base}_collect_{platform}_button"
 
         if st.button(button_label, key=button_key, type="primary"):
             run_collection(service, platform if not collect_all else None, collect_all)
