@@ -29,7 +29,10 @@ def _is_ready(post: Dict) -> bool:
     if _is_incomplete(post) or _is_truncated(post):
         return False
     # simple readiness heuristic: value_score >= 3 and has ai_summary
-    vs = float(post.get('value_score') or 0)
+    try:
+        vs = float(post.get('value_score') or 0)
+    except Exception:
+        vs = 0.0
     return vs >= 3 and bool((post.get('ai_summary') or '').strip())
 
 
@@ -43,9 +46,17 @@ def _render_card(post: Dict):
     st.write(content_preview + ("…" if len((post.get('content') or '')) > 400 else ""))
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        _badge(f"Val {post.get('value_score') or 0}", "#6c63ff")
+        try:
+            vs = float(post.get('value_score') or 0)
+        except Exception:
+            vs = 0.0
+        _badge(f"Val {vs}", "#6c63ff")
     with col2:
-        _badge(f"Qual {post.get('quality_score') or 0}", "#2196f3")
+        try:
+            qs = float(post.get('quality_score') or 0)
+        except Exception:
+            qs = 0.0
+        _badge(f"Qual {qs}", "#2196f3")
     with col3:
         bk = post.get('best_persona_key') or '—'
         _badge(f"Persona {bk}", "#00b894")
@@ -76,7 +87,11 @@ def render_triage_tab():
     def _passes(p: Dict) -> bool:
         if platform != 'all' and p.get('platform') != platform:
             return False
-        if float(p.get('value_score') or 0) < min_value:
+        try:
+            vs = float(p.get('value_score') or 0)
+        except Exception:
+            vs = 0.0
+        if vs < min_value:
             return False
         if only_truncated and not _is_truncated(p):
             return False
