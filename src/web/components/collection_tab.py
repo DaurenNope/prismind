@@ -18,6 +18,9 @@ from src.services.unified_collection_service import (
     CollectionStatus,
 )
 from src.services.new_database_manager import NewDatabaseManager
+from src.utils.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 def render_collection_tab():
@@ -193,9 +196,11 @@ def run_collection(
     status_container = st.empty()
     logs_container = st.empty()
 
-    # Initialize logs
+    # Initialize logs and history
     if "collection_logs" not in st.session_state:
         st.session_state.collection_logs = []
+    if "collection_history" not in st.session_state:
+        st.session_state.collection_history = []
 
     # Progress callback with detailed logging
     def update_progress(progress: CollectionProgress):
@@ -238,45 +243,55 @@ def run_collection(
 
     # Run collection
     async def do_collection():
-        if collect_all:
-            results = await service.collect_all(progress_callback=update_progress)
+        try:
+            if collect_all:
+                results = await service.collect_all(progress_callback=update_progress)
 
-            # Add to history
-            for platform_name, result in results.items():
-                result.metadata["timestamp"] = datetime.now().isoformat()
-                st.session_state.collection_history.append(result)
+                # Add to history
+                for platform_name, result in results.items():
+                    if result:
+                        if not hasattr(result, 'metadata') or result.metadata is None:
+                            result.metadata = {}
+                        result.metadata["timestamp"] = datetime.now().isoformat()
+                        st.session_state.collection_history.append(result)
 
-            # Show summary
-            total_collected = sum(r.posts_collected for r in results.values())
-            success_count = sum(1 for r in results.values() if r.success)
+                # Show summary
+                total_collected = sum(r.posts_collected for r in results.values())
+                success_count = sum(1 for r in results.values() if r.success)
 
-            if success_count == len(results):
-                st.success(f"✅ Collected {total_collected} posts from all platforms!")
+                if success_count == len(results):
+                    st.success(f"✅ Collected {total_collected} posts from all platforms!")
+                else:
+                    st.warning(
+                        f"⚠️ Collected {total_collected} posts, {success_count}/{len(results)} platforms succeeded"
+                    )
             else:
-                st.warning(
-                    f"⚠️ Collected {total_collected} posts, {success_count}/{len(results)} platforms succeeded"
-                )
-        else:
-            result = await service.collect(platform, progress_callback=update_progress)
+                result = await service.collect(platform, progress_callback=update_progress)
 
-            # Add to history
-            result.metadata["timestamp"] = datetime.now().isoformat()
-            st.session_state.collection_history.append(result)
+                # Add to history
+                if result:
+                    if not hasattr(result, 'metadata') or result.metadata is None:
+                        result.metadata = {}
+                    result.metadata["timestamp"] = datetime.now().isoformat()
+                    st.session_state.collection_history.append(result)
 
-            # Show result
-            if result.success:
-                st.success(
-                    f"✅ Collected {result.posts_collected} posts from {platform.title()}!"
-                )
-            else:
-                st.error(f"❌ Collection failed: {result.error}")
+                    # Show result
+                    if result.success:
+                        st.success(
+                            f"✅ Collected {result.posts_collected} posts from {platform.title()}!"
+                        )
+                    else:
+                        st.error(f"❌ Collection failed: {result.error}")
+        except Exception as e:
+            st.error(f"❌ Collection error: {e}")
+            logger.error(f"Collection error: {e}", exc_info=True)
+        finally:
+            # Clear progress
+            progress_container.empty()
+            status_container.empty()
 
-        # Clear progress
-        progress_container.empty()
-        status_container.empty()
-
-        # Rerun to update UI
-        st.rerun()
+            # Rerun to update UI
+            st.rerun()
 
     # Run async task
     try:
