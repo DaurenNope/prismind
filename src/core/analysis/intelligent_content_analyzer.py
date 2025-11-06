@@ -40,26 +40,111 @@ class IntelligentContentAnalyzer:
         self.ai_services = []
         self._init_ai_services()
         
+        # Simple rate limiting (RPM)
+        try:
+            rpm = float(os.getenv('ANALYZER_RPM', '30'))
+            self._min_interval_s = 60.0 / rpm if rpm > 0 else 0.0
+        except Exception:
+            self._min_interval_s = 2.0
+        self._last_call_ts = 0.0
+
         print(f"🧠 Intelligent Content Analyzer initialized with {len(self.ai_services)} AI services")
+
+    def _rate_limit_sleep(self):
+        import time
+        if self._min_interval_s <= 0:
+            return
+        now = time.time()
+        delta = now - self._last_call_ts
+        if delta < self._min_interval_s:
+            time.sleep(self._min_interval_s - delta)
+        self._last_call_ts = time.time()
     
+    def _detect_time_sensitivity(self, post: SocialPost, analysis: Dict[str, Any]) -> Dict[str, Any]:
+        """Heuristically detect if content is time-sensitive and estimate urgency.
+        Returns: dict with time_sensitive (bool), urgency_score (0-1), relevance_window (text), time_sensitive_reasons (list)
+        """
+        reasons: List[str] = []
+        content = (post.content or "") + "\n" + (analysis.get('ai_summary') or "")
+        content_lower = content.lower()
+        urgency = 0.0
+
+        # Keyword cues
+        urgent_terms = [
+            "breaking", "just in", "urgent", "deadline", "today", "tonight",
+            "hours", "minutes", "now", "alert", "update", "live", "launch",
+            "announced", "vote", "earnings", "patch", "vulnerability", "security update"
+        ]
+        if any(t in content_lower for t in urgent_terms):
+            reasons.append("Urgent language detected")
+            urgency += 0.4
+
+        # Category/type cues
+        type_hint = (analysis.get('content_type') or '').lower()
+        topic_hint = (analysis.get('topic') or '').lower()
+        if any(k in (type_hint + " " + topic_hint) for k in ["news", "release", "incident", "vulnerability", "earnings", "announcement"]):
+            reasons.append("News/incident category")
+            urgency += 0.3
+
+        # Recency
+        try:
+            from datetime import datetime, timezone
+            created_at = post.created_at if isinstance(post.created_at, datetime) else datetime.fromisoformat(str(post.created_at).replace('Z','+00:00'))
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
+            age_hours = (datetime.now(timezone.utc) - created_at).total_seconds() / 3600.0
+            if age_hours <= 6:
+                reasons.append("Very recent (<6h)")
+                urgency += 0.3
+            elif age_hours <= 24:
+                reasons.append("Recent (<24h)")
+                urgency += 0.15
+        except Exception:
+            pass
+
+        # Platform hints (Twitter/Threads often time-critical)
+        if post.platform in ("twitter", "threads"):
+            urgency += 0.1
+
+        urgency = max(0.0, min(1.0, urgency))
+        is_time_sensitive = urgency >= 0.35
+
+        # Relevance window suggestion
+        if urgency >= 0.7:
+            window = "same-day"
+        elif urgency >= 0.45:
+            window = "24-72h"
+        elif urgency >= 0.35:
+            window = "this-week"
+        else:
+            window = "evergreen"
+
+        return {
+            "time_sensitive": bool(is_time_sensitive),
+            "urgency_score": float(urgency),
+            "relevance_window": window,
+            "time_sensitive_reasons": reasons,
+        }
+
     def _init_ai_services(self):
         """Initialize available AI services in order of preference"""
 
-        # 0. Ollama (Local Qwen) — prefer when available for local-first analysis
-        ollama_url = os.getenv('OLLAMA_URL')
-        if ollama_url:
+        # 0. Google Gemini (Primary by default; can be overridden via ANALYZER_PRIMARY)
+        gemini_key = os.getenv('GEMINI_API_KEY')
+        if gemini_key:
+            genai.configure(api_key=gemini_key)
+            gem_model_name = os.getenv('ANALYZER_GEMINI_MODEL', 'gemini-2.0-flash')
+            vision_model_name = os.getenv('ANALYZER_GEMINI_VISION_MODEL', 'gemini-1.5-pro-vision-latest')
+            self.gemini_model = genai.GenerativeModel(gem_model_name)
+            self.gemini_vision_model = genai.GenerativeModel(vision_model_name)
             self.ai_services.append({
-                'name': 'ollama',
-                'url': ollama_url.rstrip('/'),
-                'model': os.getenv('OLLAMA_MODEL', 'qwen2.5:1.5b'),
-                'options': {
-                    'num_predict': 150,  # Limit for speed
-                    'temperature': 0.3
-                }
+                'name': 'gemini',
+                'model': self.gemini_model,
+                'vision_model': self.gemini_vision_model
             })
-            print("✅ Ollama (Qwen 1.5B - Fast) initialized")
-
-        # 1. Mistral AI (Primary - best for analysis)
+            print("✅ Google Gemini initialized")
+        
+        # 1. Mistral AI (Fallback)
         mistral_key = os.getenv('MISTRAL_API_KEY')
         if mistral_key:
             self.ai_services.append({
@@ -70,18 +155,96 @@ class IntelligentContentAnalyzer:
             })
             print("✅ Mistral AI initialized")
         
-        # 2. Google Gemini (Secondary - best for vision)
-        gemini_key = os.getenv('GEMINI_API_KEY')
-        if gemini_key:
-            genai.configure(api_key=gemini_key)
-            self.gemini_model = genai.GenerativeModel('gemini-1.5-flash')
-            self.gemini_vision_model = genai.GenerativeModel('gemini-1.5-pro-vision-latest')
+        # 2. Ollama (Local Qwen) — optional local fallback
+        ollama_url = os.getenv('OLLAMA_URL')
+        if ollama_url:
             self.ai_services.append({
-                'name': 'gemini',
-                'model': self.gemini_model,
-                'vision_model': self.gemini_vision_model
+                'name': 'ollama',
+                'url': ollama_url.rstrip('/'),
+                'model': os.getenv('OLLAMA_MODEL', 'qwen2.5:1.5b'),
+                'options': {
+                    'num_predict': 150,
+                    'temperature': 0.3
+                }
             })
-            print("✅ Google Gemini initialized")
+            print("✅ Ollama (Qwen 1.5B - Fast) initialized")
+
+        # Reorder based on ANALYZER_PRIMARY env if provided
+        try:
+            preferred = (os.getenv('ANALYZER_PRIMARY') or '').strip().lower()
+            if preferred:
+                order = [preferred, 'gemini', 'mistral', 'ollama', 'basic']
+                name_to = {s['name']: s for s in self.ai_services}
+                new_list = []
+                for n in order:
+                    if n in name_to:
+                        new_list.append(name_to[n])
+                        name_to.pop(n, None)
+                # Append any remaining
+                for s in self.ai_services:
+                    if s['name'] not in [x['name'] for x in new_list]:
+                        new_list.append(s)
+                self.ai_services = new_list
+        except Exception:
+            pass
+
+    # ---------- Rate limits / chunking ----------
+    @staticmethod
+    def _estimate_tokens(text: str) -> int:
+        try:
+            return max(1, int(len(text) / 4))  # ~4 chars per token heuristic
+        except Exception:
+            return len(text)
+
+    def _get_rate_limits(self) -> Dict[str, int]:
+        # Defaults suitable for gemini-1.5-flash style usage; override via env
+        rpm = int(os.getenv('ANALYZER_RPM', '10'))
+        tpm = int(os.getenv('ANALYZER_TPM', '200000'))
+        rpd = int(os.getenv('ANALYZER_RPD', '250'))
+        return {"rpm": rpm, "tpm": tpm, "rpd": rpd}
+
+    def _rate_limit_guard(self, requested_tokens: int) -> None:
+        """Very light in-process limiter: sleep if we exceed caps.
+        Not perfect across multiprocess, but good for local/UI runs.
+        """
+        import time
+        now = int(time.time())
+        limits = self._get_rate_limits()
+        window_min = now // 60
+        window_day = now // 86400
+        state = getattr(self, "_rl_state", None) or {"min": window_min, "min_calls": 0, "min_tokens": 0, "day": window_day, "day_calls": 0}
+        # reset windows
+        if state["min"] != window_min:
+            state.update({"min": window_min, "min_calls": 0, "min_tokens": 0})
+        if state["day"] != window_day:
+            state.update({"day": window_day, "day_calls": 0})
+        # busy-wait small sleeps if would exceed
+        while state["min_calls"] + 1 > limits["rpm"] or state["min_tokens"] + requested_tokens > limits["tpm"] or state["day_calls"] + 1 > limits["rpd"]:
+            time.sleep(0.25)
+            now = int(time.time())
+            window_min = now // 60
+            window_day = now // 86400
+            if state["min"] != window_min:
+                state.update({"min": window_min, "min_calls": 0, "min_tokens": 0})
+            if state["day"] != window_day:
+                state.update({"day": window_day, "day_calls": 0})
+        # account usage
+        state["min_calls"] += 1
+        state["min_tokens"] += requested_tokens
+        state["day_calls"] += 1
+        self._rl_state = state
+
+    def _chunk_text(self, text: str, max_tokens: int) -> List[str]:
+        if not text:
+            return []
+        approx_chars = max_tokens * 4
+        chunks: List[str] = []
+        i = 0
+        while i < len(text):
+            chunk = text[i:i+approx_chars]
+            chunks.append(chunk)
+            i += approx_chars
+        return chunks
         
         # 3. ShuttleAI (Fallback)
         if not self.ai_services:
@@ -122,6 +285,14 @@ class IntelligentContentAnalyzer:
         """Analyze a bookmark with AI services, with timeout and error handling"""
         
         print(f"🔍 Analyzing {post.platform} post: {post.post_id}")
+
+        # Respect UI cancel flag
+        try:
+            from src.services.cancel_manager import is_cancelled
+            if is_cancelled("analysis"):
+                raise Exception("Cancelled")
+        except Exception:
+            pass
 
         # Deterministic mode for testing and reproducibility
         if os.getenv('DETERMINISTIC_ANALYSIS', '0') == '1':
@@ -166,38 +337,46 @@ class IntelligentContentAnalyzer:
                 print(f"⚠️ Comment analysis failed: {e}")
                 analysis['comment_insights'] = []
         
-        # 3. Media Analysis
-        if include_media and post.media_urls:
-            try:
-                media_analysis = self._analyze_media_content(post.media_urls)
-                analysis['media_insights'] = media_analysis
+        # 3. Media Analysis (only for URL-based media, disabled by default)
+        enable_vision = os.getenv('ENABLE_VISION_ANALYSIS', 'false').lower() in ('true', '1', 'yes')
+        # Auto-enable for media-only posts (no text content)
+        media_only = bool(post.media_urls) and not (post.content and str(post.content).strip())
+        if include_media and post.media_urls and (enable_vision or media_only):
+            # Only analyze media URLs (not local paths or base64)
+            valid_media_urls = [
+                url for url in post.media_urls 
+                if isinstance(url, str) and (url.startswith('http://') or url.startswith('https://'))
+            ]
+            if valid_media_urls:
+                try:
+                    media_analysis = self._analyze_media_content(valid_media_urls)
+                    analysis['media_insights'] = media_analysis
 
-                # Enhance analysis with media insights
-                if media_analysis.get('analyzed_media', 0) > 0:
-                    for insight in media_analysis.get('insights', []):
-                        # Add technical concepts from images
-                        if 'technical_concepts' in insight and insight['technical_concepts']:
-                            existing_concepts = analysis.get('key_concepts', [])
-                            for concept in insight['technical_concepts']:
-                                if concept not in existing_concepts:
-                                    existing_concepts.append(concept)
-                            analysis['key_concepts'] = existing_concepts
+                    # Enhance analysis with media insights
+                    if media_analysis.get('analyzed_media', 0) > 0:
+                        for insight in media_analysis.get('insights', []):
+                            # Add technical concepts from images
+                            if 'technical_concepts' in insight and insight['technical_concepts']:
+                                existing_concepts = analysis.get('key_concepts', [])
+                                for concept in insight['technical_concepts']:
+                                    if concept not in existing_concepts:
+                                        existing_concepts.append(concept)
+                                analysis['key_concepts'] = existing_concepts
 
-                        # Flag high-value visual content
-                        if insight.get('educational_value') == 'high' and insight.get('adds_value') == 'yes':
-                            analysis['has_high_value_visuals'] = True
+                            # Flag high-value visual content
+                            if insight.get('educational_value') == 'high' and insight.get('adds_value') == 'yes':
+                                analysis['has_high_value_visuals'] = True
 
-                        # Add extracted text to context
-                        if insight.get('extracted_text'):
-                            analysis['visual_text_content'] = insight['extracted_text']
-
-            except Exception as e:
-                print(f"⚠️ Media analysis failed: {e}")
-                analysis['media_insights'] = {
-                    'total_media': len(post.media_urls),
-                    'analyzed_media': 0,
-                    'insights': []
-                }
+                            # Add extracted text to context
+                            if insight.get('extracted_text'):
+                                analysis['visual_text_content'] = insight['extracted_text']
+                except Exception as e:
+                    print(f"⚠️ Media analysis failed: {e}")
+                    analysis['media_insights'] = {
+                        'total_media': len(valid_media_urls),
+                        'analyzed_media': 0,
+                        'insights': []
+                    }
         
         # Ensure analysis is always a dict (safety check)
         if not isinstance(analysis, dict):
@@ -217,7 +396,15 @@ class IntelligentContentAnalyzer:
                 'intelligent_value_score': 5.0
             }
         
-        # 4. Advanced Value Scoring
+        # 4. Time Sensitivity Detection (news/urgent)
+        try:
+            ts = self._detect_time_sensitivity(post, analysis)
+            if isinstance(ts, dict):
+                analysis.update(ts)
+        except Exception as e:
+            print(f"⚠️ Time sensitivity detection failed: {e}")
+
+        # 5. Advanced Value Scoring
         content_quality_score = 0.0  # Initialize before use
         try:
             value_score = self._calculate_intelligent_value_score(analysis, post)
@@ -226,7 +413,7 @@ class IntelligentContentAnalyzer:
             print(f"⚠️ Value scoring failed: {e}")
             analysis['intelligent_value_score'] = 0.0
         
-        # 5. Content Quality Score
+        # 6. Content Quality Score
         try:
             content_quality_score = self._calculate_content_quality_score(analysis, post)
             analysis['content_quality_score'] = content_quality_score
@@ -235,7 +422,7 @@ class IntelligentContentAnalyzer:
             analysis['content_quality_score'] = 0.0
             content_quality_score = 0.0  # Ensure it's set even on error
         
-        # 6. Rewrite Candidate Assessment
+        # 7. Rewrite Candidate Assessment
         try:
             is_rewrite_candidate = self._determine_rewrite_candidate(analysis, post, content_quality_score)
             analysis['is_rewrite_candidate'] = is_rewrite_candidate
@@ -243,7 +430,7 @@ class IntelligentContentAnalyzer:
             print(f"⚠️ Rewrite candidate assessment failed: {e}")
             analysis['is_rewrite_candidate'] = False
         
-        # 7. Generate Actionable Insights
+        # 8. Generate Actionable Insights
         try:
             actionable_insights = self._generate_actionable_insights(analysis, post)
             analysis['actionable_insights'] = actionable_insights
@@ -251,7 +438,7 @@ class IntelligentContentAnalyzer:
             print(f"⚠️ Actionable insights generation failed: {e}")
             analysis['actionable_insights'] = []
         
-        # 8. Learning Recommendations
+        # 9. Learning Recommendations
         try:
             learning_recs = self._generate_learning_recommendations(analysis, post)
             analysis['learning_recommendations'] = learning_recs
@@ -259,7 +446,7 @@ class IntelligentContentAnalyzer:
             print(f"⚠️ Learning recommendations generation failed: {e}")
             analysis['learning_recommendations'] = []
         
-        # 9. Persona Matching (match analyzed post to personas)
+        # 10. Persona Matching (match analyzed post to personas)
         try:
             from src.services.persona_matcher import get_persona_matcher
             
@@ -407,23 +594,106 @@ class IntelligentContentAnalyzer:
         
         # Create comprehensive analysis prompt
         prompt = self._create_analysis_prompt(post)
+        # Apply chunking for very long content when Gemini is primary
+        try:
+            if self.ai_services and self.ai_services[0]['name'] == 'gemini':
+                tokens = self._estimate_tokens(post.content or '')
+                # Chunk if > 60% of TPM to be safe across multiple requests
+                if tokens > int(self._get_rate_limits()['tpm'] * 0.6):
+                    return self._analyze_with_gemini_chunked(post, sentiment_scores)
+        except Exception:
+            pass
         
         # Try AI services in order
         for service in self.ai_services:
+            # Mid-loop cancel check
+            try:
+                from src.services.cancel_manager import is_cancelled
+                if is_cancelled("analysis"):
+                    raise Exception("Cancelled")
+            except Exception:
+                pass
             try:
                 if service['name'] == 'ollama':
-                    return self._analyze_with_ollama(prompt, sentiment_scores, service)
+                    return self._coerce_analysis(post, self._analyze_with_ollama(prompt, sentiment_scores, service))
                 elif service['name'] == 'mistral':
-                    return self._analyze_with_mistral(prompt, sentiment_scores, service)
+                    return self._coerce_analysis(post, self._analyze_with_mistral(prompt, sentiment_scores, service))
                 elif service['name'] == 'gemini':
-                    return self._analyze_with_gemini(prompt, sentiment_scores, service)
+                    req_tokens = self._estimate_tokens(prompt)
+                    self._rate_limit_guard(req_tokens)
+                    return self._coerce_analysis(post, self._analyze_with_gemini(prompt, sentiment_scores, service))
                 else:
-                    return self._basic_analysis(post, sentiment_scores)
+                    return self._coerce_analysis(post, self._basic_analysis(post, sentiment_scores))
             except Exception as e:
                 print(f"⚠️ {service['name']} analysis failed: {e}")
                 continue
         
         # Fallback to basic analysis
+        return self._coerce_analysis(post, self._basic_analysis(post, sentiment_scores))
+
+    def _analyze_with_gemini_chunked(self, post: SocialPost, sentiment_scores: Dict) -> Dict[str, Any]:
+        """Map-Reduce style analysis for very long content under TPM caps."""
+        # Build chunks from content
+        chunks = self._chunk_text(post.content or '', max_tokens=int(self._get_rate_limits()['tpm'] * 0.25))
+        partials: List[Dict[str, Any]] = []
+        # Map step: summarize each chunk
+        for idx, ch in enumerate(chunks, 1):
+            prompt = (
+                "Summarize this part of a longer post and extract key_concepts and topics as JSON: "
+                "{\"summary\": str, \"key_concepts\": [str], \"topics\": [str]}\n\n" + ch
+            )
+            for service in self.ai_services:
+                if service['name'] == 'gemini':
+                    try:
+                        req_tokens = self._estimate_tokens(prompt)
+                        self._rate_limit_guard(req_tokens)
+                        resp = service['model'].generate_content(
+                            prompt,
+                            generation_config=genai.types.GenerationConfig(temperature=0.1, max_output_tokens=600),
+                        )
+                        content = (resp.text or '').strip()
+                        if content.startswith('```json'):
+                            content = content[7:-3]
+                        elif content.startswith('```'):
+                            content = content[3:-3]
+                        partial = json.loads(content)
+                        partials.append(partial)
+                        break
+                    except Exception as e:
+                        print(f"⚠️ Gemini chunk {idx} failed: {e}")
+                        continue
+        # Reduce step: combine summaries and concepts
+        combined_summary = " ".join((p.get('summary') or '') for p in partials)[:2000]
+        combined_topics: List[str] = []
+        combined_concepts: List[str] = []
+        for p in partials:
+            for arr_key, target in (("topics", combined_topics), ("key_concepts", combined_concepts)):
+                vals = p.get(arr_key) or []
+                for v in vals:
+                    if isinstance(v, str) and v not in target:
+                        target.append(v)
+        # Final pass: ask Gemini to produce full analysis using combined info
+        final_prompt = self._create_analysis_prompt(
+            SocialPost(
+                post_id=post.post_id,
+                platform=post.platform,
+                content=f"{combined_summary}",
+                author=post.author,
+                author_handle=post.author_handle,
+                url=post.url,
+                created_at=post.created_at,
+                hashtags=list(set((post.hashtags or []) + combined_topics[:5])),
+                engagement=post.engagement,
+                media_urls=post.media_urls,
+                post_type=post.post_type,
+            )
+        )
+        for service in self.ai_services:
+            if service['name'] == 'gemini':
+                req_tokens = self._estimate_tokens(final_prompt)
+                self._rate_limit_guard(req_tokens)
+                return self._analyze_with_gemini(final_prompt, sentiment_scores, service)
+        # Fallback
         return self._basic_analysis(post, sentiment_scores)
     
     def _create_analysis_prompt(self, post: SocialPost) -> str:
@@ -449,130 +719,27 @@ class IntelligentContentAnalyzer:
         personas = ["technical", "builder", "learner", "trendsetter", "thought_leader"]
 
         return f"""
-        Analyze this social media bookmark with deep intelligence and provide actionable insights:
-
-        PLATFORM: {post.platform}
-        AUTHOR: {post.author} ({post.author_handle})
-        CONTENT: {post.content}
-        HASHTAGS: {', '.join(post.hashtags) if post.hashtags else 'None'}
-        ENGAGEMENT: {post.engagement}
-        CREATED: {post.created_at}
-        URL: {post.url}
-
-        CATEGORIZATION RULES:
-        - Choose ONE category from: {', '.join(categories)}
-        - Be SPECIFIC - never use generic "Technology" or "General"
-        - If about AI/ML/LLMs → "AI & Machine Learning"
-        - If about coding tools/IDEs → "Development Tools"
-        - If about crypto/blockchain → "Crypto & Web3"
-        - If about productivity/automation tools → "Automation & Productivity"
-        - NEVER use platform name (Twitter, Reddit) as category or subcategory
-
-        Provide a JSON response with this EXACT structure:
+        You are an expert content analyst. Return STRICT JSON ONLY with these keys (fill every field):
         {{
-          "category": "ONE category from the list above",
-          "subcategory": "Specific subcategory (e.g., 'AI Agents', 'LLMs', 'Trading Bots')",
-          "content_type": "Type (Tutorial, News, Discussion, Tool, Resource, etc.)",
-          "topics": ["topic1", "topic2", "topic3"],
-          "key_concepts": ["concept1", "concept2", "concept3"],
-          "summary": "Clear 2-3 sentence summary of key information",
-          "why_valuable": "Why someone would bookmark this content",
-          "sentiment": "Positive/Negative/Neutral/Mixed",
-          "complexity_level": "Beginner/Intermediate/Advanced/Expert",
-          "time_to_consume": "estimated reading/watching time in minutes",
-          "actionable_items": ["specific action1", "specific action2"],
-          "learning_value": "What you can learn from this (1-2 sentences)",
-          "practical_applications": ["how to apply this knowledge"],
-          "related_skills": ["skill1", "skill2"],
-          "follow_up_research": ["what to research next"],
-          "quality_indicators": ["why this is high/low quality content"],
-          "tags": ["searchable", "keywords"],
-          "confidence_score": 0.85,
-
-          "rewrite_angles": [
-            {{
-              "persona": "technical",
-              "angle": "How a developer/engineer would approach this topic",
-              "hook": "The most compelling technical hook (1 sentence)",
-              "key_points": ["Technical detail 1", "Technical detail 2", "Technical detail 3"],
-              "target_audience": "Who this angle is for",
-              "estimated_engagement": "high/medium/low",
-              "tone": "technical/educational/authoritative - How to write this",
-              "call_to_action": "What action to suggest (try this, read more, build something, etc.)",
-              "platform_fit": "twitter_thread/linkedin_post/short_tweet - Best format for this angle"
-            }},
-            {{
-              "persona": "builder",
-              "angle": "How to build/ship something with this knowledge",
-              "hook": "Action-oriented hook focused on building (1 sentence)",
-              "key_points": ["Practical step 1", "Practical step 2", "Practical step 3"],
-              "target_audience": "Makers, founders, product builders",
-              "estimated_engagement": "high/medium/low",
-              "tone": "action-oriented/motivational/practical - Energetic and focused on results",
-              "call_to_action": "Build this, ship now, start today, etc.",
-              "platform_fit": "twitter_thread/short_tweet - Quick actionable content"
-            }},
-            {{
-              "persona": "learner",
-              "angle": "Educational explanation for someone learning this topic",
-              "hook": "Learning-focused hook that makes it accessible (1 sentence)",
-              "key_points": ["Learning point 1", "Learning point 2", "Learning point 3"],
-              "target_audience": "Beginners and students",
-              "estimated_engagement": "high/medium/low",
-              "tone": "educational/friendly/patient - Clear and beginner-friendly",
-              "call_to_action": "Learn more, try this exercise, practice this, etc.",
-              "platform_fit": "linkedin_post/twitter_thread - Detailed educational content"
-            }},
-            {{
-              "persona": "trendsetter",
-              "angle": "What's new/trending/cutting-edge about this",
-              "hook": "Trend-focused hook that highlights what's emerging (1 sentence)",
-              "key_points": ["Trend insight 1", "Trend insight 2", "Trend insight 3"],
-              "target_audience": "Early adopters and innovators",
-              "estimated_engagement": "high/medium/low",
-              "tone": "excited/forward-looking/provocative - FOMO-inducing",
-              "call_to_action": "Jump on this trend, get early access, don't miss this, etc.",
-              "platform_fit": "short_tweet/twitter_thread - Fast-moving trend content"
-            }},
-            {{
-              "persona": "thought_leader",
-              "angle": "Big picture analysis and future implications",
-              "hook": "Thought-provoking hook about larger implications (1 sentence)",
-              "key_points": ["Strategic insight 1", "Strategic insight 2", "Strategic insight 3"],
-              "target_audience": "Leaders and strategists",
-              "estimated_engagement": "high/medium/low",
-              "tone": "authoritative/analytical/visionary - Big picture perspective",
-              "call_to_action": "Consider this, rethink your strategy, prepare for this future, etc.",
-              "platform_fit": "linkedin_post/twitter_thread - Long-form thought leadership"
-            }}
-          ],
-
-          "discovery_signals": {{
-            "author_authority": "high/medium/low - Based on engagement (>1000 likes=high, >100=medium, <100=low)",
-            "trend_relevance": "emerging/mainstream/declining - Emerging if mentions new tech/concepts, mainstream if established topics, declining if outdated",
-            "viral_potential": 75,
-            "discussion_quality": "high/medium/low - High if >50 comments with substance, medium if 10-50, low if <10",
-            "unique_perspective": "yes/no - YES if offers novel insight/data/approach, NO if repeating common knowledge"
-          }},
-
-          "content_freshness": {{
-            "publication_age": "Calculate age from created_at timestamp (hours/days/weeks)",
-            "still_relevant": "yes/no - Is this content still useful or is it outdated",
-            "time_sensitivity": "urgent/timely/evergreen - Does this need to be acted on now or is it timeless"
-          }}
+          "ai_summary": string (200-400 chars, concrete and specific),
+          "tags": [string <= 8],
+          "key_concepts": [string <= 8],
+          "topic": string (short, e.g., "AI Agents"),
+          "content_type": string ("news"|"how_to"|"opinion"|"thread"|"case_study"),
+          "language": string (e.g., "en"),
+          "value_score": number 0..10,
+          "quality_score": number 0..10
         }}
-
-        Focus on PRACTICAL VALUE and ACTIONABLE INSIGHTS. Be specific and helpful.
-        The rewrite_angles are CRITICAL - provide detailed, distinct approaches for each persona.
-        The discovery_signals help determine content worth and discoverability.
-        The content_freshness helps with timing and relevance.
-
-        Return ONLY valid JSON, no additional text.
+        INPUT:
+        platform: {post.platform}  author: {post.author} @{post.author_handle}
+        content: {post.content}
+        hashtags: {', '.join(post.hashtags) if post.hashtags else 'None'}
+        created_at: {post.created_at}  url: {post.url}
         """
     
     def _analyze_with_mistral(self, prompt: str, sentiment_scores: Dict, service: Dict) -> Dict[str, Any]:
         """Analyze content using Mistral AI"""
-        
+        self._rate_limit_sleep()
         response = requests.post(
             f"{service['base_url']}/chat/completions",
             headers={
@@ -619,6 +786,7 @@ class IntelligentContentAnalyzer:
     def _analyze_with_ollama(self, prompt: str, sentiment_scores: Dict, service: Dict) -> Dict[str, Any]:
         """Analyze content using Ollama"""
         try:
+            self._rate_limit_sleep()
             url = f"{service['url']}/api/chat"
             payload = {
                 "model": service['model'],
@@ -669,35 +837,239 @@ class IntelligentContentAnalyzer:
     
     def _analyze_with_gemini(self, prompt: str, sentiment_scores: Dict, service: Dict) -> Dict[str, Any]:
         """Analyze content using Google Gemini"""
-        
-        response = service['model'].generate_content(
-            prompt,
-            generation_config=genai.types.GenerationConfig(
-                temperature=0.1,
-                max_output_tokens=1500
+        self._rate_limit_sleep()
+        try:
+            response = service['model'].generate_content(
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.1,
+                    max_output_tokens=1500
+                )
             )
-        )
+        except Exception as e:
+            raise Exception(f"Gemini request failed: {e}")
         
-        content = response.text.strip()
+        # Try robust extraction of JSON content
+        try:
+            content = (getattr(response, 'text', '') or '').strip()
+        except Exception:
+            content = ''
+        if not content and hasattr(response, 'candidates') and response.candidates:
+            try:
+                content = "".join(p.text or "" for p in response.candidates[0].content.parts)
+            except Exception:
+                content = ""
         
         # Clean JSON response
         if content.startswith('```json'):
             content = content[7:-3]
         elif content.startswith('```'):
             content = content[3:-3]
+        # Fallback: extract first JSON object via brace matching
+        if not content.strip().startswith('{'):
+            import re
+            match = re.search(r"\{[\s\S]*\}", content)
+            if match:
+                content = match.group(0)
         
         try:
             analysis = json.loads(content)
-            # Ensure analysis is a dictionary
             if not isinstance(analysis, dict):
                 raise ValueError(f"Analysis result is not a dictionary: {type(analysis)}")
+        except (json.JSONDecodeError, ValueError):
+            # Soft fallback: return minimal structured result
+            analysis = {
+                'summary': '',
+                'value_score': 0.0,
+                'content_quality_score': 0.0,
+                'sentiment': '',
+                'key_concepts': [],
+                'tags': [],
+                'category': 'unknown'
+            }
                 
             analysis['sentiment_scores'] = sentiment_scores
             analysis['ai_service'] = 'gemini'
-            
+        return analysis
+
+    def _coerce_analysis(self, post: SocialPost, analysis: Dict[str, Any]) -> Dict[str, Any]:
+        import re
+        def _listize(x):
+            if x is None:
+                return []
+            if isinstance(x, list):
+                return [str(i).strip() for i in x if str(i).strip()]
+            if isinstance(x, str):
+                parts = [p.strip(" #") for p in re.split(r"[#,;]|\\n", x) if p.strip()]
+                return parts[:8]
+            return []
+
+        summary = (analysis.get('ai_summary') or analysis.get('summary') or '').strip()
+        if len(summary) < 50:
+            base_title = getattr(post, 'title', '') or ''
+            base = f"{base_title}. {post.content or ''}".strip()
+            summary = (base[:600] or '')
+        analysis['ai_summary'] = summary[:600] if summary else (post.content or '')[:400]
+
+        tags = _listize(analysis.get('tags') or post.hashtags or [])
+        if not tags:
+            safe_title = getattr(post, 'title', '') or ''
+            content = f"{safe_title} {post.content or ''}"
+            tags = self._extract_keywords(content)[:8]
+        analysis['tags'] = tags
+
+        kcs = _listize(analysis.get('key_concepts'))
+        if not kcs:
+            kcs = self._extract_keywords(post.content or '')[:8]
+        analysis['key_concepts'] = kcs
+
+        try:
+            vs = float(analysis.get('value_score') or 0)
+        except Exception:
+            vs = 0
+        try:
+            qs = float(analysis.get('content_quality_score') or analysis.get('quality_score') or 0)
+        except Exception:
+            qs = 0
+        analysis['value_score'] = vs if vs > 0 else self._score_value(analysis['ai_summary'], tags, kcs)
+        analysis['quality_score'] = qs if qs > 0 else self._score_quality(post.content or '', analysis['ai_summary'])
+
+        analysis['topic'] = (analysis.get('topic') or self._guess_topic(tags, kcs) or '').strip()[:50]
+        analysis['content_type'] = (analysis.get('content_type') or self._guess_type(post) or 'thread').strip()[:30]
+        analysis['language'] = (analysis.get('language') or self._guess_language(post.content or '') or 'en').strip()[:10]
+
+        analysis['analysis_model'] = analysis.get('ai_service') or 'gemini'
+        analysis['analyzed_at'] = datetime.utcnow().isoformat()
+
+        # Persona fit scoring
+        try:
+            best_key, best_score, best_reasons, scores_map, reasons_map = self._persona_fit_scores(post, analysis)
+            analysis['best_persona_key'] = best_key
+            analysis['best_persona_score'] = best_score
+            analysis['best_persona_reasons'] = best_reasons
+            analysis['persona_fit_scores'] = scores_map
+            analysis['persona_fit_reasons'] = reasons_map
+        except Exception:
+            pass
+
+        # Rewrite-oriented defaults if missing
+        if 'rewrite_score' not in analysis:
+            # Heuristic from summary and structure
+            rs = self._score_value(analysis['ai_summary'], analysis['tags'], analysis['key_concepts'])
+            analysis['rewrite_score'] = rs
+        if 'rewrite_readiness' not in analysis:
+            summary_len = len(analysis['ai_summary'] or '')
+            analysis['rewrite_readiness'] = 'ready' if summary_len >= 150 else ('needs_context' if summary_len < 80 else 'needs_trim')
+        if 'rewrite_reasons' not in analysis:
+            analysis['rewrite_reasons'] = [f"Good tags ({len(analysis['tags'])})", f"Concepts ({len(analysis['key_concepts'])})"]
+        if 'rewrite_risks' not in analysis:
+            risks = []
+            if len(analysis['ai_summary']) < 120: risks.append('Short summary')
+            if not analysis['tags']: risks.append('No tags')
+            analysis['rewrite_risks'] = risks
+        if 'analysis_confidence' not in analysis:
+            analysis['analysis_confidence'] = 0.7
+        if 'analysis_depth' not in analysis:
+            analysis['analysis_depth'] = 'fast'
+        if 'needs_deep_analysis' not in analysis:
+            analysis['needs_deep_analysis'] = True if analysis['rewrite_score'] >= 8 and analysis['analysis_confidence'] < 0.8 else False
             return analysis
-        except (json.JSONDecodeError, ValueError) as e:
-            raise Exception(f"Failed to parse Gemini response as JSON: {e}")
+
+    def _persona_fit_scores(self, post: SocialPost, analysis: Dict[str, Any]):
+        """Compute persona fit using persona configs; return best and maps.
+        Output: (best_key, best_score, best_reasons, scores_map, reasons_map)
+        """
+        import json, os
+        from pathlib import Path
+        personas_dir = Path("config/personas")
+        scores_map: Dict[str, float] = {}
+        reasons_map: Dict[str, list] = {}
+        safe_title2 = getattr(post, 'title', '') or ''
+        content = f"{safe_title2} {post.content or ''} {analysis.get('ai_summary') or ''}"
+        tags = analysis.get('tags') or []
+        concepts = analysis.get('key_concepts') or []
+        for pf in personas_dir.glob("*.json"):
+            try:
+                data = json.loads(pf.read_text())
+                key = data.get('key') or pf.stem
+                voice = (data.get('voice') or '').lower()
+                goals = ' '.join(data.get('goals') or [])
+                donts = ' '.join(data.get('donts') or [])
+                # Simple matching
+                score = 0.0
+                # keyword overlap
+                for t in tags[:8]:
+                    if t.lower() in goals.lower(): score += 0.6
+                for c in concepts[:8]:
+                    if c.lower() in goals.lower(): score += 0.6
+                # tone heuristic
+                if any(k in voice for k in ("action", "build", "ship")) and any(w in content.lower() for w in ("how to", "build", "step")):
+                    score += 2
+                if any(k in voice for k in ("technical", "engineer", "deep")) and len(content) > 400:
+                    score += 1.5
+                if any(k in donts.lower() for k in ("hype", "clickbait")) and any(w in content.lower() for w in ("insane", "shocking", "you won't")):
+                    score -= 1
+                score = float(max(0, min(10, score)))
+                scores_map[key] = score
+                reasons = []
+                if score >= 2: reasons.append("keyword/goal overlap")
+                if any(w in content.lower() for w in ("how to", "build", "step")): reasons.append("actionable potential")
+                if len(content) > 400: reasons.append("enough substance")
+                reasons_map[key] = reasons
+            except Exception:
+                continue
+        best_key = None
+        best_score = -1
+        for k, v in scores_map.items():
+            if v > best_score:
+                best_key, best_score = k, v
+        best_reasons = reasons_map.get(best_key, []) if best_key else []
+        return best_key, float(max(0, best_score)), best_reasons, scores_map, reasons_map
+
+    def _extract_keywords(self, text: str) -> List[str]:
+        if not text:
+            return []
+        import re
+        words = [w.lower() for w in re.findall(r"[A-Za-z][A-Za-z0-9_+-]{3,}", text)]
+        freq: Dict[str, int] = {}
+        for w in words:
+            freq[w] = freq.get(w, 0) + 1
+        return [w for w, _ in sorted(freq.items(), key=lambda kv: (-kv[1], kv[0]))][:10]
+
+    def _score_value(self, summary: str, tags: List[str], concepts: List[str]) -> float:
+        score = 0
+        if len(summary) > 120: score += 3
+        if tags: score += 2
+        if concepts: score += 2
+        if any(k in summary.lower() for k in ("how to", "guide", "step", "tips", "framework")): score += 2
+        return float(max(1, min(10, score)))
+
+    def _score_quality(self, content: str, summary: str) -> float:
+        score = 0
+        if len(summary) > 150: score += 3
+        if len(content) > 300: score += 2
+        if any(p in summary for p in (":", "-", ";")): score += 1
+        return float(max(1, min(10, score)))
+
+    def _guess_topic(self, tags: List[str], concepts: List[str]) -> str:
+        pool = (tags or []) + (concepts or [])
+        if not pool: return "General"
+        return pool[0][:50]
+
+    def _guess_type(self, post: SocialPost) -> str:
+        if post.post_type and post.post_type.lower() in ("thread", "tweet", "post"):
+            return "thread" if post.platform in ("threads", "twitter") else "post"
+        if getattr(post, 'title', None) and len(post.content or '') > 600: return "how_to"
+        return "opinion"
+
+    def _guess_language(self, text: str) -> str:
+        try:
+            import re
+            if re.search(r"[А-Яа-я]", text): return "ru"
+            if re.search(r"[\u0600-\u06FF]", text): return "ar"
+            return "en"
+        except Exception:
+            return "en"
     
     def _analyze_comments(self, post: SocialPost) -> Dict[str, Any]:
         """Analyze Reddit comments to extract valuable insights"""
@@ -738,7 +1110,14 @@ class IntelligentContentAnalyzer:
         return media_insights
     
     def _analyze_single_media(self, media_url: str) -> Optional[Dict[str, Any]]:
-        """Analyze a single media item using AI vision"""
+        """Analyze a single media item using AI vision
+        
+        Only processes HTTP/HTTPS URLs. Skips local paths, base64, or other non-URL formats.
+        """
+        # Guard: only process valid HTTP/HTTPS URLs
+        if not isinstance(media_url, str) or not (media_url.startswith('http://') or media_url.startswith('https://')):
+            print(f"⚠️ Skipping non-URL media: {media_url[:50]}...")
+            return None
 
         # Check if we have Gemini Vision available
         for service in self.ai_services:
@@ -965,13 +1344,15 @@ class IntelligentContentAnalyzer:
         
         # Actual engagement metrics (0-1 point)
         if hasattr(post, 'engagement') and post.engagement:
-            likes = post.engagement.get('likes', 0) or post.engagement.get('score', 0) or post.engagement.get('favorite_count', 0)
-            comments = post.engagement.get('replies', 0) or post.engagement.get('num_comments', 0) or post.engagement.get('reply_count', 0)
-            
-            if likes > 100 or comments > 20:
-                quality_score += 1.0
-            elif likes > 20 or comments > 5:
-                quality_score += 0.5
+            # Ensure engagement is a dict, not a string
+            if isinstance(post.engagement, dict):
+                likes = post.engagement.get('likes', 0) or post.engagement.get('score', 0) or post.engagement.get('favorite_count', 0)
+                comments = post.engagement.get('replies', 0) or post.engagement.get('num_comments', 0) or post.engagement.get('reply_count', 0)
+                
+                if likes > 100 or comments > 20:
+                    quality_score += 1.0
+                elif likes > 20 or comments > 5:
+                    quality_score += 0.5
         
         return min(quality_score, 10.0)
     

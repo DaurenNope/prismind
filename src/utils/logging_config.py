@@ -116,6 +116,10 @@ class StructuredLogger:
         """Critical level logging with context"""
         self._log(logging.CRITICAL, message, **kwargs)
     
+    def exception(self, message: str, **kwargs):
+        """Exception level logging with context (same as error but includes exception info)"""
+        self._log(logging.ERROR, message, exc_info=True, **kwargs)
+    
     def _log(self, level: int, message: str, **kwargs):
         """Internal logging method with context support"""
         # Add context to log record; ensure 'context' always exists for formatters
