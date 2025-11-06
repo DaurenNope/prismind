@@ -6,7 +6,6 @@ Provides unified collection interface with real-time progress
 
 import asyncio
 import os
-import uuid
 import streamlit as st
 from datetime import datetime, timedelta
 from typing import Optional
@@ -59,13 +58,8 @@ def render_collection_tab():
     col1, col2 = st.columns([2, 1])
 
     with col1:
-        # Ensure unique key across app by namespacing with UI mode and a counter
-        new_ui = os.getenv("NEW_UI", "true").lower() in ("true", "1", "yes")
-        key_suffix = "inbox" if new_ui else "legacy"
-        if 'collection_select_counter' not in st.session_state:
-            st.session_state.collection_select_counter = 0
-        st.session_state.collection_select_counter += 1
-        unique_key = f"collection_platform_select_{key_suffix}_{st.session_state.collection_select_counter}"
+        # Deterministic unique key for selectbox
+        unique_key = "collection_tab_select_platform"
         platform = st.selectbox(
             "Select Platform",
             options=["threads", "twitter", "reddit"],
@@ -81,9 +75,8 @@ def render_collection_tab():
         st.write("")  # Spacing
         st.write("")  # Spacing
         # Unique key for checkbox to avoid DuplicateWidgetID
-        # Use a UUID to ensure uniqueness across multiple renders/containers
-        cb_key = f"collect_all_checkbox_{key_suffix}_{uuid.uuid4().hex}"
-        collect_all = st.checkbox("Collect All", value=False, key=cb_key)
+        # Deterministic unique key for checkbox
+        collect_all = st.checkbox("Collect All", value=False, key="collection_tab_collect_all")
 
     # Collection button
     if service.is_collecting():
