@@ -10,6 +10,9 @@ from typing import Dict, List, Any, Optional
 from datetime import datetime
 
 from src.database.queries import DatabaseQueries
+from src.utils.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class DatabaseOperations:
@@ -32,15 +35,15 @@ class DatabaseOperations:
 
             if url and key and url != "your-project-url" and key != "your-api-key":
                 self.supabase = SupabaseManager()
-                print("✅ Supabase sync enabled")
+                logger.debug("✅ Supabase sync enabled")
             else:
-                print("ℹ️  Supabase sync disabled (no valid credentials)")
+                logger.debug("ℹ️  Supabase sync disabled (no valid credentials)")
         except Exception as e:
             # Don't show error if it's just missing credentials
             if "Invalid API key" in str(e) or "Missing" in str(e):
-                print("ℹ️  Supabase sync disabled (credentials not configured)")
+                logger.debug("ℹ️  Supabase sync disabled (credentials not configured)")
             else:
-                print(f"⚠️  Supabase sync disabled: {e}")
+                logger.debug(f"⚠️  Supabase sync disabled: {e}")
 
         # Initialize AI summarizer
         self.summarizer = None
@@ -48,9 +51,9 @@ class DatabaseOperations:
             from src.services.summarizer import get_summarizer
 
             self.summarizer = get_summarizer()
-            print("✅ AI summarizer enabled")
+            logger.debug("✅ AI summarizer enabled")
         except Exception as e:
-            print(f"⚠️  AI summarizer disabled: {e}")
+            logger.debug(f"⚠️  AI summarizer disabled: {e}")
 
     def _init_database(self):
         """Initialize database with required tables"""
@@ -143,13 +146,13 @@ class DatabaseOperations:
                 )
 
                 conn.commit()
-                print("✅ Database initialized successfully")
+                logger.debug("✅ Database initialized successfully")
 
                 # Ensure schema for existing databases (add missing columns)
                 self._ensure_posts_schema(conn)
 
         except Exception as e:
-            print(f"❌ Error initializing database: {e}")
+            logger.error(f"❌ Error initializing database: {e}", exc_info=True)
 
     def _ensure_posts_schema(self, conn: sqlite3.Connection) -> None:
         """Add any missing columns to the posts table for backward compatibility."""
@@ -184,6 +187,28 @@ class DatabaseOperations:
                 ("rewrite_status", "TEXT"),
                 ("rewritten_content", "TEXT"),
                 ("rewrite_notes", "TEXT"),
+                ("analyzed_at", "TIMESTAMP"),
+                ("analysis_model", "TEXT"),
+                ("ai_summary", "TEXT"),
+                ("language", "TEXT"),
+                ("embedding", "TEXT"),
+                ("embedding_model", "TEXT"),
+                ("rewrite_score", "REAL"),
+                ("rewrite_readiness", "TEXT"),
+                ("rewrite_reasons", "TEXT"),
+                ("rewrite_risks", "TEXT"),
+                ("analysis_confidence", "REAL"),
+                ("analysis_depth", "TEXT"),
+                ("needs_deep_analysis", "BOOLEAN"),
+                ("persona_fit_scores", "TEXT"),
+                ("persona_fit_reasons", "TEXT"),
+                ("best_persona_key", "TEXT"),
+                ("best_persona_score", "REAL"),
+                ("best_persona_reasons", "TEXT"),
+                ("time_sensitive", "BOOLEAN"),
+                ("urgency_score", "REAL"),
+                ("relevance_window", "TEXT"),
+                ("time_sensitive_reasons", "TEXT"),
             ]
 
             added_column = False
@@ -550,15 +575,66 @@ class DatabaseOperations:
         """Update an existing post"""
         try:
             with sqlite3.connect(self.db_path) as conn:
+                # Ensure schema is up to date before updating
+                self._ensure_posts_schema(conn)
+                
                 cursor = conn.cursor()
 
                 # Build update query dynamically
                 set_clauses = []
                 values = []
 
+                # Determine existing columns to avoid unknown-column errors
+                cursor.execute("PRAGMA table_info(posts)")
+                existing_columns = {row[1] for row in cursor.fetchall()}
+
+                # Fields that should be JSON-serialized (explicit list + catch-all for list/dict types)
+                json_fields = [
+                    "media_urls",
+                    "hashtags",
+                    "mentions",
+                    "engagement",
+                    "embedding",
+                    "key_concepts",
+                    "tags",
+                    "sentiment_analysis",
+                    "recommended_personas",
+                    "persona_match_scores",
+                    "persona_candidacy",
+                    "insights",
+                    "action_items",
+                    "recommendations",
+                    "rewrite_reasons",
+                    "rewrite_risks",
+                    "persona_fit_scores",
+                    "persona_fit_reasons",
+                    "best_persona_reasons",
+                    "time_sensitive_reasons",
+                ]
+
                 for key, value in update_data.items():
-                    if key in ["media_urls", "hashtags", "mentions", "engagement"]:
+                    # Skip fields not present in SQLite schema (e.g., legacy subcategory)
+                    if key not in existing_columns:
+                        continue
+                    
+                    # Handle None values - convert to NULL
+                    if value is None:
+                        set_clauses.append(f"{key} = NULL")
+                        continue
+                    
+                    # Normalize JSON-like fields to TEXT for SQLite
+                    if key in json_fields or isinstance(value, (list, dict)):
                         value = self._serialize_json(value)
+                    # Ensure numeric fields are actually numeric
+                    elif key in ["value_score", "quality_score", "rewrite_score", "analysis_confidence", "best_persona_score", "urgency_score"]:
+                        try:
+                            value = float(value) if value is not None else None
+                        except (ValueError, TypeError):
+                            value = None
+                    # Ensure boolean fields are 0/1
+                    elif key in ["needs_deep_analysis", "is_saved", "deleted", "is_rewrite_candidate", "time_sensitive"]:
+                        value = 1 if value else 0
+                    
                     set_clauses.append(f"{key} = ?")
                     values.append(value)
 
@@ -569,7 +645,29 @@ class DatabaseOperations:
                 values.append(post_id)
 
                 query = f"UPDATE posts SET {', '.join(set_clauses)} WHERE post_id = ?"
-                cursor.execute(query, values)
+                try:
+                    cursor.execute(query, values)
+                except sqlite3.Error as e:
+                    # Fallback: try field-by-field to skip problematic bindings
+                    print(f"⚠️ SQLite update failed ({e}), attempting field-by-field fallback")
+                    safe_set = []
+                    safe_vals = []
+                    # Build column->value pairs
+                    pairs = [(clause.split('=')[0].strip(), val) for clause, val in zip(set_clauses, values[:-1])]  # exclude post_id
+                    for col, val in pairs:
+                        try:
+                            test_query = f"UPDATE posts SET {col} = ? WHERE post_id = ?"
+                            cursor.execute(test_query, [val, post_id])
+                            safe_set.append(f"{col} = ?")
+                            safe_vals.append(val)
+                        except sqlite3.Error:
+                            # Skip this bad field
+                            continue
+                    if safe_set:
+                        fallback_query = f"UPDATE posts SET {', '.join(safe_set)}, updated_timestamp = CURRENT_TIMESTAMP WHERE post_id = ?"
+                        cursor.execute(fallback_query, safe_vals + [post_id])
+                    else:
+                        raise
 
                 if cursor.rowcount > 0:
                     conn.commit()
@@ -581,6 +679,12 @@ class DatabaseOperations:
 
         except Exception as e:
             print(f"❌ Error updating post: {e}")
+            # Log the problematic update_data for debugging
+            if update_data:
+                print(f"   Update data keys: {list(update_data.keys())}")
+                print(f"   Update data sample: {dict(list(update_data.items())[:3])}")
+            import traceback
+            traceback.print_exc()
             return False
 
     def delete_post(self, post_id: str) -> bool:

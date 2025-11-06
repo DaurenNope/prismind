@@ -75,8 +75,7 @@ class SupabaseManager:
             )
 
             is_duplicate = len(result.data) > 0
-            if is_duplicate:
-                logger.info(f"   ⏭️  Skipping duplicate URL: {url[:60]}...")
+            # Don't log here - let insert_post handle logging to avoid duplicates
             return is_duplicate
         except Exception as e:
             logger.warning(f"   ⚠️  Error checking duplicate: {e}")
@@ -211,7 +210,7 @@ class SupabaseManager:
                     logger.info(f"   🔄 Duplicate URL found, will UPDATE with enriched data: {url}")
                     # Don't return, proceed to update
                 else:
-                    logger.info(f"   ⏭️  Duplicate URL detected: {url}")
+                    logger.debug(f"   ⏭️  Duplicate URL detected: {url[:60]}...")
                     return {}  # Return empty dict to indicate duplicate
 
             # Then check by content/author
@@ -220,7 +219,7 @@ class SupabaseManager:
                     logger.info(f"   🔄 Duplicate found, will UPDATE with enriched data")
                     # Don't return, proceed to update
                 else:
-                    logger.info(f"   ⏭️  Duplicate detected: {author} - {content[:50]}...")
+                    logger.debug(f"   ⏭️  Duplicate detected: {author} - {content[:50]}...")
                     return {}  # Return empty dict to indicate duplicate
             else:
                 logger.info(

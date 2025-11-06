@@ -241,6 +241,14 @@ def setup_logging():
     logging.getLogger('urllib3').setLevel(logging.WARNING)
     logging.getLogger('requests').setLevel(logging.WARNING)
     logging.getLogger('PIL').setLevel(logging.WARNING)
+    # Suppress Supabase client HTTP request logs (very noisy)
+    logging.getLogger('postgrest').setLevel(logging.WARNING)
+    logging.getLogger('gotrue').setLevel(logging.WARNING)
+    logging.getLogger('realtime').setLevel(logging.WARNING)
+    # Suppress Supabase client internal logger
+    logging.getLogger('supabase').setLevel(logging.WARNING)
+    # Suppress Supabase HTTP client logger (logs every request)
+    logging.getLogger('_client').setLevel(logging.WARNING)
     
     print(f"📝 Logging configured: level={log_level}, format={log_format}")
 
