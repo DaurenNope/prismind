@@ -64,8 +64,7 @@ def render_collection_tab():
     col1, col2 = st.columns([2, 1])
 
     with col1:
-        # Fully unique key per render to avoid DuplicateWidgetID across any render path
-        unique_key = f"{uuid.uuid4().hex}_collection_tab_select_platform"
+        # Stable key so selection persists across renders
         platform = st.selectbox(
             "Select Platform",
             options=["threads", "twitter", "reddit"],
@@ -74,15 +73,14 @@ def render_collection_tab():
                 "twitter": "🐦 Twitter",
                 "reddit": "📱 Reddit",
             }.get(x, x),
-            key=unique_key,
+            key=f"{key_base}_collection_platform_select",
         )
 
     with col2:
         st.write("")  # Spacing
         st.write("")  # Spacing
-        # Unique key for checkbox to avoid DuplicateWidgetID
-        # Fully unique key per render for checkbox
-        collect_all = st.checkbox("Collect All", value=False, key=f"{uuid.uuid4().hex}_collection_tab_collect_all")
+        # Stable key for checkbox
+        collect_all = st.checkbox("Collect All", value=False, key=f"{key_base}_collection_collect_all")
 
     # Collection button
     if service.is_collecting():
