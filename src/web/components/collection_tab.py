@@ -79,7 +79,12 @@ def render_collection_tab():
     with col2:
         st.write("")  # Spacing
         st.write("")  # Spacing
-        collect_all = st.checkbox("Collect All", value=False)
+        # Unique key for checkbox to avoid DuplicateWidgetID
+        if 'collection_checkbox_counter' not in st.session_state:
+            st.session_state.collection_checkbox_counter = 0
+        st.session_state.collection_checkbox_counter += 1
+        cb_key = f"collect_all_checkbox_{key_suffix}_{st.session_state.collection_checkbox_counter}"
+        collect_all = st.checkbox("Collect All", value=False, key=cb_key)
 
     # Collection button
     if service.is_collecting():
