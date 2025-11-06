@@ -120,9 +120,9 @@ class SupabaseManager:
             if not content or not author:
                 return False
 
-            # Build query to check for duplicates
+            # Build query to check for duplicates (category dropped from schema)
             query = self.client.table(self.table_name).select(
-                "id, category, created_at, url"
+                "id, created_at, url"
             )
 
             # Check for exact content match and same author
@@ -132,13 +132,7 @@ class SupabaseManager:
             if platform:
                 query = query.eq("platform", platform)
 
-            # Add category filter if provided (for category-specific duplicate checking)
-            if category:
-                # Only check within the specific category - treat empty/null as different from any specific category
-                if category.strip():  # Non-empty category
-                    query = query.eq("category", category)
-                else:  # Empty category - check for null or empty
-                    query = query.or_("category.is.null,category.eq.")
+            # Category column dropped; ignore category-based duplicate scoping
 
             response = query.limit(5).execute()  # Get more results to see categories
 
@@ -158,13 +152,7 @@ class SupabaseManager:
 
             # Debug logging for duplicate detection
             if len(response.data) > 0:
-                existing_categories = [
-                    post.get("category", "null") for post in response.data
-                ]
                 logger.info(f"🔍 Duplicate found: {author} - {content[:50]}...")
-                logger.debug(f"    Existing in categories: {existing_categories}")
-                if category:
-                    logger.debug(f"    Checking within category: '{category}'")
             else:
                 logger.debug(f"✅ New content: {author} - {content[:50]}...")
 

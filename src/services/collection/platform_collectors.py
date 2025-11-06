@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+Cy#!/usr/bin/env python3
 """
 Platform-specific collectors for Twitter, Reddit, and Threads
 """
@@ -700,11 +700,8 @@ async def collect_threads_bookmarks(
 
         # Collect saved posts
         log("Fetching Threads saved posts...")
-        # Allow limiting during tests via THREADS_SCRAPE_LIMIT
-        try:
-            scrape_limit = int(os.getenv("THREADS_SCRAPE_LIMIT", "50"))
-        except Exception:
-            scrape_limit = 50
+        # Use default limit (no artificial test limits)
+        scrape_limit = 50
         saved_posts = await extractor.get_saved_posts(
             username=threads_username,
             password=threads_password,
@@ -815,49 +812,8 @@ async def collect_threads_bookmarks(
                     "post_type": getattr(post_data, 'post_type', 'post'),
                 }
 
-                # If content looks truncated or too short, try a DOM-only refresh once
-                try:
-                    looks_truncated = False
-                    if content:
-                        c = content.strip()
-                        # More aggressive truncation detection: check for ellipsis anywhere, short content, or ends with common truncation patterns
-                        looks_truncated = (
-                            c.endswith("...") or c.endswith("…") or 
-                            ("..." in c) or ("…" in c) or
-                            (len(c) < 200) or  # Lower threshold - anything under 200 chars might be truncated
-                            c.endswith("...и") or c.endswith("...и т.д.") or
-                            (c.endswith("...") and len(c) < 300)
-                        )
-                    else:
-                        looks_truncated = True
-
-                    if looks_truncated:
-                        log(f"🔍 Detected truncated content for {post_id}: {len(content or '')} chars, attempting DOM refresh...")
-                        try:
-                            # Perform a fresh scrape in a new Playwright context; no dependency on existing page
-                            refreshed_posts = await extractor.scrape_posts_from_urls_async([post_data.url])
-                            refreshed = refreshed_posts[0] if refreshed_posts else None
-                            if refreshed and getattr(refreshed, 'content', None):
-                                refreshed_content = (refreshed.content or '').strip()
-                                log(f"🔍 DOM refresh returned {len(refreshed_content)} chars (original: {len(content or '')} chars)")
-                                # Only replace if refreshed is clearly better/longer (at least 20% improvement or 50+ chars)
-                                min_improvement = max(50, int(len(content or '') * 0.2))
-                                if len(refreshed_content) > len(content or '') + min_improvement:
-                                    post_dict.update({
-                                        'content': refreshed_content[:4000],
-                                        'author': getattr(refreshed, 'author', None) or post_dict.get('author'),
-                                        'username': getattr(refreshed, 'author_handle', None) or post_dict.get('username'),
-                                    })
-                                    content = post_dict['content']
-                                    log(f"🔁 ✅ Refreshed truncated Threads content via DOM: {len((post_data.content or ''))} -> {len(refreshed_content)} chars", "success")
-                                else:
-                                    log(f"⚠️ DOM refresh didn't improve content enough ({len(refreshed_content)} vs {len(content or '')} chars, need +{min_improvement})")
-                            else:
-                                log(f"⚠️ DOM refresh returned no content for {post_id}", "warning")
-                        except Exception as re_err:
-                            log(f"❌ Threads DOM refresh failed for {post_data.url}: {re_err}", "error")
-                except Exception as e:
-                    log(f"⚠️ Error checking truncation for {post_id}: {e}", "warning")
+                # REMOVED: DOM refresh logic to prevent double-scraping
+                # The extractor already does full content extraction, no need for additional refresh
 
                 # Store without AI analysis
                 supabase_ok = False
@@ -941,8 +897,24 @@ async def analyze_threads_posts(db_manager, supabase_manager=None):
             log("AI analysis skipped as SKIP_AI_ANALYSIS is set", "info")
             return 0
 
-        # Get unanalyzed posts
-        unanalyzed_posts = db_manager.get_unanalyzed_posts("threads")
+        # Get unanalyzed posts (support multiple manager interfaces)
+        unanalyzed_posts = []
+        try:
+            # Preferred signature: limit, platforms
+            if hasattr(db_manager, 'get_unanalyzed_posts'):
+                try:
+                    unanalyzed_posts = db_manager.get_unanalyzed_posts(limit=1000, platforms=['threads'])
+                except TypeError:
+                    # Fallback older signature
+                    unanalyzed_posts = db_manager.get_unanalyzed_posts("threads")
+        except Exception:
+            pass
+        if not unanalyzed_posts:
+            try:
+                from src.services.new_database_manager import NewDatabaseManager
+                unanalyzed_posts = NewDatabaseManager().get_unanalyzed_posts(limit=1000, platforms=['threads'])
+            except Exception:
+                unanalyzed_posts = []
         if not unanalyzed_posts:
             log("No unanalyzed Threads posts found", "info")
             return 0
