@@ -1,4 +1,4 @@
-Cy#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 Platform-specific collectors for Twitter, Reddit, and Threads
 """
