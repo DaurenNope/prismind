@@ -222,7 +222,7 @@ class SupabaseManager:
                     logger.debug(f"   ⏭️  Duplicate detected: {author} - {content[:50]}...")
                     return {}  # Return empty dict to indicate duplicate
             else:
-                logger.info(
+                logger.debug(
                     f"✅ Supabase: No duplicate found, inserting post {post_data.get('post_id', 'unknown')}"
                 )
 
@@ -284,7 +284,7 @@ class SupabaseManager:
             emb_preview = f" (embedding: {len(clean_data['embedding'])} dims)" if has_embedding else ""
 
             action = "Upserting" if is_enriched_update else "Inserting"
-            logger.info(f"📤 Supabase: {action} with {len(clean_data)} fields{emb_preview}")
+            logger.debug(f"📤 Supabase: {action} with {len(clean_data)} fields{emb_preview}")
 
             # Use upsert to handle both insert and update
             # This allows enriched data (with embeddings) to update existing posts
@@ -309,7 +309,7 @@ class SupabaseManager:
                     raise api_error
 
             if response.data:
-                logger.info(
+                logger.debug(
                     f"✅ Supabase: Insert successful for post {post_data.get('post_id', 'unknown')}"
                 )
                 return (

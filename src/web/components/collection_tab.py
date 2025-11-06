@@ -133,28 +133,43 @@ def render_collection_tab():
     if st.session_state.collection_history:
         # Show recent collections
         for i, result in enumerate(reversed(st.session_state.collection_history[-10:])):
+            # Handle both dict and dataclass formats
+            if isinstance(result, dict):
+                platform = result.get('platform', 'unknown')
+                posts_collected = result.get('posts_collected', 0)
+                success = result.get('success', False)
+                duration_seconds = result.get('duration_seconds', 0.0)
+                metadata = result.get('metadata', {})
+            else:
+                platform = result.platform
+                posts_collected = result.posts_collected
+                success = result.success
+                duration_seconds = result.duration_seconds
+                metadata = getattr(result, 'metadata', {}) or {}
+            
             with st.expander(
-                f"{'✅' if result.success else '❌'} {result.platform.title()} - "
-                f"{result.posts_collected} posts - "
-                f"{datetime.fromisoformat(result.metadata.get('timestamp', datetime.now().isoformat())).strftime('%Y-%m-%d %H:%M')}"
+                f"{'✅' if success else '❌'} {platform.title()} - "
+                f"{posts_collected} posts - "
+                f"{datetime.fromisoformat(metadata.get('timestamp', datetime.now().isoformat())).strftime('%Y-%m-%d %H:%M')}"
             ):
                 col1, col2, col3 = st.columns(3)
 
                 with col1:
-                    st.metric("Posts Collected", result.posts_collected)
+                    st.metric("Posts Collected", posts_collected)
 
                 with col2:
-                    st.metric("Duration", f"{result.duration_seconds:.1f}s")
+                    st.metric("Duration", f"{duration_seconds:.1f}s")
 
                 with col3:
-                    status_emoji = "✅" if result.success else "❌"
+                    status_emoji = "✅" if success else "❌"
                     st.metric(
                         "Status",
-                        f"{status_emoji} {'Success' if result.success else 'Failed'}",
+                        f"{status_emoji} {'Success' if success else 'Failed'}",
                     )
 
-                if result.error:
-                    st.error(f"Error: {result.error}")
+                error_msg = result.get('error') if isinstance(result, dict) else getattr(result, 'error', None)
+                if error_msg:
+                    st.error(f"Error: {error_msg}")
     else:
         st.info("No collection history yet. Start a collection to see results here.")
 
@@ -247,13 +262,28 @@ def run_collection(
             if collect_all:
                 results = await service.collect_all(progress_callback=update_progress)
 
+                # Add to history - ensure history list exists
+                if "collection_history" not in st.session_state:
+                    st.session_state.collection_history = []
+                
                 # Add to history
                 for platform_name, result in results.items():
                     if result:
                         if not hasattr(result, 'metadata') or result.metadata is None:
                             result.metadata = {}
                         result.metadata["timestamp"] = datetime.now().isoformat()
-                        st.session_state.collection_history.append(result)
+                        # Convert to dict for better session state persistence
+                        history_entry = {
+                            'platform': result.platform,
+                            'posts_collected': result.posts_collected,
+                            'success': result.success,
+                            'duration_seconds': result.duration_seconds,
+                            'error': result.error,
+                            'metadata': result.metadata,
+                            'posts_analyzed': getattr(result, 'posts_analyzed', 0),
+                            'posts_failed': getattr(result, 'posts_failed', 0),
+                        }
+                        st.session_state.collection_history.append(history_entry)
 
                 # Show summary
                 total_collected = sum(r.posts_collected for r in results.values())
@@ -268,12 +298,27 @@ def run_collection(
             else:
                 result = await service.collect(platform, progress_callback=update_progress)
 
+                # Add to history - ensure history list exists
+                if "collection_history" not in st.session_state:
+                    st.session_state.collection_history = []
+                
                 # Add to history
                 if result:
                     if not hasattr(result, 'metadata') or result.metadata is None:
                         result.metadata = {}
                     result.metadata["timestamp"] = datetime.now().isoformat()
-                    st.session_state.collection_history.append(result)
+                    # Convert to dict for better session state persistence
+                    history_entry = {
+                        'platform': result.platform,
+                        'posts_collected': result.posts_collected,
+                        'success': result.success,
+                        'duration_seconds': result.duration_seconds,
+                        'error': result.error,
+                        'metadata': result.metadata,
+                        'posts_analyzed': getattr(result, 'posts_analyzed', 0),
+                        'posts_failed': getattr(result, 'posts_failed', 0),
+                    }
+                    st.session_state.collection_history.append(history_entry)
 
                     # Show result
                     if result.success:

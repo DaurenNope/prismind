@@ -70,6 +70,9 @@ class StructuredLogger:
         # Clear existing handlers
         self.logger.handlers.clear()
         
+        # Disable propagation to prevent duplicate messages from root logger
+        self.logger.propagate = False
+        
         # Set level
         log_level = getattr(logging, level.upper(), logging.INFO)
         self.logger.setLevel(log_level)
@@ -238,17 +241,16 @@ def setup_logging():
         root_logger.addHandler(handler)
     
     # Suppress noisy third-party loggers
-    logging.getLogger('urllib3').setLevel(logging.WARNING)
-    logging.getLogger('requests').setLevel(logging.WARNING)
-    logging.getLogger('PIL').setLevel(logging.WARNING)
-    # Suppress Supabase client HTTP request logs (very noisy)
-    logging.getLogger('postgrest').setLevel(logging.WARNING)
-    logging.getLogger('gotrue').setLevel(logging.WARNING)
-    logging.getLogger('realtime').setLevel(logging.WARNING)
-    # Suppress Supabase client internal logger
-    logging.getLogger('supabase').setLevel(logging.WARNING)
-    # Suppress Supabase HTTP client logger (logs every request)
-    logging.getLogger('_client').setLevel(logging.WARNING)
+    for logger_name in ['urllib3', 'requests', 'PIL', 'postgrest', 'gotrue', 'realtime', 'supabase', '_client']:
+        logger = logging.getLogger(logger_name)
+        logger.setLevel(logging.WARNING)
+        logger.propagate = False  # Prevent propagation to root logger
+    
+    # Also suppress postgrest sub-loggers (they use _client internally)
+    for logger_name in ['postgrest._client', 'postgrest.client', 'postgrest.request_builder']:
+        logger = logging.getLogger(logger_name)
+        logger.setLevel(logging.WARNING)
+        logger.propagate = False
     
     print(f"📝 Logging configured: level={log_level}, format={log_format}")
 
