@@ -184,33 +184,89 @@ def render_analysis_tab():
     with col2:
         st.subheader("Quality Control")
 
-        if st.button("🔍 Validate Quality"):
-            with st.spinner("Validating post quality..."):
+        # Quality validation options
+        validation_scope = st.radio(
+            "Validation Scope",
+            ["Unanalyzed Only (100)", "All Posts (Full Scan)"],
+            help="Choose which posts to validate"
+        )
+        
+        if st.button("🔍 Validate Quality", type="primary"):
+            progress_placeholder = st.empty()
+            status_placeholder = st.empty()
+            results_placeholder = st.empty()
+            
+            try:
                 validator = PostValidator(strict=True)
-
+                
+                # Get posts to validate
+                if validation_scope == "All Posts (Full Scan)":
+                    status_placeholder.info("🔄 Fetching all posts...")
+                    all_posts = db.get_posts(limit=10000)  # Get all posts
+                    posts_to_validate = all_posts
+                else:
+                    posts_to_validate = unanalyzed[:100]
+                
+                status_placeholder.info(f"🔄 Validating {len(posts_to_validate)} posts...")
+                
                 valid_count = 0
                 low_quality_count = 0
                 invalid_count = 0
-
-                for post in unanalyzed[:100]:  # Check first 100
+                invalid_posts = []
+                
+                # Validate in batches with progress
+                for i, post in enumerate(posts_to_validate, 1):
+                    if i % 10 == 0:
+                        progress = i / len(posts_to_validate)
+                        progress_placeholder.progress(progress)
+                        status_placeholder.info(f"🔄 Validating {i}/{len(posts_to_validate)}...")
+                    
                     validation = validator.validate_post(post)
-
+                    
                     if not validation.is_valid:
                         invalid_count += 1
+                        invalid_posts.append({
+                            'post_id': post.get('post_id', 'unknown'),
+                            'platform': post.get('platform', 'unknown'),
+                            'errors': validation.errors,
+                            'warnings': validation.warnings
+                        })
                     elif validation.warnings:
                         low_quality_count += 1
                     else:
                         valid_count += 1
-
-                st.metric("✅ Valid", valid_count)
-                st.metric("⚠️ Low Quality", low_quality_count)
-                st.metric("❌ Invalid", invalid_count)
-
-                if invalid_count > 0:
-                    st.warning(f"Found {invalid_count} invalid posts")
-                    if st.button("🗑️ Delete Invalid"):
-                        # Delete logic here
-                        st.info("Delete functionality can be added")
+                
+                progress_placeholder.progress(1.0)
+                
+                # Show results
+                with results_placeholder.container():
+                    col1, col2, col3 = st.columns(3)
+                    col1.metric("✅ Valid", valid_count)
+                    col2.metric("⚠️ Low Quality", low_quality_count)
+                    col3.metric("❌ Invalid", invalid_count)
+                    
+                    # Show invalid posts
+                    if invalid_posts:
+                        st.warning(f"Found {invalid_count} invalid posts")
+                        with st.expander("View Invalid Posts", expanded=False):
+                            for invalid in invalid_posts[:20]:  # Show first 20
+                                st.write(f"**{invalid['post_id']}** ({invalid['platform']})")
+                                st.caption(f"Errors: {', '.join(invalid['errors'][:2])}")
+                                if invalid['warnings']:
+                                    st.caption(f"Warnings: {', '.join(invalid['warnings'][:2])}")
+                                st.divider()
+                        
+                        # Option to delete invalid posts
+                        if st.button("🗑️ Delete Invalid Posts", type="secondary"):
+                            st.warning("⚠️ Delete functionality not yet implemented. Invalid posts are logged above.")
+                    else:
+                        st.success("✅ All posts passed validation!")
+                
+                status_placeholder.success(f"✅ Validation complete: {valid_count} valid, {low_quality_count} low quality, {invalid_count} invalid")
+                
+            except Exception as e:
+                status_placeholder.error(f"❌ Validation failed: {e}")
+                st.exception(e)
 
     st.markdown("---")
 

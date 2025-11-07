@@ -77,6 +77,16 @@ def render_system_status_tab():
         if quality_24h.get('avg_quality', 0) < 5.0:
             st.error(f"❌ Average quality score is low: {quality_24h.get('avg_quality', 0):.1f}/10")
         
+        # Backfill button for existing posts
+        st.markdown("---")
+        if st.button("🔄 Backfill Quality Metrics", help="Track quality metrics for existing posts"):
+            with st.spinner("Backfilling quality metrics..."):
+                try:
+                    tracked = agent.backfill_quality_metrics(limit=1000)
+                    st.success(f"✅ Tracked quality metrics for {tracked} posts")
+                except Exception as e:
+                    st.error(f"❌ Backfill failed: {e}")
+        
     except Exception as e:
         st.info(f"Quality monitoring unavailable: {e}")
     

@@ -705,24 +705,32 @@ class DatabaseAgent:
         try:
             since = (datetime.utcnow() - timedelta(days=max(1, days))).isoformat()
             
+            # Try updated_at first, fallback to analyzed_at
             query = (
                 self._supabase
                 .table("posts")
-                .select("quality_score,value_score,updated_at")
+                .select("quality_score,value_score,updated_at,analyzed_at")
                 .not_.is_("quality_score", "null")
-                .gt("updated_at", since)
-                .order("updated_at", desc=False)
             )
+            
+            # Filter by date - try updated_at first, then analyzed_at
+            try:
+                query = query.or_(f"updated_at.gt.{since},analyzed_at.gt.{since}")
+            except Exception:
+                # Fallback: just check analyzed_at
+                query = query.gt("analyzed_at", since)
+            
+            query = query.order("updated_at", desc=False).limit(1000)
             
             if platform:
                 query = query.eq("platform", platform)
             
-            result = query.limit(1000).execute()
+            result = query.execute()
             posts = getattr(result, "data", []) or []
             
             quality_scores = [float(p.get("quality_score", 0)) for p in posts if p.get("quality_score")]
             value_scores = [float(p.get("value_score", 0)) for p in posts if p.get("value_score")]
-            timestamps = [p.get("updated_at", "") for p in posts]
+            timestamps = [p.get("updated_at") or p.get("analyzed_at", "") for p in posts]
             
             return {
                 "quality": quality_scores,
@@ -732,6 +740,44 @@ class DatabaseAgent:
         except Exception as e:
             logger.debug(f"get_quality_trends failed: {e}")
             return {"quality": [], "value": [], "timestamps": []}
+
+    def backfill_quality_metrics(self, limit: int = 1000) -> int:
+        """Backfill quality metrics for existing posts"""
+        if self._supabase is None:
+            return 0
+        
+        try:
+            # Get posts with quality scores but not yet tracked
+            posts = (
+                self._supabase
+                .table("posts")
+                .select("post_id,platform,quality_score,value_score,analyzed_at,ai_summary")
+                .not_.is_("quality_score", "null")
+                .limit(limit)
+                .execute()
+            )
+            
+            posts_data = getattr(posts, "data", []) or []
+            tracked = 0
+            
+            for post in posts_data:
+                try:
+                    self.record_post_operation(
+                        post_id=post.get("post_id"),
+                        platform=post.get("platform"),
+                        operation="update",  # Existing posts
+                        quality_score=post.get("quality_score"),
+                        value_score=post.get("value_score"),
+                        has_analysis=bool(post.get("analyzed_at") or post.get("ai_summary"))
+                    )
+                    tracked += 1
+                except Exception:
+                    continue
+            
+            return tracked
+        except Exception as e:
+            logger.debug(f"backfill_quality_metrics failed: {e}")
+            return 0
 
     def get_performance_cohorts(self, window_minutes: int = 10080) -> Dict[str, Any]:
         # Simple client-side cohorts by buckets
