@@ -78,11 +78,28 @@ class StorageFacade:
         
         # Success if EITHER storage succeeded (prioritize local)
         # SQLite is primary - if it succeeds, we're good
-        if sqlite_ok:
-            return True
+        success = sqlite_ok or supabase_ok
         
-        # If SQLite failed but Supabase succeeded, that's also ok
-        return supabase_ok
+        # Track post save/update via DatabaseAgent for monitoring
+        if success:
+            try:
+                from src.database.database_agent import DatabaseAgent
+                agent = DatabaseAgent()
+                # Track post operation (save or update)
+                is_update = post.get('analyzed_at') or post.get('quality_score') or post.get('value_score')
+                agent.record_post_operation(
+                    post_id=post.get('post_id'),
+                    platform=post.get('platform'),
+                    operation='update' if is_update else 'insert',
+                    quality_score=post.get('quality_score'),
+                    value_score=post.get('value_score'),
+                    has_analysis=bool(post.get('analyzed_at') or post.get('ai_summary'))
+                )
+            except Exception:
+                # Don't fail if monitoring fails
+                pass
+        
+        return success
 
     def save_posts(self, posts: List[Dict[str, Any]]) -> int:
         saved = 0

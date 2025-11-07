@@ -121,6 +121,78 @@ class DatabaseAgent:
                 pass
         return None
 
+    def record_post_operation(
+        self,
+        post_id: str,
+        platform: str,
+        operation: str = 'insert',
+        quality_score: Optional[float] = None,
+        value_score: Optional[float] = None,
+        has_analysis: bool = False,
+    ) -> bool:
+        """Track individual post operations (insert/update) for monitoring"""
+        now_iso = datetime.utcnow().isoformat()
+        
+        # Track to post_operations table (create if needed)
+        if self._supabase is not None:
+            try:
+                # Ensure table exists (best-effort)
+                try:
+                    self._supabase.table("post_operations").select("id").limit(1).execute()
+                except Exception:
+                    # Table doesn't exist - create it via migration or skip
+                    pass
+                
+                row = {
+                    "post_id": post_id,
+                    "platform": platform,
+                    "operation": operation,  # 'insert' or 'update'
+                    "quality_score": float(quality_score) if quality_score is not None else None,
+                    "value_score": float(value_score) if value_score is not None else None,
+                    "has_analysis": bool(has_analysis),
+                    "timestamp": now_iso,
+                }
+                self._supabase.table("post_operations").insert(row).execute()
+            except Exception:
+                # Table might not exist - that's ok
+                pass
+        
+        # Track quality metrics if quality_score is present
+        if quality_score is not None:
+            self._track_quality_metric(platform, quality_score, value_score, now_iso)
+        
+        return True
+
+    def _track_quality_metric(
+        self,
+        platform: str,
+        quality_score: float,
+        value_score: Optional[float],
+        timestamp: str,
+    ) -> None:
+        """Track quality metrics for monitoring and alerting"""
+        if self._supabase is None:
+            return
+        
+        try:
+            # Track to quality_metrics table (create if needed)
+            try:
+                self._supabase.table("quality_metrics").select("id").limit(1).execute()
+            except Exception:
+                # Table doesn't exist - skip for now
+                return
+            
+            row = {
+                "platform": platform,
+                "quality_score": float(quality_score),
+                "value_score": float(value_score) if value_score is not None else None,
+                "timestamp": timestamp,
+            }
+            self._supabase.table("quality_metrics").insert(row).execute()
+        except Exception:
+            # Table might not exist - that's ok
+            pass
+
     def record_collection_result(
         self,
         platform: str,
@@ -573,6 +645,94 @@ class DatabaseAgent:
         except Exception:
             return []
 
+    def get_quality_metrics(
+        self,
+        platform: Optional[str] = None,
+        hours: int = 24,
+        limit: int = 1000,
+    ) -> Dict[str, Any]:
+        """Get quality metrics for monitoring and reporting"""
+        if self._supabase is None:
+            return {"avg_quality": 0.0, "avg_value": 0.0, "count": 0, "low_quality_count": 0}
+        
+        try:
+            since = (datetime.utcnow() - timedelta(hours=max(1, hours))).isoformat()
+            
+            query = (
+                self._supabase
+                .table("posts")
+                .select("quality_score,value_score,platform")
+                .not_.is_("quality_score", "null")
+                .gt("updated_at", since)
+            )
+            
+            if platform:
+                query = query.eq("platform", platform)
+            
+            result = query.limit(limit).execute()
+            posts = getattr(result, "data", []) or []
+            
+            if not posts:
+                return {"avg_quality": 0.0, "avg_value": 0.0, "count": 0, "low_quality_count": 0}
+            
+            quality_scores = [float(p.get("quality_score", 0)) for p in posts if p.get("quality_score")]
+            value_scores = [float(p.get("value_score", 0)) for p in posts if p.get("value_score")]
+            
+            avg_quality = sum(quality_scores) / len(quality_scores) if quality_scores else 0.0
+            avg_value = sum(value_scores) / len(value_scores) if value_scores else 0.0
+            low_quality_count = sum(1 for q in quality_scores if q < 5.0)
+            
+            return {
+                "avg_quality": round(avg_quality, 2),
+                "avg_value": round(avg_value, 2),
+                "count": len(posts),
+                "low_quality_count": low_quality_count,
+                "low_quality_percentage": round((low_quality_count / len(posts)) * 100, 1) if posts else 0.0,
+            }
+        except Exception as e:
+            logger.debug(f"get_quality_metrics failed: {e}")
+            return {"avg_quality": 0.0, "avg_value": 0.0, "count": 0, "low_quality_count": 0}
+
+    def get_quality_trends(
+        self,
+        platform: Optional[str] = None,
+        days: int = 7,
+    ) -> Dict[str, List[float]]:
+        """Get quality score trends over time"""
+        if self._supabase is None:
+            return {"quality": [], "value": [], "timestamps": []}
+        
+        try:
+            since = (datetime.utcnow() - timedelta(days=max(1, days))).isoformat()
+            
+            query = (
+                self._supabase
+                .table("posts")
+                .select("quality_score,value_score,updated_at")
+                .not_.is_("quality_score", "null")
+                .gt("updated_at", since)
+                .order("updated_at", desc=False)
+            )
+            
+            if platform:
+                query = query.eq("platform", platform)
+            
+            result = query.limit(1000).execute()
+            posts = getattr(result, "data", []) or []
+            
+            quality_scores = [float(p.get("quality_score", 0)) for p in posts if p.get("quality_score")]
+            value_scores = [float(p.get("value_score", 0)) for p in posts if p.get("value_score")]
+            timestamps = [p.get("updated_at", "") for p in posts]
+            
+            return {
+                "quality": quality_scores,
+                "value": value_scores,
+                "timestamps": timestamps,
+            }
+        except Exception as e:
+            logger.debug(f"get_quality_trends failed: {e}")
+            return {"quality": [], "value": [], "timestamps": []}
+
     def get_performance_cohorts(self, window_minutes: int = 10080) -> Dict[str, Any]:
         # Simple client-side cohorts by buckets
         items = self.get_top_posts(since_minutes=window_minutes, limit=500)
@@ -595,4 +755,42 @@ class DatabaseAgent:
             add(cohorts["persona"], str(it.get("persona")), esc)
             add(cohorts["has_media"], "true" if it.get("has_media") else "false", esc)
         return cohorts
+
+    # --------------- ID Format Checks ---------------
+    def id_format_report(self, sample_limit: int = 1000) -> Dict[str, Any]:
+        """Report on ID format issues per platform (e.g., Reddit t3_ prefix)."""
+        report: Dict[str, Any] = {"reddit": {"bad": 0, "checked": 0}, "twitter": {"bad": 0, "checked": 0}, "threads": {"bad": 0, "checked": 0}}
+        if not self._supabase:
+            return report
+        try:
+            r = (
+                self._supabase
+                .table("posts")
+                .select("post_id,platform")
+                .order("created_at", desc=True)
+                .limit(sample_limit)
+                .execute()
+            )
+            for row in (getattr(r, "data", []) or []):
+                plat = (row.get("platform") or "").lower()
+                pid = (row.get("post_id") or "").strip()
+                if plat not in report:
+                    continue
+                report[plat]["checked"] += 1
+                if plat == "reddit":
+                    if pid:
+                        # Treat bare base36 IDs as acceptable (normalization needed but not "bad")
+                        if pid.startswith("t3_"):
+                            pass  # OK
+                        else:
+                            base = pid
+                            # Heuristic: Reddit base36 IDs are alphanumeric (no underscore) and short
+                            if not base.isalnum() or len(base) > 12:
+                                report[plat]["bad"] += 1
+                else:
+                    # Add other platform rules as needed
+                    pass
+        except Exception:
+            pass
+        return report
 
