@@ -117,27 +117,82 @@ def render_system_status_tab():
         
         # Check recent posts quality
         st.markdown("---")
-        if st.button("📊 Check Recent Posts Quality", help="Check quality of posts collected in last 24h"):
-            with st.spinner("Checking recent posts..."):
-                try:
-                    recent_check = agent.check_recent_posts_quality(hours=24, limit=100)
-                    st.success(f"✅ Checked {recent_check.get('posts_checked', 0)} recent posts")
-                    
-                    if recent_check.get('quality_issues'):
-                        st.warning(f"⚠️ Found {len(recent_check['quality_issues'])} posts with quality issues")
-                    if recent_check.get('collection_issues'):
-                        st.warning(f"⚠️ Found {len(recent_check['collection_issues'])} posts with collection issues")
-                    if recent_check.get('integrity_issues'):
-                        st.error(f"❌ Found {len(recent_check['integrity_issues'])} posts with integrity issues")
-                    
-                    if not any([
-                        recent_check.get('quality_issues'),
-                        recent_check.get('collection_issues'),
-                        recent_check.get('integrity_issues')
-                    ]):
-                        st.success("✅ All recent posts look good!")
-                except Exception as e:
-                    st.error(f"❌ Check failed: {e}")
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("📊 Check Recent Posts Quality", help="Check quality of posts collected in last 24h"):
+                with st.spinner("Checking recent posts..."):
+                    try:
+                        recent_check = agent.check_recent_posts_quality(hours=24, limit=100)
+                        st.success(f"✅ Checked {recent_check.get('posts_checked', 0)} recent posts")
+                        
+                        if recent_check.get('quality_issues'):
+                            st.warning(f"⚠️ Found {len(recent_check['quality_issues'])} posts with quality issues")
+                        if recent_check.get('collection_issues'):
+                            st.warning(f"⚠️ Found {len(recent_check['collection_issues'])} posts with collection issues")
+                        if recent_check.get('integrity_issues'):
+                            st.error(f"❌ Found {len(recent_check['integrity_issues'])} posts with integrity issues")
+                        
+                        if not any([
+                            recent_check.get('quality_issues'),
+                            recent_check.get('collection_issues'),
+                            recent_check.get('integrity_issues')
+                        ]):
+                            st.success("✅ All recent posts look good!")
+                    except Exception as e:
+                        st.error(f"❌ Check failed: {e}")
+        
+        with col2:
+            if st.button("🧹 Cleanup Bad Posts", help="Find and delete wrongly collected posts (DRY-RUN by default)", type="secondary"):
+                with st.spinner("Scanning for bad posts (DRY-RUN - no deletions)..."):
+                    try:
+                        # First dry-run (ALWAYS dry-run first)
+                        dry_run = agent.cleanup_bad_posts(limit=1000, min_issues=2, dry_run=True)
+                        st.info(f"🔍 Found {dry_run.get('bad_posts_found', 0)} bad posts (DRY-RUN - nothing deleted)")
+                        
+                        if dry_run.get('bad_posts_found', 0) > 0:
+                            # Show sample
+                            with st.expander("View Bad Posts That Would Be Deleted", expanded=True):
+                                st.warning("⚠️ These posts would be deleted. Review carefully!")
+                                for post in dry_run.get('bad_posts', [])[:20]:
+                                    st.write(f"**{post['post_id']}** ({post['platform']})")
+                                    st.caption(f"Author: {post.get('author', 'N/A')}")
+                                    st.caption(f"Content: {post['content_preview'][:100]}...")
+                                    if post.get('issues'):
+                                        st.caption(f"Issues: {', '.join(post['issues'][:3])}")
+                                    st.divider()
+                            
+                            # Show summary
+                            st.warning(f"⚠️ {dry_run.get('bad_posts_found', 0)} posts would be deleted")
+                            
+                            # Confirm deletion with explicit confirmation
+                            st.markdown("---")
+                            st.error("⚠️ **DANGER ZONE** - This will permanently delete posts!")
+                            confirm_text = st.text_input(
+                                "Type 'DELETE' to confirm deletion",
+                                key="delete_confirmation",
+                                help="You must type 'DELETE' exactly to proceed"
+                            )
+                            
+                            if confirm_text == "DELETE":
+                                if st.button("🗑️ Confirm Delete Bad Posts", type="primary", key="confirm_delete_bad_posts"):
+                                    with st.spinner("Deleting bad posts..."):
+                                        cleanup = agent.cleanup_bad_posts(limit=1000, min_issues=2, dry_run=False)
+                                        st.success(f"✅ Deleted {cleanup.get('posts_deleted', 0)} bad posts")
+                                        
+                                        if cleanup.get('posts_failed', 0) > 0:
+                                            st.warning(f"⚠️ {cleanup.get('posts_failed', 0)} deletions failed")
+                                        
+                                        if cleanup.get('errors'):
+                                            with st.expander("View Errors"):
+                                                for error in cleanup.get('errors', [])[:5]:
+                                                    st.caption(error)
+                            else:
+                                st.info("💡 Type 'DELETE' in the text field above to enable deletion")
+                        else:
+                            st.success("✅ No bad posts found!")
+                    except Exception as e:
+                        st.error(f"❌ Cleanup failed: {e}")
+                        st.exception(e)
         
     except Exception as e:
         st.info(f"Quality monitoring unavailable: {e}")

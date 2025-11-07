@@ -1157,6 +1157,148 @@ class DatabaseAgent:
         
         return results
 
+    def cleanup_bad_posts(
+        self,
+        limit: int = 1000,
+        platforms: Optional[List[str]] = None,
+        min_issues: int = 2,
+        dry_run: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Cleanup wrongly collected posts.
+        Like a DBA cleaning up bad data.
+        
+        Args:
+            limit: Maximum number of posts to check
+            platforms: Filter by platforms (None = all)
+            min_issues: Minimum number of issues to consider a post "bad"
+            dry_run: If True, only report issues without deleting
+        
+        Returns:
+            Dict with cleanup results
+        """
+        results = {
+            'posts_checked': 0,
+            'bad_posts_found': 0,
+            'posts_deleted': 0,
+            'posts_failed': 0,
+            'bad_posts': [],
+            'errors': [],
+        }
+        
+        try:
+            # Get all posts to check
+            if self._supabase:
+                query = (
+                    self._supabase
+                    .table("posts")
+                    .select("*")
+                    .order("created_at", desc=True)
+                    .limit(limit)
+                )
+                
+                if platforms:
+                    query = query.in_("platform", platforms)
+                
+                result = query.execute()
+                posts = getattr(result, "data", []) or []
+            elif self._sqlite:
+                posts = self._sqlite.get_posts(limit=limit)
+            else:
+                return results
+            
+            results['posts_checked'] = len(posts)
+            
+            # Check each post
+            for post in posts:
+                # Validate and check for issues
+                audit_result = self.validate_and_monitor_post(post)
+                issues = audit_result.get('issues_found', [])
+                
+                # Check if post is "bad" (has critical issues)
+                # BE CONSERVATIVE: Only delete clearly broken posts
+                is_bad = False
+                critical_keywords = [
+                    'placeholder', 'truncated', 'missing', 'invalid', 'failed',
+                    'error', 'impossible', 'scraping failed', 'extraction failed'
+                ]
+                
+                # Count critical issues (excluding Reddit post_id format warnings - those might be false positives)
+                critical_issues = [issue for issue in issues if any(
+                    keyword in issue.lower() for keyword in critical_keywords
+                ) and 'reddit post_id' not in issue.lower()]  # Exclude Reddit post_id format warnings
+                
+                # Also check for placeholder content directly (MOST IMPORTANT)
+                content = post.get('content', '')
+                if content:
+                    content_lower = content.lower()
+                    # Only flag if content is clearly a placeholder/error
+                    if any(placeholder in content_lower for placeholder in [
+                        'scraping failed', 'extraction failed', 'content extraction in progress',
+                        'post from', 'placeholder', 'error extracting'
+                    ]):
+                        is_bad = True
+                
+                # Check for truncated content (ends with ...) - but be careful, some posts legitimately end with ...
+                # Only flag if content is very short and ends with ...
+                if content and len(content) < 50 and content.endswith('...'):
+                    is_bad = True
+                
+                # Check for missing essential fields (MOST IMPORTANT)
+                # Only delete if BOTH author AND url are missing/invalid
+                has_valid_author = post.get('author') and post.get('author', '').lower() not in ['unknown', 'n/a', '']
+                has_valid_url = post.get('url') and post.get('url', '').startswith('http')
+                
+                if not has_valid_author and not has_valid_url:
+                    is_bad = True  # Both missing = definitely bad
+                elif not has_valid_author and not content:
+                    is_bad = True  # No author and no content = bad
+                
+                # If has enough critical issues (excluding Reddit format warnings), mark as bad
+                if len(critical_issues) >= min_issues:
+                    is_bad = True
+                
+                if is_bad:
+                    results['bad_posts_found'] += 1
+                    results['bad_posts'].append({
+                        'id': post.get('id'),
+                        'post_id': post.get('post_id'),
+                        'platform': post.get('platform'),
+                        'author': post.get('author'),
+                        'content_preview': (content or '')[:100],
+                        'issues': issues,
+                        'critical_issues': critical_issues,
+                    })
+                    
+                    # Delete if not dry run
+                    if not dry_run:
+                        try:
+                            # Delete from Supabase
+                            if self._supabase and post.get('id'):
+                                self._supabase.table("posts").delete().eq("id", post.get('id')).execute()
+                            
+                            # Delete from SQLite
+                            if self._sqlite and post.get('post_id'):
+                                try:
+                                    cur = self._sqlite.conn.cursor()
+                                    cur.execute("DELETE FROM posts WHERE post_id = ?", (post.get('post_id'),))
+                                    self._sqlite.conn.commit()
+                                except Exception:
+                                    pass
+                            
+                            results['posts_deleted'] += 1
+                            logger.info(f"🗑️ Deleted bad post: {post.get('post_id')} ({post.get('platform')})")
+                        except Exception as e:
+                            results['posts_failed'] += 1
+                            results['errors'].append(f"Failed to delete {post.get('post_id')}: {e}")
+                            logger.error(f"Failed to delete post {post.get('post_id')}: {e}")
+            
+        except Exception as e:
+            logger.error(f"DB Agent cleanup_bad_posts failed: {e}")
+            results['errors'].append(str(e))
+        
+        return results
+
     def get_performance_cohorts(self, window_minutes: int = 10080) -> Dict[str, Any]:
         # Simple client-side cohorts by buckets
         items = self.get_top_posts(since_minutes=window_minutes, limit=500)
