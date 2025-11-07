@@ -5,7 +5,7 @@ Supabase adapter for primary storage operations.
 
 import os
 import asyncio
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from src.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -80,6 +80,41 @@ class SupabaseAdapter:
             )
             return getattr(result, "data", []) or []
         except Exception:
+            return []
+
+    def get_unanalyzed_posts(self, limit: int = 100, platforms: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+        """Get posts that haven't been analyzed yet (analyzed_at IS NULL)"""
+        try:
+            query = (
+                self.client.table("posts")
+                .select("*")
+                .is_("analyzed_at", "null")
+                .order("created_at", desc=True)
+            )
+            
+            # Filter by platforms if provided
+            if platforms:
+                query = query.in_("platform", platforms)
+            
+            result = query.limit(limit).execute()
+            data = getattr(result, "data", []) or []
+            
+            # Fallback: if no posts with analyzed_at null, check for missing ai_summary
+            if not data:
+                query2 = (
+                    self.client.table("posts")
+                    .select("*")
+                    .or_("ai_summary.is.null,ai_summary.eq.")
+                    .order("created_at", desc=True)
+                )
+                if platforms:
+                    query2 = query2.in_("platform", platforms)
+                result2 = query2.limit(limit).execute()
+                data = getattr(result2, "data", []) or []
+            
+            return data
+        except Exception as e:
+            logger.debug(f"get_unanalyzed_posts failed: {e}")
             return []
 
     def save_github_trending_repo(self, repo_data: Dict[str, Any]) -> bool:

@@ -106,6 +106,20 @@ class StorageFacade:
                 pass
         return []
 
+    def get_unanalyzed_posts(self, limit: int = 100, platforms: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+        """Get posts that haven't been analyzed yet (prefer Supabase; fallback to SQLite cache)."""
+        if self._supabase is not None:
+            try:
+                return self._supabase.get_unanalyzed_posts(limit=limit, platforms=platforms)
+            except Exception:
+                pass
+        if self._sqlite is not None:
+            try:
+                return self._sqlite.get_unanalyzed_posts(limit=limit, platforms=platforms)
+            except Exception:
+                pass
+        return []
+
     def save_github_trending_repo(self, repo_data: Dict[str, Any]) -> bool:
         """Save GitHub trending repository to native table."""
         try:

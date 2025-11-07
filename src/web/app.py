@@ -30,22 +30,13 @@ if str(project_root) not in sys.path:
 
 # Import components
 from src.web.components.status_bar import render_status_bar
-from src.web.components.tabs import (
-    render_dashboard_tab,
-    render_browse_tab,
-    render_settings_tab,
-    render_discoveries_tab,
-)
-from src.web.components.automation_tab import render_automation_tab
-from src.web.components.telegram_tab import render_telegram_tab
+from src.web.components.tabs import render_settings_tab
 from src.web.components.unified_feed_tab import render_unified_feed
 from src.web.components.publishing_page import render_publishing_page
-from src.web.components.settings_page import render_settings_page
 from src.web.components.collection_tab import render_collection_tab
 from src.web.components.persona_pipeline_tab import render_persona_pipeline_tab
 from src.web.components.system_status_tab import render_system_status_tab
 from src.pipeline.orchestrator import get_orchestrator
-from src.services.analysis_runner import analyze_recent_posts
 from src.publishing.worker import get_publisher_worker
 
 # Load environment variables from .env file
@@ -136,9 +127,8 @@ def render_analysis_reminder():
                 st.write("")  # Spacing
                 st.write("")  # Spacing
                 if st.button("🤖 Analyze Now", key="quick_analyze_btn", type="primary"):
-                    st.info(
-                        "Please use the 🎭 Persona Pipeline tab to start analyzing posts."
-                    )
+                    # Trigger in-app analysis with orchestrator
+                    st.session_state.run_global_analysis = True
 
             with col3:
                 st.write("")  # Spacing
@@ -207,6 +197,13 @@ async def run_automated_collection():
     """Run automated collection in the background"""
     while st.session_state.automation_enabled:
         try:
+            # Check cancel
+            try:
+                from src.services.cancel_manager import is_cancelled
+                if is_cancelled("all"):
+                    break
+            except Exception:
+                pass
             # Run collection for each platform
             for platform in ["twitter", "reddit", "threads"]:
                 result = run_collection(platform)
@@ -320,33 +317,17 @@ def main():
     with tab_settings:
         render_settings_tab()
 
-    # Handle collection triggers
-    if st.session_state.get("run_twitter_collection", False):
-        with st.spinner("Collecting from Twitter..."):
-            result = run_collection("twitter")
-            if "error" in result:
-                st.error(f"Error collecting from Twitter: {result['error']}")
-            else:
-                st.success(f"Collected {result.get('collected', 0)} posts from Twitter")
-        st.session_state.run_twitter_collection = False
-
-    if st.session_state.get("run_reddit_collection", False):
-        with st.spinner("Collecting from Reddit..."):
-            result = run_collection("reddit")
-            if "error" in result:
-                st.error(f"Error collecting from Reddit: {result['error']}")
-            else:
-                st.success(f"Collected {result.get('collected', 0)} posts from Reddit")
-        st.session_state.run_reddit_collection = False
-
-    if st.session_state.get("run_threads_collection", False):
-        with st.spinner("Collecting from Threads..."):
-            result = run_collection("threads")
-            if "error" in result:
-                st.error(f"Error collecting from Threads: {result['error']}")
-            else:
-                st.success(f"Collected {result.get('collected', 0)} posts from Threads")
-        st.session_state.run_threads_collection = False
+    # Handle global analysis trigger
+    if st.session_state.get("run_global_analysis", False):
+        try:
+            with st.spinner("Analyzing recent posts with AI..."):
+                orch = get_orchestrator()
+                analyzed = asyncio.run(orch.analyze_batch(limit=st.session_state.get("analysis_batch_size", 10)))
+            st.success(f"Analyzed {analyzed} posts")
+        except Exception as e:
+            st.error(f"Analysis failed: {e}")
+        finally:
+            st.session_state.run_global_analysis = False
 
     # Start/stop background collection
     if st.session_state.automation_enabled and not st.session_state.background_running:

@@ -379,7 +379,8 @@ class Orchestrator:
             from src.services.analysis.post_analyzer import analyze_and_store_post
             from src.services.cancel_manager import is_cancelled
 
-            posts = self.storage.get_posts(limit=limit)
+            # Get unanalyzed posts instead of all posts
+            posts = self.storage.get_unanalyzed_posts(limit=limit)
             count = 0
             for p in posts:
                 try:
