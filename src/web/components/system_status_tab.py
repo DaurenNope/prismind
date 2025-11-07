@@ -79,13 +79,65 @@ def render_system_status_tab():
         
         # Backfill button for existing posts
         st.markdown("---")
-        if st.button("🔄 Backfill Quality Metrics", help="Track quality metrics for existing posts"):
-            with st.spinner("Backfilling quality metrics..."):
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🔄 Backfill Quality Metrics", help="Track quality metrics for existing posts"):
+                with st.spinner("Backfilling quality metrics..."):
+                    try:
+                        tracked = agent.backfill_quality_metrics(limit=1000)
+                        st.success(f"✅ Tracked quality metrics for {tracked} posts")
+                    except Exception as e:
+                        st.error(f"❌ Backfill failed: {e}")
+        
+        with col2:
+            if st.button("🔍 Audit Database", help="Run comprehensive database audit (like a DBA would)"):
+                with st.spinner("Auditing database..."):
+                    try:
+                        audit_results = agent.audit_database(limit=100)
+                        st.success(f"✅ Audited {audit_results.get('posts_checked', 0)} posts")
+                        
+                        # Show audit results
+                        if audit_results.get('critical_issues'):
+                            st.warning(f"⚠️ Found {len(audit_results['critical_issues'])} posts with critical issues")
+                            with st.expander("View Critical Issues"):
+                                for issue in audit_results['critical_issues'][:10]:
+                                    st.write(f"**{issue['post_id']}** ({issue['platform']})")
+                                    for i in issue['issues'][:3]:
+                                        st.caption(f"  - {i}")
+                        
+                        if audit_results.get('recommendations'):
+                            st.info("💡 Recommendations:")
+                            for rec in audit_results['recommendations']:
+                                st.caption(f"  • {rec}")
+                        
+                        if not audit_results.get('critical_issues') and not audit_results.get('issues_found'):
+                            st.success("✅ No issues found!")
+                    except Exception as e:
+                        st.error(f"❌ Audit failed: {e}")
+        
+        # Check recent posts quality
+        st.markdown("---")
+        if st.button("📊 Check Recent Posts Quality", help="Check quality of posts collected in last 24h"):
+            with st.spinner("Checking recent posts..."):
                 try:
-                    tracked = agent.backfill_quality_metrics(limit=1000)
-                    st.success(f"✅ Tracked quality metrics for {tracked} posts")
+                    recent_check = agent.check_recent_posts_quality(hours=24, limit=100)
+                    st.success(f"✅ Checked {recent_check.get('posts_checked', 0)} recent posts")
+                    
+                    if recent_check.get('quality_issues'):
+                        st.warning(f"⚠️ Found {len(recent_check['quality_issues'])} posts with quality issues")
+                    if recent_check.get('collection_issues'):
+                        st.warning(f"⚠️ Found {len(recent_check['collection_issues'])} posts with collection issues")
+                    if recent_check.get('integrity_issues'):
+                        st.error(f"❌ Found {len(recent_check['integrity_issues'])} posts with integrity issues")
+                    
+                    if not any([
+                        recent_check.get('quality_issues'),
+                        recent_check.get('collection_issues'),
+                        recent_check.get('integrity_issues')
+                    ]):
+                        st.success("✅ All recent posts look good!")
                 except Exception as e:
-                    st.error(f"❌ Backfill failed: {e}")
+                    st.error(f"❌ Check failed: {e}")
         
     except Exception as e:
         st.info(f"Quality monitoring unavailable: {e}")

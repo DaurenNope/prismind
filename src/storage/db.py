@@ -80,24 +80,24 @@ class StorageFacade:
         # SQLite is primary - if it succeeds, we're good
         success = sqlite_ok or supabase_ok
         
-        # Track post save/update via DatabaseAgent for monitoring
+        # DatabaseAgent: Proactive validation and monitoring (like a DBA)
         if success:
             try:
                 from src.database.database_agent import DatabaseAgent
                 agent = DatabaseAgent()
-                # Track post operation (save or update)
-                is_update = post.get('analyzed_at') or post.get('quality_score') or post.get('value_score')
-                agent.record_post_operation(
-                    post_id=post.get('post_id'),
-                    platform=post.get('platform'),
-                    operation='update' if is_update else 'insert',
-                    quality_score=post.get('quality_score'),
-                    value_score=post.get('value_score'),
-                    has_analysis=bool(post.get('analyzed_at') or post.get('ai_summary'))
-                )
-            except Exception:
-                # Don't fail if monitoring fails
-                pass
+                
+                # Let DatabaseAgent do comprehensive validation and monitoring
+                # It will:
+                # 1. Validate the post (double-check)
+                # 2. Check data quality
+                # 3. Check for common issues
+                # 4. Track the operation
+                # 5. Alert on problems
+                agent.validate_and_monitor_post(post)
+            except Exception as e:
+                # Log but don't fail - monitoring shouldn't break saves
+                import logging
+                logging.debug(f"DatabaseAgent monitoring failed: {e}")
         
         return success
 

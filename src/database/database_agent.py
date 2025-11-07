@@ -307,6 +307,224 @@ class DatabaseAgent:
                 results[p] = 0
         return results
 
+    # --------------- Proactive DBA Functions ---------------
+    def validate_and_monitor_post(self, post: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Proactive DBA function: Validate, check quality, and monitor every post.
+        Like a human DBA would do - double-check everything.
+        
+        Returns:
+            Dict with validation results, issues found, and monitoring status
+        """
+        results = {
+            'validated': False,
+            'quality_checked': False,
+            'issues_found': [],
+            'warnings': [],
+            'monitored': False,
+        }
+        
+        try:
+            # 1. VALIDATE POST (double-check even if already validated)
+            if self._validate_post:
+                validation = self._validate_post(post, strict=True)
+                results['validated'] = True
+                
+                if not validation.is_valid:
+                    results['issues_found'].extend([
+                        f"Validation failed: {err}" for err in validation.errors
+                    ])
+                    logger.warning(f"🔍 DB Agent: Post {post.get('post_id')} failed validation: {validation.errors}")
+                
+                if validation.warnings:
+                    results['warnings'].extend([
+                        f"Warning: {warn}" for warn in validation.warnings
+                    ])
+                    logger.debug(f"🔍 DB Agent: Post {post.get('post_id')} has warnings: {validation.warnings}")
+            
+            # 2. CHECK DATA QUALITY
+            quality_issues = self._check_data_quality(post)
+            results['quality_checked'] = True
+            if quality_issues:
+                results['issues_found'].extend(quality_issues)
+                logger.warning(f"🔍 DB Agent: Post {post.get('post_id')} has quality issues: {quality_issues}")
+            
+            # 3. CHECK FOR COMMON COLLECTION ISSUES
+            collection_issues = self._check_collection_issues(post)
+            if collection_issues:
+                results['issues_found'].extend(collection_issues)
+                logger.warning(f"🔍 DB Agent: Post {post.get('post_id')} has collection issues: {collection_issues}")
+            
+            # 4. CHECK DATA INTEGRITY
+            integrity_issues = self._check_data_integrity(post)
+            if integrity_issues:
+                results['issues_found'].extend(integrity_issues)
+                logger.warning(f"🔍 DB Agent: Post {post.get('post_id')} has integrity issues: {integrity_issues}")
+            
+            # 5. TRACK OPERATION
+            is_update = post.get('analyzed_at') or post.get('quality_score') or post.get('value_score')
+            try:
+                self.record_post_operation(
+                    post_id=post.get('post_id'),
+                    platform=post.get('platform'),
+                    operation='update' if is_update else 'insert',
+                    quality_score=post.get('quality_score'),
+                    value_score=post.get('value_score'),
+                    has_analysis=bool(post.get('analyzed_at') or post.get('ai_summary'))
+                )
+                results['monitored'] = True
+            except Exception:
+                pass
+            
+            # 6. ALERT ON CRITICAL ISSUES
+            if results['issues_found']:
+                self._alert_on_issues(post, results['issues_found'])
+            
+        except Exception as e:
+            logger.error(f"DB Agent validate_and_monitor_post failed: {e}")
+        
+        return results
+
+    def _check_data_quality(self, post: Dict[str, Any]) -> List[str]:
+        """Check data quality issues"""
+        issues = []
+        
+        # Check for truncated content
+        content = post.get('content', '')
+        if content and ('...' in content[-20:] or content.endswith('...')):
+            issues.append("Content appears truncated (ends with ...)")
+        
+        # Check for placeholder content
+        if content and any(placeholder in content.lower() for placeholder in [
+            'scraping failed', 'extraction failed', 'content extraction in progress',
+            'post from', 'placeholder', 'loading', 'error extracting'
+        ]):
+            issues.append("Content appears to be placeholder/error message")
+        
+        # Check for missing essential fields
+        if not post.get('author') or post.get('author', '').lower() in ['unknown', 'n/a', '']:
+            issues.append("Author is missing or placeholder")
+        
+        if not post.get('url') or not post.get('url', '').startswith('http'):
+            issues.append("URL is missing or invalid")
+        
+        # Check for suspicious quality scores
+        quality_score = post.get('quality_score')
+        if quality_score is not None:
+            try:
+                qs = float(quality_score)
+                if qs < 0 or qs > 10:
+                    issues.append(f"Quality score out of range: {qs} (should be 0-10)")
+            except (ValueError, TypeError):
+                issues.append(f"Quality score is not numeric: {quality_score}")
+        
+        value_score = post.get('value_score')
+        if value_score is not None:
+            try:
+                vs = float(value_score)
+                if vs < 0 or vs > 10:
+                    issues.append(f"Value score out of range: {vs} (should be 0-10)")
+            except (ValueError, TypeError):
+                issues.append(f"Value score is not numeric: {value_score}")
+        
+        return issues
+
+    def _check_collection_issues(self, post: Dict[str, Any]) -> List[str]:
+        """Check for common collection issues"""
+        issues = []
+        
+        # Check for duplicate indicators
+        if post.get('_is_duplicate') or post.get('duplicate'):
+            issues.append("Post marked as duplicate but was saved anyway")
+        
+        # Check for collection errors
+        if post.get('collection_error') or post.get('_collection_failed'):
+            issues.append("Post has collection error flag")
+        
+        # Check for missing platform-specific data
+        platform = post.get('platform', '').lower()
+        if platform == 'threads':
+            if not post.get('author_handle') and '@' not in (post.get('url', '')):
+                issues.append("Threads post missing author handle")
+        elif platform == 'twitter':
+            if not post.get('author_handle') and not post.get('author'):
+                issues.append("Twitter post missing author information")
+        elif platform == 'reddit':
+            if not post.get('post_id', '').startswith('t3_'):
+                # Reddit IDs should have t3_ prefix
+                if post.get('post_id') and not any(c in post.get('post_id', '') for c in ['/', '-']):
+                    issues.append("Reddit post_id may be missing t3_ prefix")
+        
+        return issues
+
+    def _check_data_integrity(self, post: Dict[str, Any]) -> List[str]:
+        """Check data integrity issues"""
+        issues = []
+        
+        # Check for conflicting timestamps
+        created_at = post.get('created_at')
+        analyzed_at = post.get('analyzed_at')
+        if created_at and analyzed_at:
+            try:
+                from dateutil.parser import parse
+                created = parse(str(created_at))
+                analyzed = parse(str(analyzed_at))
+                if analyzed < created:
+                    issues.append("analyzed_at is before created_at (impossible)")
+            except Exception:
+                pass
+        
+        # Check for analysis without required fields
+        if analyzed_at or post.get('ai_summary'):
+            if not post.get('ai_summary') and not post.get('value_score'):
+                issues.append("Post marked as analyzed but missing ai_summary and value_score")
+        
+        # Check for quality score without analysis
+        if post.get('quality_score') and not (analyzed_at or post.get('ai_summary')):
+            issues.append("Post has quality_score but no analysis timestamp")
+        
+        # Check for empty required fields
+        if not post.get('post_id'):
+            issues.append("Post missing post_id (required)")
+        if not post.get('platform'):
+            issues.append("Post missing platform (required)")
+        
+        # Check for invalid platform
+        valid_platforms = ['twitter', 'reddit', 'threads', 'github', 'telegram', 'rss']
+        if post.get('platform') and post.get('platform').lower() not in valid_platforms:
+            issues.append(f"Invalid platform: {post.get('platform')}")
+        
+        return issues
+
+    def _alert_on_issues(self, post: Dict[str, Any], issues: List[str]) -> None:
+        """Alert on critical issues found"""
+        if not issues:
+            return
+        
+        try:
+            # Log critical issues
+            post_id = post.get('post_id', 'unknown')
+            platform = post.get('platform', 'unknown')
+            logger.warning(f"⚠️ DB Agent: Post {post_id} ({platform}) has {len(issues)} issues: {', '.join(issues[:3])}")
+            
+            # If too many issues, send alert
+            if len(issues) >= 3:
+                message = f"🔍 DB Agent Alert: Post {post_id} ({platform}) has {len(issues)} issues:\n" + "\n".join(f"  - {issue}" for issue in issues[:5])
+                
+                # Try Telegram if configured
+                import os, requests
+                token = os.getenv("TELEGRAM_BOT_TOKEN")
+                chat_id = os.getenv("TELEGRAM_CHAT_ID") or os.getenv("TELEGRAM_ADMIN_CHAT_ID")
+                if token and chat_id:
+                    try:
+                        url = f"https://api.telegram.org/bot{token}/sendMessage"
+                        payload = {"chat_id": chat_id, "text": message[:4000]}  # Telegram limit
+                        requests.post(url, json=payload, timeout=10)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
     # --------------- Core Operations ---------------
     def save_post(self, post: Dict[str, Any], retries: int = 3, backoff_seconds: float = 1.5) -> bool:
         """
@@ -778,6 +996,166 @@ class DatabaseAgent:
         except Exception as e:
             logger.debug(f"backfill_quality_metrics failed: {e}")
             return 0
+
+    def audit_database(self, limit: int = 100, platforms: Optional[List[str]] = None) -> Dict[str, Any]:
+        """
+        Proactive DBA function: Audit database for issues.
+        Like a human DBA would do - check everything.
+        
+        Returns:
+            Dict with audit results, issues found, and recommendations
+        """
+        results = {
+            'posts_checked': 0,
+            'issues_found': [],
+            'warnings': [],
+            'critical_issues': [],
+            'recommendations': [],
+        }
+        
+        try:
+            # Get recent posts to audit
+            if self._supabase:
+                query = (
+                    self._supabase
+                    .table("posts")
+                    .select("*")
+                    .order("created_at", desc=True)
+                    .limit(limit)
+                )
+                
+                if platforms:
+                    query = query.in_("platform", platforms)
+                
+                result = query.execute()
+                posts = getattr(result, "data", []) or []
+            elif self._sqlite:
+                # Fallback to SQLite
+                posts = self._sqlite.get_posts(limit=limit)
+            else:
+                return results
+            
+            results['posts_checked'] = len(posts)
+            
+            # Audit each post
+            for post in posts:
+                # Validate and check quality
+                audit_result = self.validate_and_monitor_post(post)
+                
+                if audit_result.get('issues_found'):
+                    results['issues_found'].extend(audit_result['issues_found'])
+                    
+                    # Categorize issues
+                    critical = [issue for issue in audit_result['issues_found'] if any(
+                        keyword in issue.lower() for keyword in [
+                            'missing', 'invalid', 'failed', 'impossible', 'error'
+                        ]
+                    )]
+                    if critical:
+                        results['critical_issues'].append({
+                            'post_id': post.get('post_id'),
+                            'platform': post.get('platform'),
+                            'issues': critical
+                        })
+                
+                if audit_result.get('warnings'):
+                    results['warnings'].extend(audit_result['warnings'])
+            
+            # Generate recommendations
+            if results['critical_issues']:
+                results['recommendations'].append(
+                    f"Found {len(results['critical_issues'])} posts with critical issues. Review and fix them."
+                )
+            
+            if len(results['issues_found']) > len(posts) * 0.3:
+                results['recommendations'].append(
+                    f"High issue rate ({len(results['issues_found'])}/{len(posts)}). Review collection process."
+                )
+            
+            # Check for common patterns
+            placeholder_count = sum(1 for post in posts if any(
+                placeholder in (post.get('content', '') or '').lower() 
+                for placeholder in ['scraping failed', 'extraction failed', 'placeholder']
+            ))
+            if placeholder_count > 0:
+                results['recommendations'].append(
+                    f"Found {placeholder_count} posts with placeholder content. Check extractors."
+                )
+            
+            truncated_count = sum(1 for post in posts if (post.get('content', '') or '').endswith('...'))
+            if truncated_count > 0:
+                results['recommendations'].append(
+                    f"Found {truncated_count} posts with truncated content. Check extractors."
+                )
+            
+        except Exception as e:
+            logger.error(f"DB Agent audit_database failed: {e}")
+        
+        return results
+
+    def check_recent_posts_quality(self, hours: int = 24, limit: int = 100) -> Dict[str, Any]:
+        """
+        Check quality of recently collected posts.
+        Like a DBA monitoring recent activity.
+        """
+        results = {
+            'posts_checked': 0,
+            'quality_issues': [],
+            'collection_issues': [],
+            'integrity_issues': [],
+        }
+        
+        try:
+            since = (datetime.utcnow() - timedelta(hours=max(1, hours))).isoformat()
+            
+            if self._supabase:
+                query = (
+                    self._supabase
+                    .table("posts")
+                    .select("*")
+                    .gt("created_at", since)
+                    .order("created_at", desc=True)
+                    .limit(limit)
+                )
+                result = query.execute()
+                posts = getattr(result, "data", []) or []
+            else:
+                return results
+            
+            results['posts_checked'] = len(posts)
+            
+            for post in posts:
+                # Check data quality
+                quality_issues = self._check_data_quality(post)
+                if quality_issues:
+                    results['quality_issues'].append({
+                        'post_id': post.get('post_id'),
+                        'platform': post.get('platform'),
+                        'issues': quality_issues
+                    })
+                
+                # Check collection issues
+                collection_issues = self._check_collection_issues(post)
+                if collection_issues:
+                    results['collection_issues'].append({
+                        'post_id': post.get('post_id'),
+                        'platform': post.get('platform'),
+                        'issues': collection_issues
+                    })
+                
+                # Check integrity
+                integrity_issues = self._check_data_integrity(post)
+                if integrity_issues:
+                    results['integrity_issues'].append({
+                        'post_id': post.get('post_id'),
+                        'platform': post.get('platform'),
+                        'issues': integrity_issues
+                    })
+            
+        except Exception as e:
+            logger.error(f"DB Agent check_recent_posts_quality failed: {e}")
+        
+        return results
 
     def get_performance_cohorts(self, window_minutes: int = 10080) -> Dict[str, Any]:
         # Simple client-side cohorts by buckets
