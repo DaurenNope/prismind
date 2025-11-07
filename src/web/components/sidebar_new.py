@@ -111,7 +111,7 @@ def render_useful_sidebar():
                 st.sidebar.caption(f"  {plat.title()}: {ts}")
         except Exception:
             pass
-
+        
         # Scheduled posts
         try:
             from src.database.publishing.bridge import MimesisDB
@@ -178,6 +178,33 @@ def render_useful_sidebar():
                 st.sidebar.caption(f"❌ {label} cookies: missing")
     except Exception:
         pass
+    
+    # === AUTOMATION CONTROLS ===
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### ⚙️ Automation")
+    
+    # Toggle for background collection
+    automation_enabled = st.sidebar.toggle(
+        "Background collection",
+        value=st.session_state.get('automation_enabled', False),
+        help="Enable to automatically collect posts in the background"
+    )
+    
+    if automation_enabled != st.session_state.get('automation_enabled'):
+        st.session_state.automation_enabled = automation_enabled
+        st.rerun()
+    
+    # Collection interval
+    if automation_enabled:
+        collection_interval = st.sidebar.number_input(
+            "Interval (minutes)",
+            min_value=1,
+            max_value=1440,
+            value=60,
+            help="How often to collect new posts",
+            key="collection_interval"
+        )
+        st.session_state.collection_interval = collection_interval
     
     st.sidebar.markdown("---")
     st.sidebar.caption(f"PrisMind v1.0")

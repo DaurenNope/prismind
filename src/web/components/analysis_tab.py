@@ -129,21 +129,22 @@ def render_analysis_tab():
                             f"[{i}/{len(posts_to_analyze)}] Analyzing: {post.get('platform')} - {post.get('author', 'Unknown')[:30]}"
                         )
 
-                        # Run analysis on single post
-                        from src.services.analysis_service import analyze_recent_posts
-
-                        # Analyze this specific post
-                        result = analyze_recent_posts(limit=1, unanalyzed_only=False)
-
-                        # Check if analysis succeeded (processed > 0 means success)
-                        if result.get("processed", 0) > 0:
+                        # Run analysis on single post using orchestrator
+                        from src.pipeline.orchestrator import get_orchestrator
+                        import asyncio
+                        
+                        orch = get_orchestrator()
+                        # Analyze this specific post (orchestrator will get unanalyzed posts)
+                        analyzed_count = asyncio.run(orch.analyze_batch(limit=1))
+                        
+                        # Check if analysis succeeded
+                        if analyzed_count > 0:
                             successful += 1
                             add_log(f"    ✅ Success")
                         else:
                             failed += 1
-                            add_log(f"    ❌ Failed")
-                            if result.get("errors"):
-                                errors.extend(result["errors"][:1])
+                            add_log(f"    ❌ Failed (post may already be analyzed)")
+                            errors.append(f"Post {post.get('post_id', 'unknown')} analysis failed")
 
                     except Exception as e:
                         failed += 1

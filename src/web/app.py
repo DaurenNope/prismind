@@ -36,6 +36,8 @@ from src.web.components.publishing_page import render_publishing_page
 from src.web.components.collection_tab import render_collection_tab
 from src.web.components.persona_pipeline_tab import render_persona_pipeline_tab
 from src.web.components.system_status_tab import render_system_status_tab
+from src.web.components.analysis_tab import render_analysis_tab
+from src.web.components.sources_tab import render_sources_tab
 from src.pipeline.orchestrator import get_orchestrator
 from src.publishing.worker import get_publisher_worker
 
@@ -290,9 +292,9 @@ def main():
     # Check for unanalyzed posts and show reminder
     render_analysis_reminder()
 
-    # New minimal navigation: Feed, Collect, Persona Pipeline, Publishing, Settings
-    tab_feed, tab_collect, tab_persona, tab_pub, tab_perf, tab_system, tab_settings = st.tabs(
-        ["📰 Feed", "📥 Collect", "🎭 Persona Pipeline", "📝 Publishing", "📈 Perf", "🩺 System", "⚙️ Settings"]
+    # Navigation tabs: Feed, Collect, Analysis, Sources, Persona Pipeline, Publishing, Perf, System, Settings
+    tab_feed, tab_collect, tab_analysis, tab_sources, tab_persona, tab_pub, tab_perf, tab_system, tab_settings = st.tabs(
+        ["📰 Feed", "📥 Collect", "🤖 Analysis", "📡 Sources", "🎭 Persona Pipeline", "📝 Publishing", "📈 Perf", "🩺 System", "⚙️ Settings"]
     )
 
     with tab_feed:
@@ -300,6 +302,12 @@ def main():
 
     with tab_collect:
         render_collection_tab()
+
+    with tab_analysis:
+        render_analysis_tab()
+
+    with tab_sources:
+        render_sources_tab()
 
     with tab_persona:
         render_persona_pipeline_tab()
