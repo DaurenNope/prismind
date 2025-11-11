@@ -42,22 +42,17 @@ def render_unified_feed():
     st.markdown("""
     <style>
     .feed-card {
-        background: white;
-        border-radius: 12px;
+        background-color: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
         padding: 20px;
         margin-bottom: 20px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        border-left: 4px solid #667eea;
-        transition: transform 0.2s, box-shadow 0.2s;
-    }
-    .feed-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        border-left: 4px solid #2563eb;
     }
     .feed-title {
         font-size: 1.2em;
         font-weight: 600;
-        color: #1a1a1a;
+        color: #111827;
         margin-bottom: 8px;
         line-height: 1.4;
     }
@@ -65,18 +60,18 @@ def render_unified_feed():
         display: flex;
         gap: 15px;
         font-size: 0.85em;
-        color: #666;
+        color: #6b7280;
         margin-bottom: 10px;
     }
     .feed-summary {
-        color: #444;
+        color: #374151;
         line-height: 1.6;
         margin-bottom: 12px;
         max-height: none;
         overflow: visible;
     }
     .feed-link {
-        color: #667eea;
+        color: #2563eb;
         text-decoration: none;
         font-size: 0.85em;
         font-weight: 500;
@@ -89,73 +84,69 @@ def render_unified_feed():
         text-decoration: underline;
     }
     .source-badge {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
+        background-color: #f3f4f6;
+        color: #374151;
         padding: 4px 12px;
-        border-radius: 20px;
+        border-radius: 6px;
         font-size: 0.75em;
-        font-weight: 600;
+        font-weight: 500;
         display: inline-block;
+        border: 1px solid #d1d5db;
+        margin-right: 4px;
     }
     .category-tag {
-        background: #f0f0f0;
-        color: #555;
+        background-color: #f9fafb;
+        color: #6b7280;
         padding: 4px 10px;
-        border-radius: 15px;
+        border-radius: 6px;
         font-size: 0.75em;
         display: inline-block;
-        margin-right: 5px;
+        margin-right: 4px;
+        border: 1px solid #e5e7eb;
     }
     .score-badge {
-        background: #10b981;
-        color: white;
+        background-color: #d1fae5;
+        color: #065f46;
         padding: 4px 10px;
-        border-radius: 15px;
+        border-radius: 6px;
         font-size: 0.75em;
-        font-weight: 600;
+        font-weight: 500;
+        border: 1px solid #10b981;
     }
     .alpha-badge {
-        background: #ef4444;
-        color: white;
+        background-color: #fee2e2;
+        color: #991b1b;
         padding: 4px 10px;
-        border-radius: 15px;
+        border-radius: 6px;
         font-size: 0.75em;
-        font-weight: 600;
-        animation: pulse 2s infinite;
-    }
-    @keyframes pulse {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.7; }
+        font-weight: 500;
+        border: 1px solid #ef4444;
     }
     </style>
     """, unsafe_allow_html=True)
     
-    # Header
-    col1, col2, col3 = st.columns([2, 1, 1])
-    with col1:
-        st.title("🧠 Intelligence Feed")
-        st.markdown("*Your unified discovery dashboard - all sources, one feed*")
+    # Header with better layout
+    st.title("🧠 Intelligence Feed")
+    st.markdown("*Your unified discovery dashboard - all sources, one feed*")
     
-    with col2:
-        if st.button("🔄 Refresh Feed", use_container_width=True):
+    # Action buttons row
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        if st.button("🔄 Refresh Feed", use_container_width=True, type="primary"):
             st.rerun()
     
+    with col2:
+        if st.button("📥 Collect New", use_container_width=True, type="secondary"):
+            st.info("💡 Navigate to the **Collect** tab to start collecting posts")
+    
     with col3:
-        if st.button("🚀 Collect New", use_container_width=True):
-            with st.spinner("Collecting new content..."):
-                import subprocess
-                import sys
-                result = subprocess.run(
-                    [sys.executable, "run_full_collection.py"],
-                    capture_output=True,
-                    text=True,
-                    timeout=300
-                )
-                if result.returncode == 0:
-                    st.success("✅ Collection complete! Refreshing...")
-                    st.rerun()
-                else:
-                    st.error(f"Collection failed: {result.stderr}")
+        if st.button("🤖 Analyze Pending", use_container_width=True, type="secondary"):
+            st.info("💡 Navigate to the **Analysis** tab to analyze posts")
+    
+    with col4:
+        if st.button("📊 View Dashboard", use_container_width=True, type="secondary"):
+            st.info("💡 Navigate to the **Dashboard** tab for overview")
     
     # Get data
     supabase = get_supabase()
@@ -248,38 +239,70 @@ def render_unified_feed():
     # Apply intelligent filtering and ranking
     all_items = curator.filter_and_rank_feed(all_items)
     
-    # Stats
+    # Stats with modern cards
     col1, col2, col3, col4 = st.columns(4)
+    
     with col1:
-        st.metric("📰 Total Discoveries", len(all_items))
+        st.markdown(f"""
+        <div style="background-color: #f9fafb; border: 1px solid #e5e7eb;
+                    padding: 1.5rem; border-radius: 12px; color: #111827; text-align: center;
+                    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+            <div style="font-size: 2rem; font-weight: 700; margin-bottom: 0.5rem; color: #111827;">{len(all_items)}</div>
+            <div style="font-size: 0.875rem; color: #6b7280;">📰 Total Discoveries</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
     with col2:
-        # Count by source
         rss_count = len([i for i in all_items if i.get('source') == 'RSS'])
         reddit_count = len([i for i in all_items if i.get('source') == 'REDDIT'])
-        st.metric("RSS / Reddit", f"{rss_count} / {reddit_count}")
+        st.markdown(f"""
+        <div style="background-color: #f9fafb; border: 1px solid #e5e7eb;
+                    padding: 1.5rem; border-radius: 12px; color: #111827; text-align: center;
+                    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+            <div style="font-size: 2rem; font-weight: 700; margin-bottom: 0.5rem; color: #111827;">{rss_count} / {reddit_count}</div>
+            <div style="font-size: 0.875rem; color: #6b7280;">RSS / Reddit</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
     with col3:
-        # Count by category
         categories_present = set([i.get('category', 'General') for i in all_items])
-        st.metric("Categories", len(categories_present))
+        st.markdown(f"""
+        <div style="background-color: #f9fafb; border: 1px solid #e5e7eb;
+                    padding: 1.5rem; border-radius: 12px; color: #111827; text-align: center;
+                    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+            <div style="font-size: 2rem; font-weight: 700; margin-bottom: 0.5rem; color: #111827;">{len(categories_present)}</div>
+            <div style="font-size: 0.875rem; color: #6b7280;">📂 Categories</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
     with col4:
-        # Quality distribution
         high_quality = len([i for i in all_items if i.get('score', 0) >= 7])
-        st.metric("High Quality (7+)", high_quality)
+        st.markdown(f"""
+        <div style="background-color: #f9fafb; border: 1px solid #e5e7eb;
+                    padding: 1.5rem; border-radius: 12px; color: #111827; text-align: center;
+                    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+            <div style="font-size: 2rem; font-weight: 700; margin-bottom: 0.5rem; color: #111827;">{high_quality}</div>
+            <div style="font-size: 0.875rem; color: #6b7280;">⭐ High Quality (7+)</div>
+        </div>
+        """, unsafe_allow_html=True)
     
     st.markdown("---")
     
     # Render feed
     if not all_items:
-        st.info("No items found. Adjust your filters or run the collection pipeline.")
+        st.info("📭 No items found. Adjust your filters or run the collection pipeline.")
+        st.markdown("""
+        <div style="text-align: center; padding: 3rem; color: #64748b;">
+            <h3>No content to display</h3>
+            <p>Try adjusting your filters or collecting new content from the <strong>Collect</strong> tab.</p>
+        </div>
+        """, unsafe_allow_html=True)
     else:
-        # DEBUG: Show breakdown before rendering
-        sources_debug = {}
-        for item in all_items:
-            src = item.get('source', 'unknown')
-            sources_debug[src] = sources_debug.get(src, 0) + 1
+        # Show count and pagination info
+        st.markdown(f"**Showing {len(all_items)} items**")
+        st.divider()
         
-        st.info(f"📊 Rendering: {sources_debug}")
-        
+        # Render feed cards
         for item in all_items:
             render_feed_card(item, curator)
     

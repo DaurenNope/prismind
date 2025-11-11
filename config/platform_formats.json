@@ -1,0 +1,163 @@
+{
+  "twitter": {
+    "name": "Twitter/X",
+    "constraints": {
+      "max_length": 280,
+      "max_thread_tweets": 25,
+      "supports_threads": true,
+      "supports_markdown": false,
+      "supports_hashtags": true,
+      "supports_mentions": true,
+      "supports_links": true
+    },
+    "formats": {
+      "single": {
+        "max_chars": 280,
+        "optimal_chars": 250,
+        "structure": "standalone",
+        "guidance": "Single tweet: concise, punchy, engaging. Must fit in 280 characters."
+      },
+      "thread": {
+        "max_chars_per_tweet": 280,
+        "optimal_chars_per_tweet": 250,
+        "min_tweets": 2,
+        "max_tweets": 25,
+        "numbering_format": "{number}/\n{content}",
+        "numbering_required": true,
+        "guidance": "Thread format: each tweet numbered on separate line. Format:\n1/\nFirst tweet\n\n2/\nSecond tweet"
+      }
+    }
+  },
+  "threads": {
+    "name": "Meta Threads",
+    "constraints": {
+      "max_length": 500,
+      "max_thread_posts": 10,
+      "supports_threads": true,
+      "supports_markdown": false,
+      "supports_hashtags": true,
+      "supports_mentions": true,
+      "supports_links": true
+    },
+    "formats": {
+      "single": {
+        "max_chars": 500,
+        "optimal_chars": 450,
+        "structure": "standalone",
+        "guidance": "Single post: conversational, can be longer than Twitter. Up to 500 characters."
+      },
+      "thread": {
+        "max_chars_per_post": 500,
+        "optimal_chars_per_post": 450,
+        "min_posts": 2,
+        "max_posts": 10,
+        "numbering_format": "{number}/\n{content}",
+        "numbering_required": false,
+        "guidance": "Thread format: can use numbering but not required. Each post up to 500 chars."
+      }
+    }
+  },
+  "linkedin": {
+    "name": "LinkedIn",
+    "constraints": {
+      "max_length": 3000,
+      "supports_threads": false,
+      "supports_markdown": false,
+      "supports_hashtags": true,
+      "supports_mentions": true,
+      "supports_links": true,
+      "professional_tone_required": true
+    },
+    "formats": {
+      "single": {
+        "min_chars": 150,
+        "max_chars": 1300,
+        "optimal_chars": 600,
+        "structure": "professional",
+        "guidance": "Professional post: opening hook, detailed body, call-to-action. 150-1300 characters optimal."
+      },
+      "article": {
+        "min_chars": 600,
+        "max_chars": 3000,
+        "optimal_chars": 1500,
+        "structure": "long_form",
+        "guidance": "LinkedIn article: in-depth analysis, multiple paragraphs, professional formatting."
+      }
+    }
+  },
+  "telegram": {
+    "name": "Telegram",
+    "constraints": {
+      "max_length": 4096,
+      "supports_markdown": true,
+      "supports_html": true,
+      "supports_hashtags": true,
+      "supports_mentions": true,
+      "supports_links": true,
+      "supports_formatting": true
+    },
+    "formats": {
+      "single": {
+        "max_chars": 4096,
+        "optimal_chars": 2000,
+        "structure": "flexible",
+        "guidance": "Flexible format: can use **bold**, *italic*, `code`, [links]. Up to 4096 characters.",
+        "markdown_enabled": true
+      },
+      "long_form": {
+        "max_chars": 4096,
+        "optimal_chars": 3000,
+        "structure": "article",
+        "guidance": "Long-form post: structured with headings, formatting, code blocks if needed.",
+        "markdown_enabled": true
+      }
+    }
+  },
+  "instagram": {
+    "name": "Instagram",
+    "constraints": {
+      "max_length": 2200,
+      "supports_threads": false,
+      "supports_markdown": false,
+      "supports_hashtags": true,
+      "supports_mentions": true,
+      "supports_links": false,
+      "hashtags_recommended": true
+    },
+    "formats": {
+      "caption": {
+        "max_chars": 2200,
+        "optimal_chars": 300,
+        "structure": "casual",
+        "guidance": "Instagram caption: casual, visual-focused, emoji-friendly, hashtags at end.",
+        "hashtag_placement": "end",
+        "min_hashtags": 3,
+        "max_hashtags": 30
+      }
+    }
+  },
+  "facebook": {
+    "name": "Facebook",
+    "constraints": {
+      "max_length": 63206,
+      "supports_markdown": false,
+      "supports_hashtags": true,
+      "supports_mentions": true,
+      "supports_links": true
+    },
+    "formats": {
+      "single": {
+        "max_chars": 500,
+        "optimal_chars": 250,
+        "structure": "conversational",
+        "guidance": "Facebook post: conversational, engaging, optimal length 100-250 chars for best engagement."
+      },
+      "long_form": {
+        "max_chars": 5000,
+        "optimal_chars": 1500,
+        "structure": "story",
+        "guidance": "Longer Facebook post: storytelling format, multiple paragraphs, engaging narrative."
+      }
+    }
+  }
+}

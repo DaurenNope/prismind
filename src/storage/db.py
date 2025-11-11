@@ -8,6 +8,7 @@ Provides a minimal, stable interface for saving and reading posts.
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
+from datetime import datetime, timezone
 
 from src.utils.config import get_config
 from src.utils.duplicate_detector import DuplicateDetector
@@ -34,50 +35,67 @@ class StorageFacade:
 
     # Write operations
     def save_post(self, post: Dict[str, Any]) -> bool:
-        # Final gate: skip duplicates by normalized URL or content hash
-        try:
-            if self._dupes:
-                # Check URL first (fastest)
-                url = post.get('url', '')
-                if url and self._dupes.is_duplicate_url(url):
-                    return False
-                
-                # Check content hash (catches same content with different URLs)
-                content = post.get('content', '')
-                if content and self._dupes.is_duplicate_content(content):
-                    return False
-                
-                # Full duplicate check (platform-specific)
-                if self._dupes.is_duplicate(post):
-                    return False
-        except Exception as e:
-            import logging
-            logging.debug(f"Duplicate check failed: {e}")
-            pass
-        
+        post_id = post.get('post_id')
+
         supabase_ok = False
         sqlite_ok = False
         
-        # Try SQLite first (primary storage) - should always work even if validation fails
-        if self._sqlite is not None:
+        # Stamp ingest time for reliable "latest arrivals" sorting
+        if 'collected_at' not in post or not post.get('collected_at'):
             try:
-                sqlite_ok = self._sqlite.save_post(post)
+                post['collected_at'] = datetime.now(timezone.utc).isoformat()
+            except Exception:
+                pass
+
+        # First attempt to update existing local record; if it succeeds, skip duplicate gate
+        updated_existing = False
+        if post_id and self._sqlite is not None:
+            try:
+                updated_existing = bool(self._sqlite.update_post(post_id, post))
+                if updated_existing:
+                    sqlite_ok = True
             except Exception as e:
-                # Log SQLite errors but don't fail
                 import logging
-                logging.debug(f"SQLite save failed: {e}")
+                logger = logging.getLogger(__name__)
+                logger.warning(f"⚠️ SQLite update failed during save_post: {e}", exc_info=True)
+
+        # If no existing record was updated, enforce duplicate rules before insert
+        if not updated_existing:
+            try:
+                if self._dupes:
+                    url = post.get('url', '')
+                    if url and self._dupes.is_duplicate_url(url):
+                        return False
+
+                    content = post.get('content', '')
+                    if content and self._dupes.is_duplicate_content(content):
+                        return False
+
+                    if self._dupes.is_duplicate(post):
+                        return False
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"⚠️ Duplicate check failed: {e}", exc_info=True)
+
+            # Try SQLite insert (primary storage)
+            if self._sqlite is not None:
+                try:
+                    sqlite_ok = self._sqlite.save_post(post)
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"❌ SQLite save failed: {e}", exc_info=True)
         
-        # Try Supabase (optional - may fail validation, that's ok)
+        # Supabase write (upsert) -- attempt even if local update succeeded
         if self._supabase is not None:
             try:
-                supabase_ok = self._supabase.save_post(post)
+                supabase_ok = self._supabase.save_post(post) or supabase_ok
             except Exception as e:
-                # Supabase failed, but that's ok - we saved locally
                 import logging
-                logging.debug(f"Supabase save failed: {e}")
-        
-        # Success if EITHER storage succeeded (prioritize local)
-        # SQLite is primary - if it succeeds, we're good
+                logger = logging.getLogger(__name__)
+                logger.error(f"❌ Supabase save failed: {e}", exc_info=True)
+
         success = sqlite_ok or supabase_ok
         
         # DatabaseAgent: Proactive validation and monitoring (like a DBA)
@@ -192,6 +210,58 @@ class StorageFacade:
                 return self._sqlite.get_telegram_messages(limit=limit)
             except Exception:
                 pass
+        return []
+
+    def query_usable_posts(
+        self,
+        profile_key: str,
+        limit: int = 20,
+        min_quality_score: float = 7.0,
+        min_value_score: float = 7.0,
+        min_rewrite_score: float = 7.0,
+        time_windows: Optional[List[str]] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Query usable_posts table for a specific profile.
+
+        Args:
+            profile_key: Profile identifier (e.g., 'qronoya')
+            limit: Maximum number of posts
+            min_quality_score: Minimum quality threshold
+            min_value_score: Minimum value threshold
+            min_rewrite_score: Minimum rewrite threshold
+            time_windows: Filter by relevance_window
+
+        Returns:
+            List of post dicts
+        """
+        if self._supabase is not None:
+            try:
+                from supabase import create_client
+
+                # Build query
+                query = self._supabase.client.table('usable_posts').select('*')
+                query = query.eq('best_persona_key', profile_key)
+                query = query.gte('quality_score', min_quality_score)
+                query = query.gte('value_score', min_value_score)
+                query = query.gte('rewrite_score', min_rewrite_score)
+
+                if time_windows:
+                    query = query.in_('relevance_window', time_windows)
+
+                query = query.order('urgency_score', desc=True)
+                query = query.order('rewrite_score', desc=True)
+                query = query.order('created_at', desc=True)
+                query = query.limit(limit)
+
+                response = query.execute()
+                return response.data if response.data else []
+
+            except Exception as e:
+                import logging
+                logging.error(f"Error querying usable_posts: {e}")
+                pass
+
         return []
 
 

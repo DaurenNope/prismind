@@ -6,6 +6,7 @@ Handles basic CRUD operations for posts
 
 import sqlite3
 import json
+import os
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 
@@ -433,7 +434,8 @@ class DatabaseOperations:
                 if self.supabase:
                     try:
                         # Generate AI summary if available
-                        if self.summarizer and content and not content_summary:
+                        summarize_enabled = os.getenv("ANALYZE_DURING_COLLECTION", "false").lower() in ("true", "1", "yes")
+                        if summarize_enabled and self.summarizer and content and not content_summary:
                             content_summary = self.summarizer.summarize(content, url)
                             if content_summary:
                                 print(f"   🤖 Generated AI summary")

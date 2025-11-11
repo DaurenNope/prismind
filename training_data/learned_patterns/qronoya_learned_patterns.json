@@ -1,0 +1,101 @@
+{
+  "metadata": {
+    "total_corrections": 5,
+    "last_updated": "2025-11-04T17:06:16.936286",
+    "learning_version": "1.0"
+  },
+  "vocabulary": {
+    "frequently_used_by_you": [
+      "разница",
+      "миллирдами",
+      "копейки",
+      "конкуретный",
+      "фактор",
+      "опережают",
+      "торговли",
+      "перформит",
+      "переход",
+      "ownership",
+      "инициатива",
+      "решает",
+      "младшим",
+      "специалистам",
+      "систему",
+      "конкретную",
+      "процессов",
+      "умом",
+      "подходим",
+      "решать",
+      "реальные",
+      "проблемы",
+      "ради"
+    ],
+    "frequently_avoided_by_you": [
+      "ngl",
+      "fr",
+      "офигительно",
+      "недосыпают",
+      "бабла",
+      "жесть",
+      "туллы",
+      "выкручиваться",
+      "джунам",
+      "прокачивает",
+      "крутая",
+      "тема",
+      "будущее"
+    ],
+    "vocabulary_insights": {
+      "total_unique_added": 23,
+      "total_unique_removed": 13,
+      "top_additions": {
+        "разница": 1,
+        "миллирдами": 1,
+        "копейки": 1,
+        "конкуретный": 1,
+        "фактор": 1,
+        "опережают": 1,
+        "торговли": 1,
+        "перформит": 1,
+        "переход": 1,
+        "ownership": 1
+      },
+      "top_removals": {
+        "ngl": 2,
+        "fr": 2,
+        "офигительно": 2,
+        "недосыпают": 1,
+        "бабла": 1,
+        "жесть": 1,
+        "туллы": 1,
+        "выкручиваться": 1,
+        "джунам": 1,
+        "прокачивает": 1
+      }
+    }
+  },
+  "structure": {
+    "structural_preferences": {
+      "removed_numbered_thread": 1
+    },
+    "insights": {
+      "removed_numbered_threads": 1,
+      "added_numbered_threads": 0,
+      "recommendation": "User prefers single cohesive posts over numbered threads"
+    }
+  },
+  "tone": {
+    "length_preference": {
+      "avg_correction_ratio": 0.97,
+      "interpretation": "User length preference similar to Gemini output"
+    },
+    "rejection_patterns": [
+      "Too generic and boring. No personality, no opinion, no value added. Just repeating news."
+    ],
+    "tone_insights": {
+      "total_corrections": 3,
+      "total_rejections": 1,
+      "total_approvals": 1
+    }
+  }
+}

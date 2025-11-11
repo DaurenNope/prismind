@@ -30,6 +30,8 @@ from src.services.analysis.post_analyzer import analyze_and_store_post
 from src.services.persona_matcher import get_persona_matcher
 from src.publishing.services.transformer import PersonaGenerator, SimpleTransformer
 from src.database.manager import SupabaseManager
+from src.database.database_agent import DatabaseAgent
+from src.services.analysis_lock import acquire_analysis_lock, release_analysis_lock
 from src.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -103,44 +105,95 @@ class FullAutomationLoop:
             logger.error(f"❌ Collection failed: {e}")
             return {}
     
-    async def run_analysis(self, limit: Optional[int] = None) -> Dict[str, Any]:
-        """Step 2: Analyze unanalyzed posts (with persona matching built-in)"""
+    async def run_analysis(self, limit: Optional[int] = None, resume: bool = True) -> Dict[str, Any]:
+        """Step 2: Analyze unanalyzed posts (with persona matching built-in)
+        
+        Args:
+            limit: Maximum number of posts to analyze (None = all)
+            resume: If True, skip already analyzed posts (analyzed_at IS NOT NULL)
+        """
         logger.info("\n" + "="*70)
         logger.info("🤖 STEP 2: ANALYSIS (with Persona Matching)")
         logger.info("="*70)
-        
-        # Get unanalyzed posts
-        unanalyzed = self.db.get_unanalyzed_posts(limit=limit)
-        logger.info(f"Found {len(unanalyzed)} unanalyzed posts")
-        
-        if not unanalyzed:
-            logger.info("✅ All posts are analyzed!")
-            return {"analyzed": 0, "failed": 0}
-        
-        successful = 0
-        failed = 0
-        
-        for i, post in enumerate(unanalyzed, 1):
-            post_id = post.get('post_id', 'unknown')
-            platform = post.get('platform', 'unknown')
-            author = post.get('author', 'Unknown')[:30]
-            
-            logger.info(f"\n[{i}/{len(unanalyzed)}] Analyzing: {platform} - {author}")
-            
+
+        if not acquire_analysis_lock():
+            logger.info("Analysis skipped: an analysis run is already in progress")
+            return {"analyzed": 0, "failed": 0, "skipped": True}
+
+        try:
+            # Opportunistic platform normalization (once per interval)
             try:
-                result = await analyze_and_store_post(self.db, post, self.supabase)
-                if result:
-                    successful += 1
-                    logger.info(f"  ✅ Successfully analyzed")
-                else:
-                    failed += 1
-                    logger.warning(f"  ❌ Analysis returned False")
-            except Exception as e:
-                failed += 1
-                logger.error(f"  ❌ Error: {str(e)[:100]}")
+                agent = DatabaseAgent()
+                agent.fix_invalid_platforms(limit=2000, dry_run=False, auto=True)
+            except Exception as cleanup_err:
+                logger.debug(f"Platform normalization skipped: {cleanup_err}")
         
-        logger.info(f"\n📊 Analysis Summary: {successful} successful, {failed} failed")
-        return {"analyzed": successful, "failed": failed}
+            # Get unanalyzed posts (prefer Supabase as primary source)
+            unanalyzed: List[Dict[str, Any]] = []
+            effective_limit = int(limit) if isinstance(limit, int) and limit > 0 else 100
+            if self.supabase is not None:
+                try:
+                    # Prefer 'analyzed_at' (present in Supabase schema)
+                    query = (
+                        self.supabase.client
+                        .table("posts")
+                        .select("*")
+                    )
+                    if resume:
+                        query = query.is_("analyzed_at", "null")
+                    query = query.order("created_at", desc=True).limit(effective_limit)
+                    r = query.execute()
+                    data = getattr(r, "data", []) or []
+                    # If empty, fallback to value_score null/zero heuristic
+                    if not data:
+                        r2 = (
+                            self.supabase.client
+                            .table("posts")
+                            .select("*")
+                            .or_("value_score.is.null,value_score.eq.0")
+                            .order("created_at", desc=True)
+                            .limit(effective_limit)
+                            .execute()
+                        )
+                        data = getattr(r2, "data", []) or []
+                    unanalyzed = data
+                except Exception as e:
+                    logger.warning(f"Supabase unanalyzed fetch failed, falling back to SQLite: {e}")
+                    pass
+            if not unanalyzed:
+                unanalyzed = self.db.get_unanalyzed_posts(limit=effective_limit)
+            logger.info(f"Found {len(unanalyzed)} unanalyzed posts")
+            
+            if not unanalyzed:
+                logger.info("✅ All posts are analyzed!")
+                return {"analyzed": 0, "failed": 0}
+            
+            successful = 0
+            failed = 0
+            
+            for i, post in enumerate(unanalyzed, 1):
+                post_id = post.get('post_id', 'unknown')
+                platform = post.get('platform', 'unknown')
+                author = post.get('author', 'Unknown')[:30]
+                
+                logger.info(f"\n[{i}/{len(unanalyzed)}] Analyzing: {platform} - {author}")
+                
+                try:
+                    result = await analyze_and_store_post(self.db, post, self.supabase)
+                    if result:
+                        successful += 1
+                        logger.info(f"  ✅ Successfully analyzed")
+                    else:
+                        failed += 1
+                        logger.warning(f"  ❌ Analysis returned False")
+                except Exception as e:
+                    failed += 1
+                    logger.error(f"  ❌ Error: {str(e)[:100]}")
+            
+            logger.info(f"\n📊 Analysis Summary: {successful} successful, {failed} failed")
+            return {"analyzed": successful, "failed": failed}
+        finally:
+            release_analysis_lock()
     
     async def run_transformation_and_scheduling(
         self,
@@ -358,8 +411,8 @@ async def main():
         schedule_minutes=args.schedule_minutes
     )
     
-    print("\n✅ Full loop complete!")
-    print(f"Results: {results}")
+    logger.info("\n✅ Full loop complete!")
+    logger.info(f"Results: {results}")
 
 
 if __name__ == "__main__":

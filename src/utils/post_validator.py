@@ -247,7 +247,7 @@ class PostValidator:
             errors.append("Platform is empty")
             return False, errors
         
-        valid_platforms = ['threads', 'twitter', 'reddit', 'github', 'telegram']
+        valid_platforms = ['threads', 'twitter', 'reddit', 'github', 'telegram', 'rss', 'discovery']
         if platform.lower() not in valid_platforms:
             errors.append(f"Unknown platform: '{platform}'")
             return False, errors

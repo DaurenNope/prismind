@@ -22,5 +22,10 @@
   "enable_analysis": true,
   "enable_sqlite_cache": true,
   "supabase_enabled": true,
-  "research_api_enabled": false
+  "research_api_enabled": false,
+  "discovery": {
+    "enabled": true,
+    "quality_threshold": 0.7,
+    "topics": ["AI", "Programming", "Startups", "Business", "Investing", "Science", "Health", "Travel", "Books"]
+  }
 }

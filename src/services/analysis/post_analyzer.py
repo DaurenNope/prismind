@@ -60,8 +60,22 @@ async def analyze_and_store_post(db_manager, post_dict, supabase_manager=None):
         if is_cancelled("analysis"):
             log("Analysis cancelled by user", "warning")
             return False
-    except Exception:
-        pass
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.debug(f"Cancel manager check failed (non-critical): {e}")
+        # Continue - cancel check is optional
+
+    # CRITICAL: Prefer DatabaseAgent for data normalization and quality control
+    db_agent = None
+    try:
+        from src.database.database_agent import DatabaseAgent
+        db_agent = DatabaseAgent()
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(f"⚠️ DatabaseAgent initialization failed, using fallback: {e}", exc_info=True)
+        # Continue with fallback - DatabaseAgent is preferred but not required
 
     post_id = post_dict.get("post_id", "unknown")
     log(f"Processing post: {post_id}")
@@ -80,6 +94,20 @@ async def analyze_and_store_post(db_manager, post_dict, supabase_manager=None):
         log(f"AI analysis skipped (performance mode)")
         enhanced_post = post_dict
         # Even if we skip analysis, we still want to store the post
+        # Use DatabaseAgent if available for normalization
+        if db_agent:
+            try:
+                result = db_agent.save_post(enhanced_post)
+                if result:
+                    log(f"Stored post via DatabaseAgent successfully (no AI analysis)", "success")
+                    return True
+                else:
+                    log(f"DatabaseAgent save failed (no AI analysis)", "error")
+                    return False
+            except Exception as db_agent_error:
+                log(f"DatabaseAgent save failed: {db_agent_error}, falling back to legacy", "warning")
+        
+        # Fallback: Legacy save path
         try:
             # Try to update first (in case it exists)
             local_updated = db_manager.update_post(post_id, enhanced_post)
@@ -90,6 +118,7 @@ async def analyze_and_store_post(db_manager, post_dict, supabase_manager=None):
                     log(f"Failed to store post in local database", "error")
                     return False
             log(f"Stored post in local database successfully (no AI analysis)", "success")
+            return True
         except Exception as local_error:
             log(f"Local database operation failed: {local_error}", "error")
             return False
@@ -149,7 +178,9 @@ async def analyze_and_store_post(db_manager, post_dict, supabase_manager=None):
                 looked_truncated = raw.rstrip().endswith(('...', '…')) or ('...' in raw) or ('…' in raw)
                 if (len(cleaned_text) > max(len(raw), 150)) or looked_truncated:
                     post_dict['content'] = cleaned_text[:4000]
-        except Exception:
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).debug(f"Content cleaning failed: {e}")
             pass
 
         # Perform AI analysis
@@ -171,6 +202,8 @@ async def analyze_and_store_post(db_manager, post_dict, supabase_manager=None):
                 'topic': analysis_result.get('topic', ''),
                 'content_type': analysis_result.get('content_type', ''),
                 'language': analysis_result.get('language', ''),
+                'category': analysis_result.get('category', ''),  # Add category field
+                'fit_categories': analysis_result.get('fit_categories', []),  # Add fit_categories field
                 'analyzed_at': analysis_result.get('analyzed_at'),
                 'analysis_model': analysis_result.get('analysis_model') or analysis_result.get('ai_service'),
                 # rewrite-focused
@@ -208,6 +241,73 @@ async def analyze_and_store_post(db_manager, post_dict, supabase_manager=None):
                 lat = sum(1 for c in txt if c.isalpha() and ord(c) < 128)
                 essential_fields['language'] = 'ru' if (cyr and cyr > 0.3 * (cyr + lat or 1)) else 'en'
 
+            # Normalize scores to floats in 0-10 range
+            def _to_score(x):
+                try:
+                    v = float(x)
+                except Exception:
+                    v = 0.0
+                return max(0.0, min(10.0, v))
+            essential_fields['value_score'] = _to_score(essential_fields.get('value_score', 0.0))
+            essential_fields['quality_score'] = _to_score(essential_fields.get('quality_score', 0.0))
+
+            # Time sensitivity defaults
+            if essential_fields.get('time_sensitive') is None:
+                essential_fields['time_sensitive'] = False
+            if essential_fields.get('urgency_score') is None:
+                essential_fields['urgency_score'] = 0.0
+            if not essential_fields.get('relevance_window'):
+                essential_fields['relevance_window'] = None
+            if essential_fields.get('time_sensitive_reasons') is None:
+                essential_fields['time_sensitive_reasons'] = ''
+            
+            # Rewrite-focused defaults
+            if essential_fields.get('rewrite_score') is None:
+                # Heuristic: use value_score as base for rewrite_score
+                essential_fields['rewrite_score'] = _to_score(essential_fields.get('value_score', 0.0))
+            if not essential_fields.get('rewrite_readiness'):
+                summary_len = len(essential_fields.get('ai_summary') or '')
+                essential_fields['rewrite_readiness'] = 'ready' if summary_len >= 150 else ('needs_context' if summary_len < 80 else 'needs_trim')
+            if essential_fields.get('rewrite_reasons') is None:
+                tags_count = len(essential_fields.get('tags') or [])
+                concepts_count = len(essential_fields.get('key_concepts') or [])
+                essential_fields['rewrite_reasons'] = [f"Good tags ({tags_count})", f"Concepts ({concepts_count})"]
+            if essential_fields.get('rewrite_risks') is None:
+                risks = []
+                summary = essential_fields.get('ai_summary') or ''
+                if len(summary) < 120:
+                    risks.append('Short summary')
+                if not essential_fields.get('tags'):
+                    risks.append('No tags')
+                essential_fields['rewrite_risks'] = risks
+            if essential_fields.get('analysis_confidence') is None:
+                essential_fields['analysis_confidence'] = 0.7
+            if not essential_fields.get('analysis_depth'):
+                essential_fields['analysis_depth'] = 'fast'
+            if essential_fields.get('needs_deep_analysis') is None:
+                rewrite_score = _to_score(essential_fields.get('rewrite_score', 0.0))
+                confidence = essential_fields.get('analysis_confidence', 0.7)
+                essential_fields['needs_deep_analysis'] = True if rewrite_score >= 8 and confidence < 0.8 else False
+            
+            # Persona fit defaults
+            if essential_fields.get('persona_fit_scores') is None:
+                essential_fields['persona_fit_scores'] = {}
+            if essential_fields.get('persona_fit_reasons') is None:
+                essential_fields['persona_fit_reasons'] = {}
+            
+            # Fix corrupted best_persona_key values (should be persona name, not time sensitivity values or relevance_window)
+            best_key = essential_fields.get('best_persona_key')
+            invalid_values = ['evergreen', 'timely', 'trending', 'breaking', 'urgent', 'this-week', 'this-month', 'this-year', 'next-week', 'next-month']
+            if best_key in invalid_values:
+                essential_fields['best_persona_key'] = None
+            elif not best_key:
+                essential_fields['best_persona_key'] = None
+            
+            if essential_fields.get('best_persona_score') is None:
+                essential_fields['best_persona_score'] = 0.0
+            if essential_fields.get('best_persona_reasons') is None:
+                essential_fields['best_persona_reasons'] = []
+
             # content_type fallback from media presence
             if not essential_fields.get('content_type'):
                 urls = post_dict.get('media_urls') or []
@@ -228,6 +328,12 @@ async def analyze_and_store_post(db_manager, post_dict, supabase_manager=None):
                     essential_fields[key] = []
                 elif not isinstance(val, list):
                     essential_fields[key] = [val] if val else []
+
+            # Ensure author_handle exists
+            if not (enhanced_post.get('author_handle') or post_dict.get('author_handle')):
+                author = (post_dict.get('author') or '').strip()
+                if author:
+                    enhanced_post['author_handle'] = author.split()[0]
             
             # Media/content fallback to ensure non-empty content
             try:
@@ -252,7 +358,13 @@ async def analyze_and_store_post(db_manager, post_dict, supabase_manager=None):
                         enhanced_post['content'] = fallback_text[:4000]
                     else:
                         enhanced_post['content'] = 'Content unavailable'
-            except Exception:
+                # Ensure ai_summary fallback exists
+                if not essential_fields.get('ai_summary'):
+                    enhanced_post_ai = (enhanced_post.get('content') or '')
+                    essential_fields['ai_summary'] = enhanced_post_ai[:280] if enhanced_post_ai else ''
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).debug(f"Content/media fallback failed: {e}")
                 pass
 
             # Add only essential fields to the post
@@ -289,8 +401,44 @@ async def analyze_and_store_post(db_manager, post_dict, supabase_manager=None):
 
         except Exception as analysis_error:
             log(f"AI analysis failed: {analysis_error}", "warning")
+            import traceback
+            import logging
+            logging.getLogger(__name__).error(f"AI analysis error traceback:\n{traceback.format_exc()}")
             enhanced_post = post_dict  # Use original data if analysis fails
 
+    # CRITICAL: Use DatabaseAgent for saving (ensures normalization and validation)
+    # DatabaseAgent.save_post() handles:
+    # - Data normalization (fixes corrupted timestamps, persona keys, scores)
+    # - Validation
+    # - Supabase sync (primary)
+    # - SQLite cache (mirror)
+    if db_agent:
+        try:
+            log(
+                f"Using DatabaseAgent to save post (with normalization): {enhanced_post.get('post_id', 'unknown')}"
+            )
+            result = db_agent.save_post(enhanced_post)
+            if result:
+                log(
+                    f"✅ Saved to database successfully via DatabaseAgent: {enhanced_post.get('post_id')}",
+                    "success",
+                )
+                return True
+            else:
+                log(
+                    f"❌ DatabaseAgent save returned False for post: {enhanced_post.get('post_id')}",
+                    "error",
+                )
+                return False
+        except Exception as db_agent_error:
+            log(
+                f"DatabaseAgent save failed: {db_agent_error}, falling back to legacy methods",
+                "warning",
+            )
+            db_agent = None  # Disable DatabaseAgent for fallback path
+    
+    # Fallback: Legacy save path (only if DatabaseAgent is not available)
+    if not db_agent:
         # Update post in local database instead of adding
         try:
             # Try to update the existing post with analysis data
@@ -317,21 +465,33 @@ async def analyze_and_store_post(db_manager, post_dict, supabase_manager=None):
                             log("Post already existed; analysis update may have been a no-op", "info")
                         else:
                             log("Local store/update did not apply; proceeding anyway", "warning")
-                    except Exception:
+                    except Exception as e:
                         # If we cannot check existence, don't block pipeline
+                        import logging
+                        logging.getLogger(__name__).debug(f"Could not verify local existence: {e}")
                         log("Could not verify local existence; proceeding", "warning")
             log(f"Local persistence complete", "success")
         except Exception as local_error:
             log(f"Local database operation failed: {local_error}", "error")
             return False
-
-    # Store in Supabase if available
+    
+    # Fallback: Store in Supabase if available (legacy path - should not be needed if DatabaseAgent works)
     if supabase_manager:
         try:
             log(
                 f"Attempting Supabase sync for post: {enhanced_post.get('post_id', 'unknown')}"
             )
-            cloud_result = supabase_manager.insert_post(enhanced_post)
+            # Support both legacy SupabaseManager (insert_post) and new SupabaseAdapter (save_post)
+            if hasattr(supabase_manager, "insert_post"):
+                cloud_result = supabase_manager.insert_post(enhanced_post)
+            elif hasattr(supabase_manager, "save_post"):
+                cloud_result = supabase_manager.save_post(enhanced_post)
+            else:
+                log(
+                    f"Supabase sync object does not support insert/save operations: {type(supabase_manager).__name__}",
+                    "error",
+                )
+                cloud_result = False
             if cloud_result:
                 log(
                     f"✅ Synced to Supabase successfully: {enhanced_post.get('post_id')}",

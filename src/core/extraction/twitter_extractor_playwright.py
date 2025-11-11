@@ -8,6 +8,7 @@ from typing import Dict, List, Optional
 from playwright.async_api import Browser, Page, async_playwright
 
 from .social_extractor_base import SocialExtractorBase, SocialPost
+from .twitter_cookies import TwitterCookieStore
 from ..rate_limiting.rate_limit_config import RateLimitConfig
 
 
@@ -35,6 +36,7 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
         self.password = password
         self.headless = headless
         self.cookie_file = cookie_file or f"config/twitter_cookies_{username}.json"
+        self._cookie_store = TwitterCookieStore(self.cookie_file)
         self.playwright = None
         self.browser: Optional[Browser] = None
         self.context = None
@@ -59,59 +61,6 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
             # Best-effort; do not fail collection on jitter errors
             await asyncio.sleep(0.3)
 
-    def _load_cookies(self) -> Optional[List[Dict]]:
-        """Load cookies from file if it exists - handles both list and dict formats"""
-        try:
-            cookie_path = Path(self.cookie_file)
-            if cookie_path.exists():
-                with open(cookie_path, "r") as f:
-                    cookie_data = json.load(f)
-                
-                # Handle different cookie formats
-                if isinstance(cookie_data, list):
-                    # Direct list format
-                    cookies = cookie_data
-                elif isinstance(cookie_data, dict):
-                    # Dict format with "cookies" key (from posting services)
-                    cookies = cookie_data.get("cookies", cookie_data.get("data", []))
-                    if not cookies:
-                        # Try to extract individual cookies if format is different
-                        cookies = [cookie_data] if cookie_data else []
-                else:
-                    cookies = []
-                
-                if cookies:
-                    print(f"🍪 Loaded {len(cookies)} cookies from {cookie_path}")
-                    return cookies
-                else:
-                    print(f"⚠️ No valid cookies found in {cookie_path}")
-        except Exception as e:
-            print(f"⚠️ Could not load cookies: {e}")
-        return None
-
-    def _save_cookies(self, cookies: List[Dict]):
-        """
-        Save cookies to file in Playwright storage_state format
-        
-        This ensures compatibility with storage_state loading (sophisticated approach like Threads)
-        """
-        try:
-            cookie_path = Path(self.cookie_file)
-            cookie_path.parent.mkdir(parents=True, exist_ok=True)
-            
-            # Convert to Playwright storage_state format
-            # storage_state expects: {"cookies": [...], "origins": [...]}
-            storage_state = {
-                "cookies": cookies,
-                "origins": []
-            }
-            
-            with open(cookie_path, "w") as f:
-                json.dump(storage_state, f, indent=2)
-            print(f"🍪 Saved {len(cookies)} cookies in storage_state format to {cookie_path}")
-        except Exception as e:
-            print(f"⚠️ Could not save cookies: {e}")
-
     async def _refresh_and_save_cookies(self) -> bool:
         """
         Refresh and save cookies using storage_state (sophisticated approach like Threads)
@@ -121,8 +70,8 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
         """
         try:
             if self.context and self.is_authenticated:
-                cookie_path = Path(self.cookie_file)
-                cookie_path.parent.mkdir(parents=True, exist_ok=True)
+                cookie_path = self._cookie_store.path
+                self._cookie_store.ensure_parent_dir()
                 
                 # Use storage_state to save (saves cookies + browser state)
                 # This is Playwright's native format - most reliable
@@ -131,15 +80,12 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
                 
                 # Verify cookies were saved
                 if cookie_path.exists():
-                    try:
-                        with open(cookie_path, 'r') as f:
-                            saved_data = json.load(f)
-                            cookie_count = len(saved_data.get('cookies', []))
-                            print(f"✅ Verified: Saved {cookie_count} cookies in storage_state format")
-                            return True
-                    except Exception as verify_error:
-                        print(f"⚠️ Could not verify saved cookies: {verify_error}")
-                        return True  # Still return True as save likely succeeded
+                    cookies = self._cookie_store.load()
+                    if cookies is not None:
+                        print(f"✅ Verified: Saved {len(cookies)} cookies in storage_state format")
+                        return True
+                    print("⚠️ Cookies saved but could not verify storage_state contents")
+                    return True  # Still return True as save likely succeeded
                 else:
                     print(f"⚠️ Cookie file not found after save: {cookie_path}")
                     return False
@@ -162,23 +108,18 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
         try:
             if not self.context or not self.is_authenticated:
                 return False
-            
-            cookie_path = Path(self.cookie_file)
-            if not cookie_path.exists():
+
+            age_seconds = self._cookie_store.get_age_seconds()
+            if age_seconds is None:
                 # No cookies to refresh
                 return False
-            
-            # Check when cookies were last refreshed
-            import os
-            import time
-            cookie_age = time.time() - cookie_path.stat().st_mtime
-            
+
             # Refresh if cookies are older than 1 hour (proactive refresh)
             # Twitter cookies typically last much longer, but refreshing keeps them fresh
-            if cookie_age > 3600:  # 1 hour
-                print(f"🔄 Cookies are {int(cookie_age/60)} minutes old - refreshing proactively...")
+            if age_seconds > 3600:  # 1 hour
+                print(f"🔄 Cookies are {int(age_seconds/60)} minutes old - refreshing proactively...")
                 return await self._refresh_and_save_cookies()
-            
+
             return True
         except Exception as e:
             print(f"⚠️ Auto-refresh check failed: {e}")
@@ -186,31 +127,23 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
     
     def _check_cookie_freshness(self) -> bool:
         """
-        Check if cookies are fresh enough to use without refresh
+        Check if cookies are fresh enough to use without refresh.
         
         Returns True if cookies are fresh, False if they should be refreshed.
         """
-        try:
-            cookie_path = Path(self.cookie_file)
-            if not cookie_path.exists():
-                return False
-            
-            # Check cookie file age
-            import os
-            import time
-            cookie_age = time.time() - cookie_path.stat().st_mtime
-            
-            # Consider cookies fresh if less than 6 hours old
-            # This is conservative - Twitter cookies typically last days/weeks
-            is_fresh = cookie_age < 21600  # 6 hours
-            
-            if not is_fresh:
-                print(f"⚠️ Cookies are {int(cookie_age/3600)} hours old - may need refresh")
-            
-            return is_fresh
-        except Exception as e:
-            print(f"⚠️ Could not check cookie freshness: {e}")
-            return True  # Assume fresh if we can't check
+        age_seconds = self._cookie_store.get_age_seconds()
+        if age_seconds is None:
+            return False
+
+        is_fresh = age_seconds < 21600  # 6 hours
+
+        if not is_fresh:
+            try:
+                print(f"⚠️ Cookies are {int(age_seconds/3600)} hours old - may need refresh")
+            except Exception:
+                print("⚠️ Cookies may be old - could not compute exact age")
+
+        return is_fresh
     
     def _validate_cookie_format(self) -> bool:
         """
@@ -219,11 +152,11 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
         Returns True if cookies are in the correct format, False otherwise.
         """
         try:
-            cookie_path = Path(self.cookie_file)
+            cookie_path = self._cookie_store.path
             if not cookie_path.exists():
                 return False
             
-            with open(cookie_path, 'r') as f:
+            with cookie_path.open('r') as f:
                 cookie_data = json.load(f)
             
             # Check if it's in storage_state format: {"cookies": [...], "origins": [...]}
@@ -265,12 +198,13 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
         
         Uses storage_state (Playwright's native cookie/state management) for reliable authentication.
         """
-        cookie_path = Path(self.cookie_file)
-        if not cookie_path.exists():
+        cookie_path = self._cookie_store.path
+        if not self._cookie_store.exists():
             print("⚠️  Cookie file not found - skipping cookie authentication")
             return False
 
         try:
+            self._cookie_store.ensure_parent_dir()
             # Validate cookie format (sophisticated approach like Threads)
             if not self._validate_cookie_format():
                 print("⚠️  Cookie file is not in storage_state format - will attempt to convert on next save")
@@ -365,8 +299,7 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
                 print(f"🔄 Authentication attempt {attempt + 1}/{max_retries}...")
                 
                 # Check cookie freshness before attempting auth
-                cookie_path = Path(self.cookie_file)
-                if cookie_path.exists():
+                if self._cookie_store.exists():
                     is_fresh = self._check_cookie_freshness()
                     if not is_fresh:
                         print("🔄 Cookies are old but will attempt to use them (will refresh if auth succeeds)")
@@ -409,7 +342,7 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
                     return False
 
                 # Check if cookies exist but are expired
-                cookies_exist = Path(self.cookie_file).exists() if self.cookie_file else False
+                cookies_exist = self._cookie_store.exists()
                 if cookies_exist:
                     print("⚠️  Cookies exist but authentication failed - they may be expired")
                     print("💡 Tip: Twitter is likely rate limiting. Wait 15-30 minutes or use fresh cookies")
@@ -561,8 +494,8 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
 
                 # AUTO-SAVE: Save browser state using storage_state (sophisticated approach like Threads)
                 # This ensures cookies are always fresh after authentication
-                cookie_path = Path(self.cookie_file)
-                cookie_path.parent.mkdir(parents=True, exist_ok=True)
+                cookie_path = self._cookie_store.path
+                self._cookie_store.ensure_parent_dir()
                 await self.context.storage_state(path=str(cookie_path))
                 print(f"✅ Saved browser state to {cookie_path} (includes cookies + localStorage)")
                 
@@ -1818,11 +1751,14 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
             hashtags = re.findall(r"#(\w+)", content)
             mentions = re.findall(r"@(\w+)", content)
 
+            # Normalize handle to username form (no @)
+            normalized_handle = (author_handle or "").lstrip("@").strip()
+
             # Create the SocialPost with the generated post_id
             return SocialPost(
                 platform="twitter",
                 author=author or "Unknown",
-                author_handle=author_handle or "",
+                author_handle=normalized_handle,
                 content=content,
                 created_at=created_at,
                 url=tweet_url or f"https://x.com/i/web/status/{tweet_id}"

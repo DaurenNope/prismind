@@ -35,3 +35,5 @@ create index if not exists idx_quality_score on quality_metrics(quality_score);
 comment on table post_operations is 'Tracks all post insert and update operations for monitoring';
 comment on table quality_metrics is 'Tracks quality scores over time for quality control and alerting';
 
+
+

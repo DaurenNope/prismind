@@ -5,6 +5,7 @@ from typing import Dict, Any, List, Optional
 
 from src.services.new_database_manager import get_database_manager
 from src.services.analysis.post_analyzer import analyze_and_store_post, log
+from src.services.analysis_lock import analysis_lock_guard
 
 
 async def _analyze_posts_async(
@@ -76,4 +77,12 @@ def analyze_recent_posts(
             "errors": ["No posts available for analysis."],
         }
 
-    return asyncio.run(_analyze_posts_async(posts, limit))
+    with analysis_lock_guard() as locked:
+        if not locked:
+            return {
+                "processed": 0,
+                "attempted": 0,
+                "errors": ["Analysis already in progress; skipping duplicate run."],
+            }
+
+        return asyncio.run(_analyze_posts_async(posts, limit))

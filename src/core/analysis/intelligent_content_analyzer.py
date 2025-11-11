@@ -15,7 +15,7 @@ Author: PrisMind AI System
 import os
 import json
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 # AI imports
@@ -25,6 +25,16 @@ from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 # Core imports
 from src.core.extraction.social_extractor_base import SocialPost
+from src.utils.diary_storage import DiaryStorage
+from .scoring import (
+    compute_persona_fit,
+    score_value,
+    score_quality,
+    guess_topic,
+    guess_type,
+    guess_language,
+    is_rewrite_candidate,
+)
 
 
 class IntelligentContentAnalyzer:
@@ -35,6 +45,11 @@ class IntelligentContentAnalyzer:
         
         # Initialize sentiment analyzer
         self.sentiment_analyzer = SentimentIntensityAnalyzer()
+        # Initialize diary storage for contextual personalization
+        try:
+            self._diary = DiaryStorage()
+        except Exception:
+            self._diary = None
         
         # Initialize AI services (try multiple for redundancy)
         self.ai_services = []
@@ -88,7 +103,6 @@ class IntelligentContentAnalyzer:
 
         # Recency
         try:
-            from datetime import datetime, timezone
             created_at = post.created_at if isinstance(post.created_at, datetime) else datetime.fromisoformat(str(post.created_at).replace('Z','+00:00'))
             if created_at.tzinfo is None:
                 created_at = created_at.replace(tzinfo=timezone.utc)
@@ -550,21 +564,29 @@ class IntelligentContentAnalyzer:
         }
 
         try:
-            value_score = self._calculate_intelligent_value_score(analysis, post)
+            value_score = score_value(
+                analysis.get('ai_summary') or '',
+                analysis.get('tags') or [],
+                analysis.get('key_concepts') or [],
+            )
             analysis['intelligent_value_score'] = value_score
         except Exception:
             analysis['intelligent_value_score'] = 5.0
 
         # Add content quality score and rewrite candidate assessment
         try:
-            content_quality_score = self._calculate_content_quality_score(analysis, post)
+            content_quality_score = score_quality(
+                post.content or '',
+                analysis.get('ai_summary') or '',
+            )
             analysis['content_quality_score'] = content_quality_score
         except Exception:
             analysis['content_quality_score'] = 5.0
 
         try:
-            is_rewrite_candidate = self._determine_rewrite_candidate(analysis, post, content_quality_score)
-            analysis['is_rewrite_candidate'] = is_rewrite_candidate
+            analysis['is_rewrite_candidate'] = is_rewrite_candidate(
+                analysis, post, content_quality_score
+            )
         except Exception:
             analysis['is_rewrite_candidate'] = False
 
@@ -718,6 +740,26 @@ class IntelligentContentAnalyzer:
         # Define the 5 personas for content transformation
         personas = ["technical", "builder", "learner", "trendsetter", "thought_leader"]
 
+        # Attach recent builder diary context (short, most recent first)
+        diary_context = ""
+        try:
+            if self._diary:
+                profile_key = os.getenv("ANALYZER_PROFILE_KEY") or None
+                recent = self._diary.load_entries(profile_key=profile_key, limit=5)
+                if recent:
+                    lines = []
+                    for e in recent[:5]:
+                        ts = e.get("timestamp", "")[:19].replace("T", " ")
+                        shipped = (e.get("shipped") or "").strip().replace("\n", " ")
+                        focus = (e.get("focus") or "").strip().replace("\n", " ")
+                        short = shipped[:140] + ("..." if len(shipped) > 140 else "")
+                        if focus:
+                            short = f"{short} | focus: {focus[:80]}"
+                        lines.append(f"- {ts} {short}")
+                    diary_context = "Recent builder updates:\\n" + "\\n".join(lines)
+        except Exception:
+            diary_context = ""
+
         return f"""
         You are an expert content analyst. Return STRICT JSON ONLY with these keys (fill every field):
         {{
@@ -728,13 +770,38 @@ class IntelligentContentAnalyzer:
           "content_type": string ("news"|"how_to"|"opinion"|"thread"|"case_study"),
           "language": string (e.g., "en"),
           "value_score": number 0..10,
-          "quality_score": number 0..10
+          "quality_score": number 0..10,
+          "category": string (primary category: "TECH", "Dating", "Crypto", "Business", "Learning", "News", "Personal", "Health", "Entertainment", "Other", "Deprecated"),
+          "fit_categories": [string] (list of categories this content fits - can be multiple, e.g. ["TECH", "Business"])
         }}
         INPUT:
         platform: {post.platform}  author: {post.author} @{post.author_handle}
         content: {post.content}
         hashtags: {', '.join(post.hashtags) if post.hashtags else 'None'}
         created_at: {post.created_at}  url: {post.url}
+        
+        IMPORTANT: 
+        1. Determine the PRIMARY category (single value) - the main category this content belongs to
+        2. Determine fit_categories (array) - all categories this content could fit (can be multiple)
+        3. Consider the user's current narrative and focus from the recent builder updates to make judgments more context-aware and creative.
+        
+        {diary_context}
+        
+        Categories:
+        - TECH: Technology, programming, AI, software, development, engineering
+        - Dating: Relationships, dating advice, romance, personal connections
+        - Crypto: Cryptocurrency, blockchain, DeFi, NFTs, trading
+        - Business: Startups, entrepreneurship, marketing, finance, strategy
+        - Learning: Education, tutorials, how-to guides, knowledge sharing
+        - News: Current events, breaking news, world events, politics
+        - Personal: Personal stories, life advice, self-improvement, lifestyle
+        - Health: Health, fitness, nutrition, wellness, medical
+        - Entertainment: Movies, music, games, fun content, memes
+        - Other: Anything that doesn't fit the above categories
+        
+        Example: A post about "AI startup funding" might have:
+        - category: "Business" (primary)
+        - fit_categories: ["Business", "TECH"] (fits multiple categories)
         """
     
     def _analyze_with_mistral(self, prompt: str, sentiment_scores: Dict, service: Dict) -> Dict[str, Any]:
@@ -931,31 +998,194 @@ class IntelligentContentAnalyzer:
             qs = float(analysis.get('content_quality_score') or analysis.get('quality_score') or 0)
         except Exception:
             qs = 0
-        analysis['value_score'] = vs if vs > 0 else self._score_value(analysis['ai_summary'], tags, kcs)
-        analysis['quality_score'] = qs if qs > 0 else self._score_quality(post.content or '', analysis['ai_summary'])
+        analysis['value_score'] = vs if vs > 0 else score_value(analysis['ai_summary'], tags, kcs)
+        analysis['quality_score'] = qs if qs > 0 else score_quality(post.content or '', analysis['ai_summary'])
 
-        analysis['topic'] = (analysis.get('topic') or self._guess_topic(tags, kcs) or '').strip()[:50]
-        analysis['content_type'] = (analysis.get('content_type') or self._guess_type(post) or 'thread').strip()[:30]
-        analysis['language'] = (analysis.get('language') or self._guess_language(post.content or '') or 'en').strip()[:10]
+        analysis['topic'] = (analysis.get('topic') or guess_topic(tags, kcs) or '').strip()[:50]
+        analysis['content_type'] = (analysis.get('content_type') or guess_type(post) or 'thread').strip()[:30]
+        analysis['language'] = (analysis.get('language') or guess_language(post.content or '') or 'en').strip()[:10]
 
         analysis['analysis_model'] = analysis.get('ai_service') or 'gemini'
+        # datetime is imported at top of file
         analysis['analyzed_at'] = datetime.utcnow().isoformat()
 
-        # Persona fit scoring
+        # Map categories to personas (category is for discovery, best_persona_key is for rewriter)
+        # Normalize category to our expected format
+        raw_category = analysis.get('category', '').strip()
+        
+        # Check if post is deprecated (old time-sensitive content)
+        is_deprecated = False
+        created_at = post.created_at if hasattr(post, 'created_at') else None
+        relevance_window = analysis.get('relevance_window', 'evergreen')
+        urgency_score = analysis.get('urgency_score', 0.0)
+        
+        if created_at and relevance_window and relevance_window != 'evergreen':
+            try:
+                if isinstance(created_at, str):
+                    try:
+                        created_dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                    except:
+                        try:
+                            created_dt = datetime.strptime(created_at[:19], '%Y-%m-%dT%H:%M:%S')
+                        except:
+                            created_dt = None
+                    if created_dt:
+                        age_days = (datetime.now(created_dt.tzinfo if created_dt.tzinfo else None) - created_dt.replace(tzinfo=None)).days
+                        if relevance_window == 'same-day' and age_days > 1:
+                            is_deprecated = True
+                        elif relevance_window == '24-72h' and age_days > 3:
+                            is_deprecated = True
+                        elif relevance_window == 'this-week' and age_days > 7:
+                            is_deprecated = True
+                        elif urgency_score > 0.5 and age_days > 7:
+                            is_deprecated = True
+            except Exception:
+                pass
+        
+        # If deprecated, set category to DEPRECATED
+        if is_deprecated:
+            raw_category = 'DEPRECATED'
+            analysis['category'] = 'DEPRECATED'
+        
+        # If category is missing or empty, try to infer from content
+        if not raw_category or raw_category.lower() in ['unknown', 'other', 'general', '']:
+            # Infer category from content keywords
+            content_lower = (post.content or '').lower()
+            if any(kw in content_lower for kw in ['crypto', 'bitcoin', 'blockchain', 'defi', 'nft', 'ethereum', 'web3', 'token']):
+                raw_category = 'CRYPTO'
+            elif any(kw in content_lower for kw in ['dating', 'relationship', 'romance', 'love', 'partner', 'single', 'marriage']):
+                raw_category = 'DATING'
+            elif any(kw in content_lower for kw in ['ai', 'code', 'programming', 'software', 'tech', 'developer', 'engineering', 'startup', 'business']):
+                raw_category = 'TECH'
+            elif any(kw in content_lower for kw in ['startup', 'business', 'entrepreneur', 'marketing', 'finance', 'invest', 'revenue']):
+                raw_category = 'BUSINESS'
+            elif any(kw in content_lower for kw in ['learn', 'tutorial', 'how to', 'guide', 'education', 'course', 'study']):
+                raw_category = 'LEARNING'
+            else:
+                raw_category = 'OTHER'
+        
+        category = self._normalize_category(raw_category)
+        
+        fit_categories = analysis.get('fit_categories', [])
+        if isinstance(fit_categories, str):
+            # Try to parse as JSON if it's a string
+            try:
+                import json
+                fit_categories = json.loads(fit_categories)
+            except:
+                fit_categories = []
+        if not isinstance(fit_categories, list):
+            fit_categories = []
+        # Normalize fit_categories to our expected format
+        fit_categories = [self._normalize_category(c.strip()) for c in fit_categories if c]
+        # Remove empty strings and duplicates
+        fit_categories = list(set([c for c in fit_categories if c]))
+        
+        valid_categories = ['TECH', 'DATING', 'CRYPTO', 'BUSINESS', 'LEARNING', 'NEWS', 'PERSONAL', 'HEALTH', 'ENTERTAINMENT', 'OTHER', 'DEPRECATED']
+        
+        # Category to persona mapping (for the 3 main personas)
+        category_to_persona = {
+            'TECH': 'qronoya',
+            'DATING': 'aspandead',
+            'CRYPTO': 'claimzilla',
+            'BUSINESS': 'qronoya',  # Business content goes to tech persona
+            'LEARNING': 'qronoya',  # Learning content goes to tech persona
+        }
+        
+        # Always compute persona fit scores (for reference and fallback)
         try:
-            best_key, best_score, best_reasons, scores_map, reasons_map = self._persona_fit_scores(post, analysis)
-            analysis['best_persona_key'] = best_key
-            analysis['best_persona_score'] = best_score
-            analysis['best_persona_reasons'] = best_reasons
-            analysis['persona_fit_scores'] = scores_map
-            analysis['persona_fit_reasons'] = reasons_map
+            persona_fit = compute_persona_fit(post, analysis)
+            best_key = persona_fit.get('best_persona')
+            best_score = persona_fit.get('best_score', 0.0)
+            best_reasons = persona_fit.get('reasons', {}).get(best_key, []) if best_key else []
+            analysis['persona_fit_scores'] = persona_fit.get('scores', {})
+            analysis['persona_fit_reasons'] = persona_fit.get('reasons', {})
         except Exception:
-            pass
+            best_key = None
+            best_score = 0.0
+            best_reasons = []
+            analysis['persona_fit_scores'] = {}
+            analysis['persona_fit_reasons'] = {}
+        
+        # If deprecated, don't assign persona (deprecated content shouldn't be rewritten)
+        if category == 'DEPRECATED':
+            selected_persona = None
+            selected_reason = 'Content is deprecated (old time-sensitive post)'
+        else:
+            # Determine best_persona_key from fit_categories (can fit multiple categories)
+            # Priority: CRYPTO > DATING > TECH/BUSINESS/LEARNING
+            persona_candidates = []
+            
+            # Check fit_categories first (more comprehensive)
+            for fit_cat in fit_categories:
+                if fit_cat in category_to_persona:
+                    persona = category_to_persona[fit_cat]
+                    if persona not in persona_candidates:
+                        persona_candidates.append(persona)
+            
+            # Also check primary category
+            if category and category in category_to_persona:
+                persona = category_to_persona[category]
+                if persona not in persona_candidates:
+                    persona_candidates.insert(0, persona)  # Primary category gets priority
+            
+            # Determine best persona: priority order (CRYPTO > DATING > TECH)
+            if 'claimzilla' in persona_candidates:
+                selected_persona = 'claimzilla'
+                selected_reason = f"Fits categories: {', '.join([c for c in fit_categories if category_to_persona.get(c) == 'claimzilla'])}"
+            elif 'aspandead' in persona_candidates:
+                selected_persona = 'aspandead'
+                selected_reason = f"Fits categories: {', '.join([c for c in fit_categories if category_to_persona.get(c) == 'aspandead'])}"
+            elif 'qronoya' in persona_candidates:
+                selected_persona = 'qronoya'
+                selected_reason = f"Fits categories: {', '.join([c for c in fit_categories if category_to_persona.get(c) == 'qronoya'])}"
+            elif best_key:
+                # Use persona matching result if no category match
+                selected_persona = best_key
+                selected_reason = f"Persona matching: {', '.join(best_reasons)}"
+            else:
+                # Final fallback: try to infer persona from content keywords
+                content_lower = (post.content or '').lower()
+                if any(kw in content_lower for kw in ['crypto', 'bitcoin', 'blockchain', 'defi', 'nft', 'ethereum', 'web3', 'token']):
+                    selected_persona = 'claimzilla'
+                    selected_reason = 'Inferred from content keywords (crypto)'
+                elif any(kw in content_lower for kw in ['dating', 'relationship', 'romance', 'love', 'partner', 'single', 'marriage']):
+                    selected_persona = 'aspandead'
+                    selected_reason = 'Inferred from content keywords (dating)'
+                elif any(kw in content_lower for kw in ['ai', 'code', 'programming', 'software', 'tech', 'developer', 'engineering', 'startup', 'business']):
+                    selected_persona = 'qronoya'
+                    selected_reason = 'Inferred from content keywords (tech)'
+                else:
+                    selected_persona = None
+                    selected_reason = 'No persona match found'
+        
+        # Set best_persona_key and related fields
+        analysis['best_persona_key'] = selected_persona
+        if selected_persona:
+            # Use persona matching score if available, otherwise use high confidence for category-based selection
+            if selected_persona == best_key and best_score > 0:
+                analysis['best_persona_score'] = best_score
+            else:
+                # Use persona_candidates if available, otherwise default score
+                has_candidates = 'persona_candidates' in locals() and persona_candidates
+                analysis['best_persona_score'] = 8.0 if has_candidates else 5.0
+            analysis['best_persona_reasons'] = [selected_reason] if selected_reason else []
+        else:
+            analysis['best_persona_score'] = 0.0
+            analysis['best_persona_reasons'] = []
+        
+        # Store fit_categories for discovery/filtering (normalize to list)
+        if fit_categories:
+            analysis['fit_categories'] = fit_categories
+        elif category:
+            analysis['fit_categories'] = [category]
+        else:
+            analysis['fit_categories'] = []
 
         # Rewrite-oriented defaults if missing
         if 'rewrite_score' not in analysis:
             # Heuristic from summary and structure
-            rs = self._score_value(analysis['ai_summary'], analysis['tags'], analysis['key_concepts'])
+            rs = score_value(analysis['ai_summary'], analysis['tags'], analysis['key_concepts'])
             analysis['rewrite_score'] = rs
         if 'rewrite_readiness' not in analysis:
             summary_len = len(analysis['ai_summary'] or '')
@@ -976,55 +1206,7 @@ class IntelligentContentAnalyzer:
             return analysis
 
     def _persona_fit_scores(self, post: SocialPost, analysis: Dict[str, Any]):
-        """Compute persona fit using persona configs; return best and maps.
-        Output: (best_key, best_score, best_reasons, scores_map, reasons_map)
-        """
-        import json, os
-        from pathlib import Path
-        personas_dir = Path("config/personas")
-        scores_map: Dict[str, float] = {}
-        reasons_map: Dict[str, list] = {}
-        safe_title2 = getattr(post, 'title', '') or ''
-        content = f"{safe_title2} {post.content or ''} {analysis.get('ai_summary') or ''}"
-        tags = analysis.get('tags') or []
-        concepts = analysis.get('key_concepts') or []
-        for pf in personas_dir.glob("*.json"):
-            try:
-                data = json.loads(pf.read_text())
-                key = data.get('key') or pf.stem
-                voice = (data.get('voice') or '').lower()
-                goals = ' '.join(data.get('goals') or [])
-                donts = ' '.join(data.get('donts') or [])
-                # Simple matching
-                score = 0.0
-                # keyword overlap
-                for t in tags[:8]:
-                    if t.lower() in goals.lower(): score += 0.6
-                for c in concepts[:8]:
-                    if c.lower() in goals.lower(): score += 0.6
-                # tone heuristic
-                if any(k in voice for k in ("action", "build", "ship")) and any(w in content.lower() for w in ("how to", "build", "step")):
-                    score += 2
-                if any(k in voice for k in ("technical", "engineer", "deep")) and len(content) > 400:
-                    score += 1.5
-                if any(k in donts.lower() for k in ("hype", "clickbait")) and any(w in content.lower() for w in ("insane", "shocking", "you won't")):
-                    score -= 1
-                score = float(max(0, min(10, score)))
-                scores_map[key] = score
-                reasons = []
-                if score >= 2: reasons.append("keyword/goal overlap")
-                if any(w in content.lower() for w in ("how to", "build", "step")): reasons.append("actionable potential")
-                if len(content) > 400: reasons.append("enough substance")
-                reasons_map[key] = reasons
-            except Exception:
-                continue
-        best_key = None
-        best_score = -1
-        for k, v in scores_map.items():
-            if v > best_score:
-                best_key, best_score = k, v
-        best_reasons = reasons_map.get(best_key, []) if best_key else []
-        return best_key, float(max(0, best_score)), best_reasons, scores_map, reasons_map
+        pass
 
     def _extract_keywords(self, text: str) -> List[str]:
         if not text:
@@ -1070,6 +1252,94 @@ class IntelligentContentAnalyzer:
             return "en"
         except Exception:
             return "en"
+    
+    def _normalize_category(self, category: str) -> str:
+        """Normalize category to our expected format (TECH, DATING, CRYPTO, etc.)"""
+        if not category:
+            return ''
+        
+        category_upper = category.upper()
+        
+        # Map common category variations to our standard categories
+        category_mapping = {
+            # TECH variations
+            'TECH': 'TECH',
+            'TECHNOLOGY': 'TECH',
+            'AI': 'TECH',
+            'AI & MACHINE LEARNING': 'TECH',
+            'MACHINE LEARNING': 'TECH',
+            'ARTIFICIAL INTELLIGENCE': 'TECH',
+            'SOFTWARE': 'TECH',
+            'DEVELOPMENT': 'TECH',
+            'DEVELOPMENT TOOLS': 'TECH',
+            'PROGRAMMING': 'TECH',
+            'ENGINEERING': 'TECH',
+            'COMPUTER SCIENCE': 'TECH',
+            
+            # CRYPTO variations
+            'CRYPTO': 'CRYPTO',
+            'CRYPTOCURRENCY': 'CRYPTO',
+            'CRYPTO & WEB3': 'CRYPTO',
+            'WEB3': 'CRYPTO',
+            'BLOCKCHAIN': 'CRYPTO',
+            'DEFI': 'CRYPTO',
+            'BITCOIN': 'CRYPTO',
+            'ETHEREUM': 'CRYPTO',
+            
+            # DATING variations
+            'DATING': 'DATING',
+            'RELATIONSHIPS': 'DATING',
+            'RELATIONSHIP': 'DATING',
+            'LOVE': 'DATING',
+            'ROMANCE': 'DATING',
+            
+            # BUSINESS variations
+            'BUSINESS': 'BUSINESS',
+            'BUSINESS & STARTUPS': 'BUSINESS',
+            'STARTUPS': 'BUSINESS',
+            'ENTREPRENEURSHIP': 'BUSINESS',
+            'MARKETING': 'BUSINESS',
+            'FINANCE': 'BUSINESS',
+            
+            # LEARNING variations
+            'LEARNING': 'LEARNING',
+            'EDUCATION': 'LEARNING',
+            'TUTORIAL': 'LEARNING',
+            'HOW-TO': 'LEARNING',
+            
+            # NEWS variations
+            'NEWS': 'NEWS',
+            'CURRENT EVENTS': 'NEWS',
+            'POLITICS': 'NEWS',
+            
+            # PERSONAL variations
+            'PERSONAL': 'PERSONAL',
+            'LIFESTYLE': 'PERSONAL',
+            'SELF-IMPROVEMENT': 'PERSONAL',
+            
+            # HEALTH variations
+            'HEALTH': 'HEALTH',
+            'FITNESS': 'HEALTH',
+            'WELLNESS': 'HEALTH',
+            
+            # ENTERTAINMENT variations
+            'ENTERTAINMENT': 'ENTERTAINMENT',
+            'MOVIES': 'ENTERTAINMENT',
+            'MUSIC': 'ENTERTAINMENT',
+            'GAMES': 'ENTERTAINMENT',
+        }
+        
+        # Check exact match first
+        if category_upper in category_mapping:
+            return category_mapping[category_upper]
+        
+        # Check if category contains any of our keywords
+        for key, value in category_mapping.items():
+            if key in category_upper and key != category_upper:
+                return value
+        
+        # Default to OTHER if no match
+        return 'OTHER'
     
     def _analyze_comments(self, post: SocialPost) -> Dict[str, Any]:
         """Analyze Reddit comments to extract valuable insights"""
@@ -1348,7 +1618,7 @@ class IntelligentContentAnalyzer:
             if isinstance(post.engagement, dict):
                 likes = post.engagement.get('likes', 0) or post.engagement.get('score', 0) or post.engagement.get('favorite_count', 0)
                 comments = post.engagement.get('replies', 0) or post.engagement.get('num_comments', 0) or post.engagement.get('reply_count', 0)
-                
+            
                 if likes > 100 or comments > 20:
                     quality_score += 1.0
                 elif likes > 20 or comments > 5:
@@ -1522,7 +1792,6 @@ class IntelligentContentAnalyzer:
         ]
 
         # Calculate content age
-        from datetime import datetime
         try:
             created_dt = datetime.fromisoformat(post.created_at.replace('Z', '+00:00'))
             age_hours = (datetime.now(created_dt.tzinfo) - created_dt).total_seconds() / 3600
@@ -1578,8 +1847,77 @@ class IntelligentContentAnalyzer:
         unique_indicators = ['new approach', 'novel', 'first', 'discovered', 'invented', 'created', 'built', 'data shows', 'research']
         unique_perspective = 'yes' if any(ind in content_lower for ind in unique_indicators) else 'no'
 
+        # Infer category from content keywords (can fit multiple categories)
+        category = 'OTHER'
+        fit_categories = []
+        
+        if any(kw in content_lower for kw in ['ai', 'code', 'programming', 'software', 'tech', 'developer', 'engineering', 'algorithm', 'api', 'framework']):
+            category = 'TECH'
+            fit_categories.append('TECH')
+        if any(kw in content_lower for kw in ['crypto', 'bitcoin', 'blockchain', 'defi', 'nft', 'ethereum', 'web3', 'token']):
+            if category == 'OTHER':
+                category = 'CRYPTO'
+            fit_categories.append('CRYPTO')
+        if any(kw in content_lower for kw in ['dating', 'relationship', 'romance', 'love', 'partner', 'single', 'marriage']):
+            if category == 'OTHER':
+                category = 'DATING'
+            fit_categories.append('DATING')
+        if any(kw in content_lower for kw in ['startup', 'business', 'entrepreneur', 'marketing', 'finance', 'invest', 'revenue']):
+            if category == 'OTHER':
+                category = 'BUSINESS'
+            fit_categories.append('BUSINESS')
+        if any(kw in content_lower for kw in ['learn', 'tutorial', 'how to', 'guide', 'education', 'course', 'study']):
+            if category == 'OTHER':
+                category = 'LEARNING'
+            fit_categories.append('LEARNING')
+        if any(kw in content_lower for kw in ['news', 'breaking', 'announced', 'reported', 'politics', 'world']):
+            if category == 'OTHER':
+                category = 'NEWS'
+            fit_categories.append('NEWS')
+        if any(kw in content_lower for kw in ['health', 'fitness', 'nutrition', 'wellness', 'medical', 'diet', 'exercise']):
+            if category == 'OTHER':
+                category = 'HEALTH'
+            fit_categories.append('HEALTH')
+        if any(kw in content_lower for kw in ['movie', 'music', 'game', 'entertainment', 'fun', 'meme', 'comedy']):
+            if category == 'OTHER':
+                category = 'ENTERTAINMENT'
+            fit_categories.append('ENTERTAINMENT')
+        if any(kw in content_lower for kw in ['personal', 'life', 'story', 'experience', 'myself', 'journey']):
+            if category == 'OTHER':
+                category = 'PERSONAL'
+            fit_categories.append('PERSONAL')
+        
+        # If no categories found, use OTHER
+        if not fit_categories:
+            fit_categories = ['OTHER']
+
+        # Map category to persona (for the 3 main personas)
+        category_to_persona = {
+            'TECH': 'qronoya',
+            'DATING': 'aspandead',
+            'CRYPTO': 'claimzilla',
+            'BUSINESS': 'qronoya',  # Business content goes to tech persona
+            'LEARNING': 'qronoya',  # Learning content goes to tech persona
+        }
+        
+        # Determine best_persona_key from fit_categories (priority: CRYPTO > DATING > TECH)
+        best_persona_key = None
+        if 'CRYPTO' in fit_categories:
+            best_persona_key = 'claimzilla'
+        elif 'DATING' in fit_categories:
+            best_persona_key = 'aspandead'
+        elif any(cat in ['TECH', 'BUSINESS', 'LEARNING'] for cat in fit_categories):
+            best_persona_key = 'qronoya'
+        else:
+            # Try primary category
+            best_persona_key = category_to_persona.get(category)
+
         return {
-            'category': 'General',
+            'category': category,
+            'fit_categories': fit_categories,
+            'best_persona_key': best_persona_key,
+            'best_persona_score': 5.0 if best_persona_key else 0.0,  # Lower confidence for basic analysis
+            'best_persona_reasons': [f"Inferred from categories: {', '.join(fit_categories)}"] if best_persona_key else [],
             'subcategory': post.platform.title(),
             'content_type': post.post_type,
             'topics': post.hashtags[:3] if post.hashtags else ['general'],

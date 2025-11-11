@@ -159,9 +159,38 @@ class SQLiteAdapter:
             logger.error(f"SQLite save failed: {e}")
             return False
 
+    def _ensure_sync_columns(self):
+        """Ensure sync tracking columns exist in SQLite posts table"""
+        cur = self.conn.cursor()
+        try:
+            # Check if columns exist
+            cur.execute("PRAGMA table_info(posts)")
+            columns = [col[1] for col in cur.fetchall()]
+            
+            # Add synced_to_supabase if missing
+            if 'synced_to_supabase' not in columns:
+                cur.execute("ALTER TABLE posts ADD COLUMN synced_to_supabase BOOLEAN DEFAULT 0")
+            
+            # Add synced_at if missing
+            if 'synced_at' not in columns:
+                cur.execute("ALTER TABLE posts ADD COLUMN synced_at TIMESTAMP")
+            
+            # Add sync_error if missing
+            if 'sync_error' not in columns:
+                cur.execute("ALTER TABLE posts ADD COLUMN sync_error TEXT")
+            
+            self.conn.commit()
+        except Exception as e:
+            logger.debug(f"Error ensuring sync columns: {e}")
+            # Ignore if columns already exist
+
     def update_post(self, post_id: str, post: Dict[str, Any]) -> bool:
         if not post_id:
             return False
+        
+        # Ensure sync columns exist
+        self._ensure_sync_columns()
+        
         cur = self.conn.cursor()
         try:
             cur.execute(
@@ -182,7 +211,13 @@ class SQLiteAdapter:
                   sentiment = COALESCE(?, sentiment),
                   key_concepts = COALESCE(?, key_concepts),
                   tags = COALESCE(?, tags),
-                  analysis_model = COALESCE(?, analysis_model)
+                  analysis_model = COALESCE(?, analysis_model),
+                  analyzed_at = COALESCE(?, analyzed_at),
+                  analysis_timestamp = COALESCE(?, analysis_timestamp),
+                  time_sensitive = COALESCE(?, time_sensitive),
+                  urgency_score = COALESCE(?, urgency_score),
+                  relevance_window = COALESCE(?, relevance_window),
+                  time_sensitive_reasons = COALESCE(?, time_sensitive_reasons)
                 WHERE post_id = ?
                 """,
                 (
@@ -202,6 +237,12 @@ class SQLiteAdapter:
                     json.dumps(post.get('key_concepts')) if isinstance(post.get('key_concepts'), list) else None,
                     json.dumps(post.get('tags')) if isinstance(post.get('tags'), list) else None,
                     post.get('analysis_model'),
+                    post.get('analyzed_at'),
+                    post.get('analyzed_at') or post.get('analysis_timestamp'),
+                    post.get('time_sensitive'),
+                    post.get('urgency_score'),
+                    post.get('relevance_window'),
+                    json.dumps(post.get('time_sensitive_reasons')) if isinstance(post.get('time_sensitive_reasons'), list) else post.get('time_sensitive_reasons'),
                     post_id,
                 ),
             )
@@ -210,6 +251,78 @@ class SQLiteAdapter:
         except Exception as e:
             logger.error(f"SQLite update failed: {e}")
             return False
+    
+    def mark_synced_to_supabase(self, post_id: str, synced: bool = True, error: Optional[str] = None):
+        """Mark a post as synced (or failed to sync) to Supabase"""
+        if not post_id:
+            return
+        self._ensure_sync_columns()
+        cur = self.conn.cursor()
+        try:
+            from datetime import datetime
+            if synced:
+                cur.execute(
+                    "UPDATE posts SET synced_to_supabase = 1, synced_at = ?, sync_error = NULL WHERE post_id = ?",
+                    (datetime.utcnow().isoformat(), post_id)
+                )
+            else:
+                cur.execute(
+                    "UPDATE posts SET synced_to_supabase = 0, sync_error = ? WHERE post_id = ?",
+                    (error or 'Unknown error', post_id)
+                )
+            self.conn.commit()
+        except Exception as e:
+            logger.debug(f"Error marking sync status: {e}")
+    
+    def get_unsynced_posts(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """Get posts that haven't been synced to Supabase"""
+        self._ensure_sync_columns()
+        cur = self.conn.cursor()
+        try:
+            cur.execute("""
+                SELECT * FROM posts 
+                WHERE (synced_to_supabase IS NULL OR synced_to_supabase = 0)
+                ORDER BY created_timestamp DESC
+                LIMIT ?
+            """, (limit,))
+            cols = [d[0] for d in cur.description]
+            rows = cur.fetchall()
+            return [dict(zip(cols, r)) for r in rows]
+        except Exception as e:
+            logger.debug(f"Error getting unsynced posts: {e}")
+            return []
+    
+    def get_sync_status(self) -> Dict[str, Any]:
+        """Get sync status statistics"""
+        self._ensure_sync_columns()
+        cur = self.conn.cursor()
+        try:
+            # Total posts
+            cur.execute("SELECT COUNT(*) FROM posts")
+            total = cur.fetchone()[0]
+            
+            # Synced posts
+            cur.execute("SELECT COUNT(*) FROM posts WHERE synced_to_supabase = 1")
+            synced = cur.fetchone()[0]
+            
+            # Unsynced posts
+            cur.execute("SELECT COUNT(*) FROM posts WHERE (synced_to_supabase IS NULL OR synced_to_supabase = 0)")
+            unsynced = cur.fetchone()[0]
+            
+            # Failed syncs (with errors)
+            cur.execute("SELECT COUNT(*) FROM posts WHERE sync_error IS NOT NULL")
+            failed = cur.fetchone()[0]
+            
+            return {
+                'total': total,
+                'synced': synced,
+                'unsynced': unsynced,
+                'failed': failed,
+                'sync_percentage': (synced / total * 100) if total > 0 else 0.0
+            }
+        except Exception as e:
+            logger.debug(f"Error getting sync status: {e}")
+            return {'total': 0, 'synced': 0, 'unsynced': 0, 'failed': 0, 'sync_percentage': 0.0}
 
     def save_github_trending_repo(self, repo_data: Dict[str, Any]) -> bool:
         cur = self.conn.cursor()

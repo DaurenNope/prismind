@@ -29,11 +29,30 @@ class Config:
         self.flags: Dict[str, Any] = {
             "enable_threads": False,
             "enable_github_trending": True,
-            "enable_telegram_channels": True,
+            "enable_telegram_channels": False,
             "enable_analysis": True,
             "enable_sqlite_cache": True,
             "supabase_enabled": True,
             "research_api_enabled": False,
+            # Automation defaults
+            "auto_analyze_after_collection": True,
+            "auto_rewrite_after_analysis": True,
+            # Enable scheduling by default for ASAP posting
+            "auto_schedule_after_rewrite": True,
+            "auto_pipeline_batch_limit": 25,
+            # Keep small to move quickly
+            "auto_rewrite_posts_per_profile": 3,
+            # Post quickly
+            "auto_schedule_delay_minutes": 2,
+            # Rewriter fast-path controls
+            "rewriter_fast_mode": True,
+            "rewriter_max_attempts_per_provider": 1,
+            # Comma-separated priority order
+            "rewriter_provider_order": "mistral,gemini,ollama",
+            # Fast mode score thresholds
+            "rewriter_min_quality_score": 5.0,
+            "rewriter_min_value_score": 5.0,
+            "rewriter_min_rewrite_score": 4.0,
         }
 
         # Cookie paths (normalized under cookies/)
@@ -73,6 +92,15 @@ class Config:
                 return default
             return raw.lower() in ("1", "true", "yes", "on")
 
+        def env_int(name: str, default: int) -> int:
+            raw = os.getenv(name)
+            if raw is None:
+                return default
+            try:
+                return int(raw)
+            except ValueError:
+                return default
+
         self.flags["enable_threads"] = env_bool("ENABLE_THREADS", self.flags["enable_threads"])
         self.flags["enable_github_trending"] = env_bool("ENABLE_GITHUB_TRENDING", self.flags["enable_github_trending"])
         self.flags["enable_telegram_channels"] = env_bool("ENABLE_TELEGRAM_CHANNELS", self.flags["enable_telegram_channels"])
@@ -80,6 +108,21 @@ class Config:
         self.flags["enable_sqlite_cache"] = env_bool("ENABLE_SQLITE_CACHE", self.flags["enable_sqlite_cache"])
         self.flags["supabase_enabled"] = env_bool("SUPABASE_ENABLED", self.flags["supabase_enabled"])
         self.flags["research_api_enabled"] = env_bool("RESEARCH_API_ENABLED", self.flags["research_api_enabled"])
+        self.flags["auto_analyze_after_collection"] = env_bool("AUTO_ANALYZE_AFTER_COLLECTION", self.flags["auto_analyze_after_collection"])
+        self.flags["auto_rewrite_after_analysis"] = env_bool("AUTO_REWRITE_AFTER_ANALYSIS", self.flags["auto_rewrite_after_analysis"])
+        self.flags["auto_schedule_after_rewrite"] = env_bool("AUTO_SCHEDULE_AFTER_REWRITE", self.flags["auto_schedule_after_rewrite"])
+        self.flags["auto_pipeline_batch_limit"] = env_int("AUTO_PIPELINE_BATCH_LIMIT", self.flags["auto_pipeline_batch_limit"])
+        self.flags["auto_rewrite_posts_per_profile"] = env_int("AUTO_REWRITE_POSTS_PER_PROFILE", self.flags["auto_rewrite_posts_per_profile"])
+        self.flags["auto_schedule_delay_minutes"] = env_int("AUTO_SCHEDULE_DELAY_MINUTES", self.flags["auto_schedule_delay_minutes"])
+        # Rewriter fast-path
+        self.flags["rewriter_fast_mode"] = env_bool("REWRITER_FAST_MODE", self.flags["rewriter_fast_mode"])
+        self.flags["rewriter_max_attempts_per_provider"] = env_int("REWRITER_MAX_ATTEMPTS_PER_PROVIDER", self.flags["rewriter_max_attempts_per_provider"])
+        provider_order = os.getenv("REWRITER_PROVIDER_ORDER")
+        if provider_order:
+            self.flags["rewriter_provider_order"] = provider_order
+        self.flags["rewriter_min_quality_score"] = env_int("REWRITER_MIN_QUALITY_SCORE", int(self.flags["rewriter_min_quality_score"]))
+        self.flags["rewriter_min_value_score"] = env_int("REWRITER_MIN_VALUE_SCORE", int(self.flags["rewriter_min_value_score"]))
+        self.flags["rewriter_min_rewrite_score"] = env_int("REWRITER_MIN_REWRITE_SCORE", int(self.flags["rewriter_min_rewrite_score"]))
 
 
 _config_singleton: "Config | None" = None

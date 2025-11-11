@@ -306,6 +306,341 @@ def render():
                 with st.expander("🔍 Debug Info"):
                     st.code(traceback.format_exc())
 
+    # === DRAFT ASSISTANT: Raw Ideas → Polished Post ===
+    with st.expander("✍️ Draft Assistant: Write From Ideas"):
+        st.markdown("**Got ideas but need help writing? I'll draft it and tailor it to your persona's voice**")
+
+        st.markdown("### 💡 Your Ideas")
+        st.caption("Just write your thoughts, bullet points, or rough ideas - don't worry about perfection")
+
+        raw_ideas = st.text_area(
+            "Raw ideas",
+            placeholder="e.g.,\n- AI coding tools are making devs lazy\n- We're relying too much on autocomplete\n- Nobody reads docs anymore\n- But maybe that's okay?",
+            height=150,
+            key="draft_ideas",
+            label_visibility="collapsed"
+        )
+
+        col_draft_persona, col_draft_platform, col_draft_style = st.columns(3)
+
+        with col_draft_persona:
+            draft_persona_options = [f"{persona_info.get(key, {}).get('name', key)} ({key})" for key in persona_keys]
+            selected_draft_persona = st.selectbox("Persona", draft_persona_options, key="draft_persona")
+            draft_persona = selected_draft_persona.split(" (")[-1].rstrip(")")
+
+        with col_draft_platform:
+            draft_platform = st.selectbox("Platform", list(configured_platforms.keys()), key="draft_platform")
+
+        with col_draft_style:
+            draft_style = st.selectbox(
+                "Style",
+                ["Natural (persona default)", "Spicy/Provocative", "Thoughtful/Deep", "Funny/Sarcastic"],
+                key="draft_style"
+            )
+
+        if st.button("✨ **Write Draft**", type="primary", use_container_width=True, key="draft_btn"):
+            if not raw_ideas or len(raw_ideas.strip()) < 10:
+                st.warning("⚠️ Please write some ideas first (at least a few words)")
+            else:
+                try:
+                    with st.spinner("✍️ Crafting your draft..."):
+                        from src.publishing.rewriter import ContentRewriter
+                        import asyncio
+
+                        rewriter = ContentRewriter()
+
+                        # Add style instructions to the ideas
+                        style_instructions = {
+                            "Natural (persona default)": "",
+                            "Spicy/Provocative": "\n\n[STYLE]: Make this spicy and provocative - challenge conventional thinking",
+                            "Thoughtful/Deep": "\n\n[STYLE]: Make this thoughtful and deep - explore the nuances and implications",
+                            "Funny/Sarcastic": "\n\n[STYLE]: Make this funny and sarcastic - use humor to make the point"
+                        }
+
+                        styled_ideas = raw_ideas + style_instructions.get(draft_style, "")
+
+                        # Create analyzed_content structure optimized for drafting
+                        analyzed_content = {
+                            "post_id": f"draft_{datetime.now().timestamp()}",
+                            "platform": "draft",
+                            "content": styled_ideas,
+                            "summary": raw_ideas[:200],
+                            "category": "draft",
+                            "topics": ["user_draft"],
+                            "key_concepts": [],
+                            "rewrite_angles": [{
+                                "persona": draft_persona,
+                                "angle": "Polish and tailor user's raw ideas",
+                                "tone": "authentic",
+                                "platform_fit": "single_post"
+                            }]
+                        }
+
+                        # Run async rewrite with special draft mode
+                        result = asyncio.run(
+                            rewriter.rewrite_analyzed_post(
+                                analyzed_content=analyzed_content,
+                                persona=draft_persona,
+                                platform=draft_platform
+                            )
+                        )
+
+                        if result and result.get("rewritten_content"):
+                            drafted = result["rewritten_content"]
+
+                            # Check if it's an error
+                            from src.utils.error_handler import is_rate_limit_error_in_content
+                            if is_rate_limit_error_in_content(drafted):
+                                st.error("❌ Drafting failed - API rate limit hit. Try again in a moment.")
+                            else:
+                                st.success("✅ **Draft ready!**")
+
+                                st.markdown("### 📝 Your Drafted Post:")
+                                st.info(drafted)
+
+                                # Editable version for tweaks
+                                st.markdown("#### ✏️ Make Tweaks:")
+                                st.caption("Edit the draft above if you want to adjust anything")
+                                final_content = st.text_area(
+                                    "Final content",
+                                    value=drafted,
+                                    height=200,
+                                    key="drafted_output",
+                                    label_visibility="collapsed"
+                                )
+
+                                # Action buttons
+                                col_post_draft, col_save_draft, col_regenerate = st.columns(3)
+
+                                with col_post_draft:
+                                    if st.button("🚀 **Post Now**", type="primary", use_container_width=True, key="post_draft"):
+                                        try:
+                                            from src.services.posting_service import PostingService
+                                            posting_service = PostingService()
+
+                                            with st.spinner(f"📤 Posting to {draft_platform}..."):
+                                                if draft_platform == "twitter":
+                                                    post_result = posting_service.post_to_twitter(final_content)
+                                                elif draft_platform == "threads":
+                                                    post_result = posting_service.post_to_threads(final_content)
+                                                elif draft_platform == "telegram":
+                                                    post_result = posting_service.post_to_telegram(final_content)
+
+                                                if post_result.get("success"):
+                                                    st.success(f"🎉 Posted! [View]({post_result.get('url', '#')})")
+                                                else:
+                                                    st.error(f"❌ Posting failed: {post_result.get('error')}")
+
+                                        except Exception as e:
+                                            st.error(f"❌ Posting error: {str(e)}")
+
+                                with col_save_draft:
+                                    if st.button("💾 **Save to Curation**", use_container_width=True, key="save_draft"):
+                                        try:
+                                            from pathlib import Path
+                                            import json
+
+                                            curation_dir = Path("data/curated_posts")
+                                            curation_dir.mkdir(parents=True, exist_ok=True)
+
+                                            curation_entry = {
+                                                "created_at": datetime.now().isoformat(),
+                                                "persona": draft_persona,
+                                                "persona_name": persona_info.get(draft_persona, {}).get("name", draft_persona),
+                                                "platform": draft_platform,
+                                                "original_post_id": f"draft_{datetime.now().timestamp()}",
+                                                "original_platform": "draft_assistant",
+                                                "content": final_content,
+                                                "rewritten_content": final_content,
+                                                "content_type": "user_draft",
+                                                "quality_score": result.get("quality_score", 100),
+                                                "quality_rating": result.get("quality_rating", "excellent"),
+                                                "length": len(final_content),
+                                                "original_ideas": raw_ideas,
+                                                "style": draft_style,
+                                                "source": "draft_assistant"
+                                            }
+
+                                            curation_file = curation_dir / f"{draft_persona}_curated.jsonl"
+                                            with open(curation_file, 'a', encoding='utf-8') as f:
+                                                f.write(json.dumps(curation_entry, ensure_ascii=False) + '\n')
+
+                                            st.success(f"✅ Saved to curated posts!")
+
+                                        except Exception as e:
+                                            st.error(f"❌ Save failed: {str(e)}")
+
+                                with col_regenerate:
+                                    if st.button("🔄 **Regenerate**", use_container_width=True, key="regen_draft"):
+                                        st.info("💡 Click 'Write Draft' again to regenerate with different wording")
+
+                                with st.expander("📊 Draft Details"):
+                                    st.json({
+                                        "persona": draft_persona,
+                                        "platform": draft_platform,
+                                        "style": draft_style,
+                                        "original_length": len(raw_ideas),
+                                        "drafted_length": len(drafted),
+                                        "quality_score": result.get("quality_score", "N/A"),
+                                        "content_type": result.get("content_type", "draft")
+                                    })
+                        else:
+                            st.error("❌ Draft failed - no content returned")
+
+                except Exception as e:
+                    st.error(f"❌ **Draft Error:** {str(e)}")
+                    import traceback
+                    with st.expander("🔍 Debug Info"):
+                        st.code(traceback.format_exc())
+
+    # === REWRITE MODE: Raw Content + Opinion → Persona Post ===
+    with st.expander("✨ Rewrite Mode: Content + Opinion → Persona Post"):
+        st.markdown("**Give me raw content and your opinion, I'll turn it into a persona post**")
+
+        col_raw, col_opinion = st.columns(2)
+
+        with col_raw:
+            st.markdown("**📄 Raw Content**")
+            st.caption("Paste the original post/article/content here")
+            raw_content = st.text_area(
+                "Raw content",
+                placeholder="e.g., 'MIT study shows AI coding assistants increase speed by 55% but bugs by 15%'",
+                height=150,
+                key="raw_content",
+                label_visibility="collapsed"
+            )
+
+        with col_opinion:
+            st.markdown("**💭 Your Opinion/Angle**")
+            st.caption("What's your take? What do you want to say about it?")
+            opinion = st.text_area(
+                "Your opinion",
+                placeholder="e.g., 'This is concerning. Speed doesn't matter if quality drops. Who fixes the bugs?'",
+                height=150,
+                key="opinion",
+                label_visibility="collapsed"
+            )
+
+        st.markdown("---")
+
+        col_rewrite_persona, col_rewrite_platform = st.columns(2)
+
+        with col_rewrite_persona:
+            rewrite_persona_options = [f"{persona_info.get(key, {}).get('name', key)} ({key})" for key in persona_keys]
+            selected_rewrite_persona = st.selectbox("Persona", rewrite_persona_options, key="rewrite_persona")
+            rewrite_persona = selected_rewrite_persona.split(" (")[-1].rstrip(")")
+
+        with col_rewrite_platform:
+            rewrite_platform = st.selectbox("Platform", list(configured_platforms.keys()), key="rewrite_platform")
+
+        if st.button("✨ **Rewrite into Persona Post**", type="primary", use_container_width=True, key="rewrite_btn"):
+            if not raw_content or not opinion:
+                st.warning("⚠️ Please provide both raw content and your opinion")
+            else:
+                try:
+                    with st.spinner("🔄 Rewriting..."):
+                        from src.publishing.rewriter import ContentRewriter
+                        import asyncio
+
+                        rewriter = ContentRewriter()
+
+                        # Combine raw content + opinion
+                        combined_content = f"{raw_content}\n\n[YOUR TAKE]: {opinion}"
+
+                        # Create analyzed_content structure
+                        analyzed_content = {
+                            "original_content": combined_content,
+                            "category": "opinion",
+                            "topics": ["user_opinion"],
+                            "angle": opinion[:100] if len(opinion) > 100 else opinion
+                        }
+
+                        # Run async rewrite
+                        result = asyncio.run(
+                            rewriter.rewrite_analyzed_post(
+                                analyzed_content=analyzed_content,
+                                persona=rewrite_persona,
+                                platform=rewrite_platform,
+                                post_id=f"opinion_{datetime.now().timestamp()}"
+                            )
+                        )
+
+                        if result and result.get("rewritten_content"):
+                            rewritten = result["rewritten_content"]
+
+                            st.success("✅ **Rewrite complete!**")
+
+                            st.markdown("### 📝 Your Persona Post:")
+                            st.code(rewritten, language=None)
+
+                            # Copy to clipboard button (text will be in a text area for easy copying)
+                            st.text_area(
+                                "Copy this",
+                                value=rewritten,
+                                height=200,
+                                key="rewritten_output",
+                                label_visibility="collapsed"
+                            )
+
+                            # Save to curation button
+                            col_save, col_schedule = st.columns(2)
+
+                            with col_save:
+                                if st.button("💾 **Save to Curation**", type="secondary", use_container_width=True, key="save_curation"):
+                                    try:
+                                        from pathlib import Path
+                                        import json
+
+                                        # Create curation directory if it doesn't exist
+                                        curation_dir = Path("data/curated_posts")
+                                        curation_dir.mkdir(parents=True, exist_ok=True)
+
+                                        # Create curation entry
+                                        curation_entry = {
+                                            "id": f"{rewrite_persona}_{datetime.now().timestamp()}",
+                                            "persona": rewrite_persona,
+                                            "platform": rewrite_platform,
+                                            "original_content": raw_content,
+                                            "user_opinion": opinion,
+                                            "rewritten_content": rewritten,
+                                            "content_type": result.get("content_type", "unknown"),
+                                            "created_at": datetime.now().isoformat(),
+                                            "status": "curated",
+                                            "source": "rewrite_mode"
+                                        }
+
+                                        # Save to persona-specific file
+                                        curation_file = curation_dir / f"{rewrite_persona}_curated.jsonl"
+                                        with open(curation_file, 'a', encoding='utf-8') as f:
+                                            f.write(json.dumps(curation_entry, ensure_ascii=False) + '\n')
+
+                                        st.success(f"✅ Saved to curation queue: {curation_file.name}")
+
+                                    except Exception as e:
+                                        st.error(f"❌ Save failed: {str(e)}")
+
+                            with col_schedule:
+                                if st.button("⏱️ **Schedule Post**", type="secondary", use_container_width=True, key="schedule_rewrite"):
+                                    st.info("💡 Use the 'Post Now' section above to schedule this content")
+
+                            with st.expander("📊 Rewrite Details"):
+                                st.json({
+                                    "persona": rewrite_persona,
+                                    "platform": rewrite_platform,
+                                    "original_length": len(combined_content),
+                                    "rewritten_length": len(rewritten),
+                                    "content_type": result.get("content_type", "unknown"),
+                                    "examples_used": result.get("examples_used", [])
+                                })
+                        else:
+                            st.error("❌ Rewrite failed - no content returned")
+
+                except Exception as e:
+                    st.error(f"❌ **Rewrite Error:** {str(e)}")
+                    import traceback
+                    with st.expander("🔍 Debug Info"):
+                        st.code(traceback.format_exc())
+
     # === ADVANCED OPTIONS ===
     with st.expander("🔧 Advanced: Generate from Posts"):
         gen_platform = st.selectbox("Platform", list(configured_platforms.keys()), key="gen_platform")

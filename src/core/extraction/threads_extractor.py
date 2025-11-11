@@ -30,32 +30,56 @@ class ThreadsExtractor(SocialExtractorBase):
         super().__init__()
         self.platform_name = "threads"
 
-    async def authenticate(self, username: str, password: str, cookies_path: str = "config/threads_cookies_qronoya.json") -> bool:
+    async def authenticate(self, username: str, password: str, cookies_path: str = "cookies/threads_cookies.json") -> bool:
         """Authenticates the user by trying cookies first, then falling back to login."""
         try:
-            if Path(cookies_path).exists():
-                logging.info(f"Attempting authentication with cookies from {cookies_path}")
-                if await self._authenticate_with_cookies(cookies_path):
-                    return True
+            logging.info(f"🔐 Starting Threads authentication process")
+            logging.info(f"📁 Cookie file path: {cookies_path}")
+            logging.info(f"👤 Username: {username}")
+            logging.info(f"🔑 Password provided: {'Yes' if password else 'No'}")
             
-            logging.info("Cookie authentication failed or cookies not found. Falling back to login.")
+            if Path(cookies_path).exists():
+                logging.info(f"🍪 Cookie file exists, attempting cookie authentication")
+                file_size = Path(cookies_path).stat().st_size
+                logging.info(f"📊 Cookie file size: {file_size} bytes")
+                
+                if await self._authenticate_with_cookies(cookies_path):
+                    logging.info("✅ Cookie authentication successful")
+                    return True
+                else:
+                    logging.warning("❌ Cookie authentication failed")
+            else:
+                logging.warning(f"🍪 Cookie file not found at {cookies_path}")
+            
+            logging.info("🔄 Falling back to username/password login")
             return await self._authenticate_with_login(username, password, cookies_path)
         except Exception as e:
-            logging.error(f"Authentication failed: {e}")
+            logging.error(f"❌ Authentication process failed with exception: {e}")
+            logging.error(f"❌ Exception type: {type(e).__name__}")
+            import traceback
+            logging.error(f"❌ Full traceback: {traceback.format_exc()}")
             return False
 
     async def _authenticate_with_cookies(self, cookies_path: str) -> bool:
         """Authenticates using cookies - SIMPLIFIED to match working test."""
         try:
+            logging.info("🍪 Starting cookie-based authentication")
+            
             self.pw = await async_playwright().start()
             self.browser = await self.pw.chromium.launch(headless=True)
+            logging.info("🌐 Browser launched successfully")
             
             # Prefer detecting storage_state format; otherwise manually add cookies
             try:
                 with open(cookies_path, 'r') as _f:
                     _data = json.load(_f)
                 is_storage_state = isinstance(_data, dict) and ("cookies" in _data or "origins" in _data)
-            except Exception:
+                logging.info(f"📋 Cookie format detected: {'storage_state' if is_storage_state else 'raw/json'}")
+                if is_storage_state:
+                    cookie_count = len(_data.get('cookies', []))
+                    logging.info(f"🍪 Found {cookie_count} cookies in storage_state format")
+            except Exception as e:
+                logging.warning(f"⚠️ Failed to read cookie file: {e}")
                 is_storage_state = False
             
             if is_storage_state:
@@ -64,21 +88,27 @@ class ThreadsExtractor(SocialExtractorBase):
                     storage_state=cookies_path,
                     user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
                 )
+                logging.info("📱 Browser context created with storage_state")
             else:
                 # Create context and load cookies manually (JSON jar or raw string)
                 self.context = await self.browser.new_context(
                     user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
                 )
+                logging.info("📱 Browser context created, loading cookies manually")
                 try:
                     self._load_json_cookies(self.context, cookies_path)
-                except Exception:
+                    logging.info("✅ JSON cookies loaded successfully")
+                except Exception as e:
+                    logging.warning(f"⚠️ JSON cookie loading failed: {e}")
                     # Fall back to raw cookies format
                     self._load_raw_cookies(self.context, cookies_path)
+                    logging.info("✅ Raw cookies loaded successfully")
             
             self.page = await self.context.new_page()
+            logging.info("📄 New page created")
             
             # Go directly to saved posts – try threads.net first, then fallback to threads.com
-            logging.info("Navigating to saved posts with cookies...")
+            logging.info("🔍 Navigating to saved posts with cookies...")
             saved_urls = [
                 "https://www.threads.net/saved",
                 "https://www.threads.com/saved",
@@ -86,23 +116,32 @@ class ThreadsExtractor(SocialExtractorBase):
             auth_ok = False
             for saved_url in saved_urls:
                 try:
+                    logging.info(f"🌐 Trying URL: {saved_url}")
                     await self.page.goto(saved_url, wait_until='domcontentloaded', timeout=20000)
                     await asyncio.sleep(3)
                     current_url = self.page.url
+                    logging.info(f"📍 Current URL after navigation: {current_url}")
+                    
                     if 'login' not in current_url:
                         logging.info(f"✅ Cookie authentication successful! URL: {current_url}")
                         auth_ok = True
                         break
+                    else:
+                        logging.warning(f"⚠️ Redirected to login page from {saved_url}")
                 except Exception as nav_err:
-                    logging.info(f"Saved URL failed {saved_url}: {nav_err}")
+                    logging.error(f"❌ Navigation failed for {saved_url}: {nav_err}")
+            
             if not auth_ok:
-                logging.info("Cookie auth failed to land on saved page; will require login.")
+                logging.warning("❌ Cookie auth failed to land on saved page; will require login.")
                 return False
             
             return True
             
         except Exception as e:
-            logging.error(f"Cookie authentication failed: {e}")
+            logging.error(f"❌ Cookie authentication failed: {e}")
+            logging.error(f"❌ Exception type: {type(e).__name__}")
+            import traceback
+            logging.error(f"❌ Full traceback: {traceback.format_exc()}")
             if hasattr(self, 'browser') and self.browser:
                 await self.browser.close()
             if hasattr(self, 'pw') and self.pw:
@@ -211,13 +250,17 @@ class ThreadsExtractor(SocialExtractorBase):
     async def _authenticate_with_login(self, username: str, password: str, cookies_path: str) -> bool:
         """Authenticates by logging directly into Threads.net."""
         try:
+            logging.info("🔑 Starting username/password authentication")
+            
             self.pw = await async_playwright().start()
             self.browser = await self.pw.chromium.launch(headless=False)
             self.context = await self.browser.new_context()
             self.page = await self.context.new_page()
 
-            logging.info("Navigating to Threads login page...")
+            logging.info("🌐 Navigating to Threads login page...")
             await self.page.goto("https://www.threads.net/login", wait_until='domcontentloaded')
+            current_url = self.page.url
+            logging.info(f"📍 Current URL after navigation: {current_url}")
             
             # Wait a bit for page to fully load
             await asyncio.sleep(3)
@@ -384,6 +427,13 @@ class ThreadsExtractor(SocialExtractorBase):
             # Save the authentication state to the cookies file
             await self.context.storage_state(path=cookies_path)
             logging.info(f"Authentication state saved to {cookies_path}")
+            # Also mirror to legacy path for compatibility
+            legacy_path = "config/threads_cookies.json"
+            try:
+                await self.context.storage_state(path=legacy_path)
+                logging.info(f"Authentication state mirrored to {legacy_path}")
+            except Exception as legacy_err:
+                logging.debug(f"Could not mirror Threads cookies to legacy path: {legacy_err}")
 
             return True
         except Exception as e:
@@ -441,13 +491,13 @@ class ThreadsExtractor(SocialExtractorBase):
             await page.goto(bookmarks_url, wait_until='domcontentloaded', timeout=20000)
             await page.wait_for_timeout(5000)  # Wait for dynamic content
 
-            # Extract post links by scrolling
+            # Extract post links by scrolling with improved incremental collection
             post_links = set()
             reached_stop_id = False
             consecutive_seen = 0
             scroll_attempts = 5
             
-            logging.info(f"Scrolling to load saved posts (max {scroll_attempts} scrolls)...")
+            logging.info(f"Scrolling to load saved posts (max {scroll_attempts} scrolls, stop_at: {stop_at_post_id or 'none'})...")
             for i in range(scroll_attempts):
                 content = await page.content()
                 selector = Selector(content)
@@ -456,22 +506,33 @@ class ThreadsExtractor(SocialExtractorBase):
                 links = selector.css('a[href*="/post/"]::attr(href)').getall()
                 before_count = len(post_links)
                 
+                # Process links in the order they appear (newest should appear first in DOM)
                 for link in links:
                     if not link.startswith('http'):
                         link = f"https://www.threads.net{link}"
-                    # Early-stop: if this link corresponds to the last collected id, break
+                    
+                    # Extract post code from URL
                     try:
                         code = link.strip('/').split('/')[-1]
                     except Exception:
                         code = None
+                    
+                    # Skip if we can't extract a valid code
+                    if not code:
+                        continue
+                    
+                    # Early-stop: if this link corresponds to the last collected id, break
                     if stop_at_post_id and code and code == stop_at_post_id:
                         reached_stop_id = True
+                        logging.info(f"🛑 Reached stop_at_post_id: {stop_at_post_id}")
                         post_links.add(link)
                         break
-                    # Duplicate detection vs existing IDs
+                    
+                    # Duplicate detection vs existing IDs - improved logic
                     if existing_ids and code and (code in existing_ids):
                         # Stop immediately on first seen duplicate (chronological feed)
                         reached_stop_id = True
+                        logging.info(f"🛑 Found existing post ID: {code} - stopping collection")
                         post_links.add(link)
                         break
                     else:
@@ -481,11 +542,12 @@ class ThreadsExtractor(SocialExtractorBase):
                 new_found = len(post_links) - before_count
                 logging.info(f"  Scroll {i+1}/{scroll_attempts}: Found {new_found} new posts (total: {len(post_links)})")
                 if reached_stop_id:
-                    logging.info("🛑 Detected last collected post in scroll - stopping early")
+                    logging.info("🛑 Detected stop condition - stopping early")
                     break
-                # keep consecutive check as a fallback (should rarely trigger now)
+                
+                # Keep consecutive check as a fallback
                 if consecutive_seen >= 1 and len(post_links) >= 1:
-                    logging.info("🛑 Duplicate detected - stopping early")
+                    logging.info("🛑 Consecutive duplicates detected - stopping early")
                     break
                 
                 # Scroll down
@@ -501,25 +563,50 @@ class ThreadsExtractor(SocialExtractorBase):
                 logging.warning("No saved post links found. Either no saved posts exist or page structure changed.")
                 return []
 
-            # Filter out already-seen before scraping
+            # Filter out already-seen before scraping - improved duplicate detection
             filtered = []
+            duplicate_count = 0
+            seen_codes = set()  # Track codes to avoid duplicates within this batch
+            
             for u in post_links:
                 try:
                     c = u.strip('/').split('/')[-1]
                 except Exception:
                     c = None
-                if existing_ids and c and (c in existing_ids):
+                    
+                # Skip if already seen in this batch (deduplicate within batch)
+                if c and c in seen_codes:
+                    duplicate_count += 1
+                    logging.debug(f"Skipping duplicate within batch: {c}")
                     continue
-                filtered.append(u)
+                    
+                # Skip if already exists in DB
+                if existing_ids and c and (c in existing_ids):
+                    duplicate_count += 1
+                    logging.debug(f"Skipping duplicate post ID: {c}")
+                    continue
+                    
+                # Add to filtered list and track as seen
+                if c:
+                    seen_codes.add(c)
+                    filtered.append(u)
+                    
             # Limit to requested number
             urls_to_scrape = filtered[:limit]
-            logging.info(f"Found {len(post_links)} total, {len(filtered)} new; will scrape {len(urls_to_scrape)}")
+            logging.info(f"Found {len(post_links)} total, {len(filtered)} new, {duplicate_count} duplicates; will scrape {len(urls_to_scrape)}")
             
             # Refresh and save cookies/state for future sessions
             try:
                 if hasattr(self, 'context') and self.context:
                     await self.context.storage_state(path=cookies_path)
                     logging.info(f"✅ Refreshed and saved browser state to {cookies_path}")
+                    # Mirror to legacy config path
+                    legacy_path = "config/threads_cookies.json"
+                    try:
+                        await self.context.storage_state(path=legacy_path)
+                        logging.info(f"✅ Also mirrored browser state to {legacy_path}")
+                    except Exception as legacy_err:
+                        logging.debug(f"Could not mirror Threads cookies to legacy path: {legacy_err}")
             except Exception as _save_err:
                 logging.debug(f"Could not save Threads cookies: {_save_err}")
 
@@ -538,8 +625,15 @@ class ThreadsExtractor(SocialExtractorBase):
     async def scrape_posts_from_urls_async(self, urls: List[str], max_retries: int = 3) -> List[SocialPost]:
         """
         Async version of scrape_posts_from_urls for use within async context.
+        Improved with isolated page instances, better error handling, and connection pooling.
         """
         posts = []
+        seen_post_ids = set()  # Track post IDs to avoid duplicates
+        
+        # Process URLs in smaller batches to avoid overwhelming the server
+        batch_size = 5  # Process 5 URLs at a time
+        url_batches = [urls[i:i + batch_size] for i in range(0, len(urls), batch_size)]
+        
         async with async_playwright() as pw:
             browser = await pw.chromium.launch()
             # Reuse storage state if available for more consistent rendering
@@ -554,59 +648,199 @@ class ThreadsExtractor(SocialExtractorBase):
                     context = await browser.new_context(storage_state=state, **context_kwargs)
                 else:
                     context = await browser.new_context(**context_kwargs)
-            except Exception:
+            except Exception as e:
+                logging.warning(f"Failed to use storage state, creating fresh context: {e}")
                 context = await browser.new_context(**context_kwargs)
-            page = await context.new_page()
 
-            for url in urls:
-                for attempt in range(max_retries):
-                    try:
-                        logging.info(f"Scraping thread: {url} (Attempt {attempt + 1}/{max_retries})")
-                        post = await self._scrape_thread_data_async(url, page)
-                        if post:
-                            posts.append(post)
-                            break  # Success, move to next URL
-                    except Exception as e:
-                        logging.error(f"Failed to scrape {url} on attempt {attempt + 1}: {e}")
-                        if attempt >= max_retries - 1:
-                            logging.error(f"All retries failed for {url}.")
-                            try:
-                                await page.screenshot(path=f"debug_scrape_failed_{url.split('/')[-1]}.png")
-                            except Exception as screenshot_error:
-                                logging.error(f"Failed to save screenshot: {screenshot_error}")
-                        else:
-                            await asyncio.sleep(2 * (attempt + 1))  # Exponential backoff
+            # Process each batch with connection pooling
+            for batch_idx, batch in enumerate(url_batches):
+                logging.info(f"Processing batch {batch_idx + 1}/{len(url_batches)} with {len(batch)} URLs")
+                
+                # Create a semaphore to limit concurrent connections
+                semaphore = asyncio.Semaphore(3)  # Max 3 concurrent requests
+                
+                async def process_single_url(url):
+                    post = None
+                    for attempt in range(max_retries):
+                        page = None
+                        try:
+                            logging.info(f"Scraping thread: {url} (Attempt {attempt + 1}/{max_retries})")
+                            
+                            # Create a fresh page for each attempt
+                            page = await context.new_page()
+                            
+                            # Set reasonable timeouts with longer values for reliability
+                            page.set_default_timeout(45000)  # 45 seconds
+                            page.set_default_navigation_timeout(60000)  # 60 seconds
+                            
+                            post = await self._scrape_thread_data_async(url, page)
+                            if post:
+                                return post  # Success, return immediately
+                        except Exception as e:
+                            error_msg = str(e)
+                            logging.error(f"Failed to scrape {url} on attempt {attempt + 1}: {error_msg}")
+                            
+                            # Check for specific context/browser errors
+                            is_context_error = any(
+                                phrase in error_msg.lower()
+                                for phrase in [
+                                    "target page, context or browser has been closed",
+                                    "connection closed while reading from driver",
+                                    "context has been closed",
+                                    "browser has been closed",
+                                    "connection closed",
+                                    "page.goto: target closed",
+                                    "page.goto: net::err_aborted",
+                                    "page.goto: timeout"
+                                ]
+                            )
+                            
+                            if attempt >= max_retries - 1:
+                                logging.error(f"All retries failed for {url}. Final error: {error_msg}")
+                                try:
+                                    if page:
+                                        await page.screenshot(path=f"debug_scrape_failed_{url.split('/')[-1]}.png")
+                                except Exception as screenshot_error:
+                                    logging.error(f"Failed to save screenshot: {screenshot_error}")
+                                return None  # Return None on final failure
+                            else:
+                                # For context errors, wait longer before retry
+                                if is_context_error:
+                                    wait_time = 5 * (attempt + 1)  # Longer backoff for context issues
+                                    logging.info(f"Context error detected, waiting {wait_time}s before retry...")
+                                    await asyncio.sleep(wait_time)
+                                else:
+                                    await asyncio.sleep(3 * (attempt + 1))  # Standard exponential backoff
+                        finally:
+                            # Always close the page to prevent resource leaks
+                            if page:
+                                try:
+                                    await page.close()
+                                except Exception as close_error:
+                                    logging.debug(f"Error closing page: {close_error}")
+                    return None  # Return None if all retries failed
+                
+                # Process URLs in the batch concurrently with semaphore limiting
+                async def process_with_semaphore(url):
+                    async with semaphore:
+                        return await process_single_url(url)
+                
+                tasks = [process_with_semaphore(url) for url in batch]
+                batch_results = await asyncio.gather(*tasks, return_exceptions=True)
+                
+                # Collect successful results from this batch
+                for result in batch_results:
+                    if isinstance(result, Exception):
+                        logging.error(f"Batch processing error: {result}")
+                    elif result is not None:  # Only add non-None results
+                        # Check for duplicates by post_id
+                        post_id = getattr(result, 'post_id', None)
+                        if post_id and post_id not in seen_post_ids:
+                            seen_post_ids.add(post_id)
+                            posts.append(result)
+                            logging.debug(f"Added new post: {post_id}")
+                        elif post_id:
+                            logging.debug(f"Skipping duplicate post: {post_id}")
+                
+                # Add delay between batches to avoid rate limiting
+                if batch_idx < len(url_batches) - 1:
+                    await asyncio.sleep(2)  # 2 second delay between batches
+                    
             await browser.close()
         return posts
 
     def scrape_posts_from_urls(self, urls: List[str], max_retries: int = 3) -> List[SocialPost]:
         """
         Scrapes multiple Threads posts from a given list of URLs with retries.
+        Updated with isolated page instances, better error handling, and batching.
         """
         posts = []
+        seen_post_ids = set()  # Track post IDs to avoid duplicates
+        
+        # Process URLs in smaller batches to avoid overwhelming the server
+        batch_size = 5  # Process 5 URLs at a time
+        url_batches = [urls[i:i + batch_size] for i in range(0, len(urls), batch_size)]
+        
         with sync_playwright() as pw:
             browser = pw.chromium.launch()
             context = browser.new_context(viewport={"width": 1920, "height": 1080})
-            page = context.new_page()
 
-            for url in urls:
-                for attempt in range(max_retries):
-                    try:
-                        logging.info(f"Scraping thread: {url} (Attempt {attempt + 1}/{max_retries})")
-                        post = self._scrape_thread_data(url, page)
-                        if post:
-                            posts.append(post)
-                            break  # Success, move to next URL
-                    except Exception as e:
-                        logging.error(f"Failed to scrape {url} on attempt {attempt + 1}: {e}")
-                        if attempt >= max_retries - 1:
-                            logging.error(f"All retries failed for {url}.")
+            # Process each batch with connection pooling
+            for batch_idx, batch in enumerate(url_batches):
+                logging.info(f"Processing batch {batch_idx + 1}/{len(url_batches)} with {len(batch)} URLs")
+                
+                # Process URLs in the batch sequentially (sync version)
+                for url in batch:
+                    post = None
+                    for attempt in range(max_retries):
+                        page = None
+                        try:
+                            logging.info(f"Scraping thread: {url} (Attempt {attempt + 1}/{max_retries})")
+                            
+                            # Create a fresh page for each attempt
+                            page = context.new_page()
+                            
+                            # Set reasonable timeouts with longer values for reliability
+                            page.set_default_timeout(45000)  # 45 seconds
+                            page.set_default_navigation_timeout(60000)  # 60 seconds
+                            
                             try:
-                                page.screenshot(path=f"debug_scrape_failed_{url.split('/')[-1]}.png")
-                            except Exception as screenshot_error:
-                                logging.error(f"Failed to save screenshot: {screenshot_error}")
-                        else:
-                            time.sleep(2 * (attempt + 1)) # Exponential backoff
+                                post = self._scrape_thread_data(url, page)
+                                if post:
+                                    # Check for duplicates by post_id
+                                    post_id = getattr(post, 'post_id', None)
+                                    if post_id and post_id not in seen_post_ids:
+                                        seen_post_ids.add(post_id)
+                                        posts.append(post)
+                                        logging.debug(f"Added new post: {post_id}")
+                                    elif post_id:
+                                        logging.debug(f"Skipping duplicate post: {post_id}")
+                                    break  # Success, move to next URL
+                            except Exception as scrape_error:
+                                error_msg = str(scrape_error)
+                                logging.error(f"Failed to scrape {url} on attempt {attempt + 1}: {error_msg}")
+                                
+                                # Check for specific context/browser errors
+                                is_context_error = any(
+                                    phrase in error_msg.lower()
+                                    for phrase in [
+                                        "target page, context or browser has been closed",
+                                        "connection closed while reading from driver",
+                                        "context has been closed",
+                                        "browser has been closed",
+                                        "connection closed",
+                                        "page.goto: target closed",
+                                        "page.goto: timeout"
+                                    ]
+                                )
+                                
+                                if attempt >= max_retries - 1:
+                                    logging.error(f"All retries failed for {url}. Final error: {error_msg}")
+                                    try:
+                                        if page:
+                                            page.screenshot(path=f"debug_scrape_failed_{url.split('/')[-1]}.png")
+                                    except Exception as screenshot_error:
+                                        logging.error(f"Failed to save screenshot: {screenshot_error}")
+                                else:
+                                    # For context errors, wait longer before retry
+                                    if is_context_error:
+                                        wait_time = 5 * (attempt + 1)  # Longer backoff for context issues
+                                        logging.info(f"Context error detected, waiting {wait_time}s before retry...")
+                                        time.sleep(wait_time)
+                                    else:
+                                        time.sleep(3 * (attempt + 1))  # Standard exponential backoff
+                        finally:
+                            # Always close the page to prevent resource leaks
+                            if page:
+                                try:
+                                    page.close()
+                                except Exception as close_error:
+                                    logging.debug(f"Error closing page: {close_error}")
+                
+                # Add delay between batches to avoid rate limiting
+                if batch_idx < len(url_batches) - 1:
+                    time.sleep(2)  # 2 second delay between batches
+                    
             browser.close()
         return posts
 
@@ -673,6 +907,7 @@ class ThreadsExtractor(SocialExtractorBase):
     async def _scrape_thread_data_async(self, url: str, page, force_dom: bool = False) -> Optional[SocialPost]:
         """
         Async version of _scrape_thread_data for use within async context.
+        Updated to work with isolated page instances.
         """
         try:
             def _sanitize_threads_content(raw: str) -> str:
@@ -757,8 +992,8 @@ class ThreadsExtractor(SocialExtractorBase):
                     if match:
                         earliest_comment = min(earliest_comment, match.start())
                 
-                # Cut off at comment markers (keep at least 100 chars before comment)
-                if earliest_comment < len(main) and earliest_comment > 100:
+                # Cut off at comment markers (keep at least 30 chars before comment to avoid over-truncation)
+                if earliest_comment < len(main) and earliest_comment > 30:
                     main = main[:earliest_comment].strip()
                 
                 # Also check for simple text markers
@@ -788,8 +1023,20 @@ class ThreadsExtractor(SocialExtractorBase):
             
             logging.info(f"Scraping Threads post: {post_code}")
             
-            # Navigate to the post
-            await page.goto(url, wait_until='domcontentloaded', timeout=40000)
+            # Validate page is still active before navigation
+            if not page or page.is_closed():
+                raise Exception("Page is closed or invalid before navigation")
+            
+            # Navigate to the post with better error handling
+            try:
+                await page.goto(url, wait_until='domcontentloaded', timeout=40000)
+            except Exception as nav_error:
+                logging.warning(f"Initial navigation failed: {nav_error}, trying with networkidle")
+                try:
+                    await page.goto(url, wait_until='networkidle', timeout=40000)
+                except Exception as nav_error2:
+                    raise Exception(f"Navigation failed completely: {nav_error2}")
+            
             try:
                 # Wait for article/main to appear (robust wait)
                 await page.wait_for_selector('article, [role="article"], div[role="main"]', timeout=8000)
@@ -1116,7 +1363,7 @@ class ThreadsExtractor(SocialExtractorBase):
                     except Exception as e:
                         logging.debug(f"Body innerText fallback failed: {e}")
                 # Retry once with a short re-navigation if content is still empty
-                if not content or len(content) < 60:
+                if not content or len(content) < 60 or content.rstrip().endswith(('...', '…')):
                     try:
                         await page.goto(url, wait_until='networkidle', timeout=40000)
                         await page.wait_for_selector('article, [role="article"], div[role="main"]', timeout=6000)
@@ -1202,45 +1449,8 @@ class ThreadsExtractor(SocialExtractorBase):
             except Exception as e:
                 logging.debug(f"Final URL-based author extraction failed: {e}")
             
-            # Auto-refresh if content looks truncated (only if we haven't already done force_dom)
-            # Check BEFORE final sanitization so we can refresh if needed
-            if not force_dom and content:
-                c = content.strip()
-                looks_truncated = (
-                    c.endswith("...") or c.endswith("…") or 
-                    ("..." in c) or ("…" in c) or
-                    (len(c) < 200) or
-                    (c.endswith("...") and len(c) < 300)
-                )
-                if looks_truncated:
-                    logging.info(f"🔄 Content looks truncated ({len(c)} chars), attempting DOM-only refresh...")
-                    try:
-                        # Check if page is still open
-                        try:
-                            _ = page.url
-                        except Exception:
-                            logging.debug("Page is closed, cannot auto-refresh")
-                        else:
-                            # Re-scrape with force_dom=True to get full content
-                            # We're already on the right page, so we can just re-extract
-                            refreshed = await self._scrape_thread_data_async(url, page, force_dom=True)
-                            if refreshed and getattr(refreshed, 'content', None):
-                                refreshed_content = (refreshed.content or '').strip()
-                                # Prefer refreshed if it's longer OR removes ellipses compared to original
-                                longer = len(refreshed_content) > len(c)
-                                fewer_ellipses = ("..." in c or "…" in c) and ("..." not in refreshed_content and "…" not in refreshed_content)
-                                if longer or fewer_ellipses:
-                                    content = refreshed_content[:4000]
-                                    # Also update author/handle if refreshed has better values
-                                    if getattr(refreshed, 'author', None) and refreshed.author not in ("Unknown Author", "Thread"):
-                                        author = refreshed.author
-                                    if getattr(refreshed, 'author_handle', None) and refreshed.author_handle not in ("unknown", "Thread"):
-                                        author_handle = refreshed.author_handle
-                                    logging.info(f"✅ Auto-refreshed truncated content: {len(c)} -> {len(content)} chars")
-                                else:
-                                    logging.debug(f"DOM refresh didn't improve content enough (old={len(c)}, new={len(refreshed_content)})")
-                    except Exception as refresh_err:
-                        logging.debug(f"Auto-refresh failed: {refresh_err}")
+            # REMOVED: Auto-refresh logic to prevent double-scraping
+            # The get_saved_posts() already does full scraping, no need for refresh here
             
             # Try to extract engagement metrics
             try:
@@ -1269,12 +1479,18 @@ class ThreadsExtractor(SocialExtractorBase):
                 mentions = re.findall(r'@(\w+)', content)
             
             # If we couldn't extract meaningful content, create a basic placeholder
-            if not content or len(content) < 10:
+            if not content or len(content) < 5:
                 content = f"Threads post {post_code} - Content extraction in progress"
                 logging.warning(f"Could not extract meaningful content from {url}")
             
             # Final content sanitization to avoid replies/translations/noise
             content = _sanitize_threads_content(content)
+            
+            # Skip unnecessary re-scraping if content looks complete
+            # This prevents the double-scraping issue in platform_collectors.py
+            if len(content) >= 100 and not content.endswith('...') and not content.endswith('…'):
+                logging.info(f"Content looks complete ({len(content)} chars), skipping auto-refresh")
+                force_dom = False
             
             # Create the SocialPost object
             post = SocialPost(
@@ -1318,6 +1534,7 @@ class ThreadsExtractor(SocialExtractorBase):
     def _scrape_thread_data(self, url: str, page) -> Optional[SocialPost]:
         """
         Scrapes a single Threads post by URL using real content extraction.
+        Updated to work with isolated page instances.
         """
         try:
             # Extract post code from URL for ID
@@ -1325,8 +1542,20 @@ class ThreadsExtractor(SocialExtractorBase):
             
             logging.info(f"Scraping Threads post: {post_code}")
             
-            # Navigate to the post
-            page.goto(url, timeout=30000)
+            # Validate page is still active before navigation
+            if page.is_closed():
+                raise Exception("Page is closed or invalid before navigation")
+            
+            # Navigate to the post with better error handling
+            try:
+                page.goto(url, timeout=30000)
+            except Exception as nav_error:
+                logging.warning(f"Initial navigation failed: {nav_error}, trying with longer timeout")
+                try:
+                    page.goto(url, timeout=45000)
+                except Exception as nav_error2:
+                    raise Exception(f"Navigation failed completely: {nav_error2}")
+            
             page.wait_for_timeout(3000)  # Wait for content to load
             
             # Try to extract real content using various selectors

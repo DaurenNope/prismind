@@ -18,14 +18,111 @@ from src.services.unified_collection_service import (
     CollectionStatus,
 )
 from src.services.new_database_manager import NewDatabaseManager
+from src.utils.collection_storage import CollectionStorage
 from src.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
+COLLECTION_STORAGE = CollectionStorage()
+
+
+def _format_log_entry(entry) -> str:
+    if isinstance(entry, str):
+        return entry
+    if not isinstance(entry, dict):
+        return str(entry)
+
+    timestamp = entry.get("timestamp", "")
+    status = entry.get("status", "")
+    message = entry.get("message", "")
+    posts = entry.get("posts_collected")
+    error = entry.get("error")
+
+    parts = []
+    if timestamp:
+        parts.append(f"[{timestamp}]")
+    if status:
+        parts.append(status)
+    if message:
+        parts.append(message)
+
+    line = " ".join(parts)
+    if posts:
+        line += f" (Posts: {posts})"
+    if error:
+        line += f" ❌ Error: {error}"
+    return line
+
+
+def _safe_count(db: NewDatabaseManager, method_name: str) -> int:
+    """Safely call a database manager method and return the length of its result."""
+    method = getattr(db, method_name, None)
+    if not callable(method):
+        logger.debug(f"Database manager missing method {method_name}")
+        return 0
+
+    try:
+        result = method()
+        if result is None:
+            return 0
+        return len(result)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning(f"Failed to fetch {method_name}: {exc}")
+        return 0
 
 
 def render_collection_tab():
     """Render the collection tab in Streamlit"""
     st.header("📥 Collection Manager")
+
+    # Local dark pane styling to avoid global white background
+    st.markdown("""
+    <style>
+      .collect-pane {
+        background-color: #0b1220;
+        border: 1px solid #1f2a44;
+        border-radius: 12px;
+        padding: 16px;
+        margin-bottom: 16px;
+      }
+      .collect-card {
+        background-color: #111827;
+        border: 1px solid #1f2937;
+        padding: 1.5rem;
+        border-radius: 8px;
+        text-align: center;
+      }
+      .collect-card .value {
+        font-size: 2rem; font-weight: 700; margin-bottom: 0.5rem; color: #e5e7eb;
+      }
+      .collect-card .label {
+        font-size: 0.875rem; color: #9ca3af;
+      }
+      /* History preview styling */
+      .post-preview {
+        background-color: #0f172a;
+        border: 1px solid #1f2937;
+        border-radius: 8px;
+        padding: 12px 14px;
+        margin: 8px 0 14px 0;
+      }
+      .post-preview .meta {
+        color: #cbd5e1;
+        font-size: 0.9rem;
+        margin-bottom: 6px;
+      }
+      .post-preview .content {
+        color: #e5e7eb;
+        white-space: pre-wrap; /* preserve newlines */
+        line-height: 1.4;
+        margin-bottom: 6px;
+      }
+      .post-preview .url {
+        color: #94a3b8;
+        font-size: 0.8rem;
+      }
+    </style>
+    """, unsafe_allow_html=True)
+    st.markdown('<div class="collect-pane">', unsafe_allow_html=True)
 
     # Unique key base per session to avoid DuplicateWidgetID when this tab is rendered
     if 'collection_tab_key_base' not in st.session_state:
@@ -38,25 +135,64 @@ def render_collection_tab():
 
     service: UnifiedCollectionService = st.session_state.collection_service
 
+    # Load persisted logs/history into session state once
+    if "collection_logs" not in st.session_state:
+        st.session_state.collection_logs = COLLECTION_STORAGE.load_logs()
+    if "collection_history" not in st.session_state:
+        st.session_state.collection_history = COLLECTION_STORAGE.load_history()
+
     # Show current status
     st.subheader("📊 Current Status")
 
     # Get database stats
     db = NewDatabaseManager()
 
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4, col5 = st.columns(5)
 
     with col1:
         threads_count = len(db.get_posts_by_platform("threads"))
-        st.metric("Threads Posts", threads_count)
+        st.markdown(f"""
+        <div class="collect-card">
+            <div class="value">{threads_count}</div>
+            <div class="label">🧵 Threads</div>
+        </div>
+        """, unsafe_allow_html=True)
 
     with col2:
         twitter_count = len(db.get_posts_by_platform("twitter"))
-        st.metric("Twitter Posts", twitter_count)
+        st.markdown(f"""
+        <div class="collect-card">
+            <div class="value">{twitter_count}</div>
+            <div class="label">🐦 Twitter</div>
+        </div>
+        """, unsafe_allow_html=True)
 
     with col3:
         reddit_count = len(db.get_posts_by_platform("reddit"))
-        st.metric("Reddit Posts", reddit_count)
+        st.markdown(f"""
+        <div class="collect-card">
+            <div class="value">{reddit_count}</div>
+            <div class="label">📱 Reddit</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+    with col4:
+        github_count = _safe_count(db, "get_github_trending_repos")
+        st.markdown(f"""
+        <div class="collect-card">
+            <div class="value">{github_count}</div>
+            <div class="label">💻 GitHub</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+    with col5:
+        telegram_count = _safe_count(db, "get_telegram_messages")
+        st.markdown(f"""
+        <div class="collect-card">
+            <div class="value">{telegram_count}</div>
+            <div class="label">📢 Telegram</div>
+        </div>
+        """, unsafe_allow_html=True)
 
     st.divider()
 
@@ -70,9 +206,14 @@ def render_collection_tab():
         # Stable key so selection persists across renders
         platform = st.selectbox(
             "Select Platform",
-            options=["threads", "twitter", "reddit"],
+            options=["threads", "twitter", "reddit", "github_trending", "telegram_channels", "discovery"],
             format_func=lambda x: {
                 "threads": "🧵 Threads",
+                "twitter": "🐦 Twitter",
+                "reddit": "📱 Reddit",
+                "github_trending": "💻 GitHub Trending",
+                "telegram_channels": "📢 Telegram Channels",
+                "discovery": "🔍 Autonomous Discovery",
                 "twitter": "🐦 Twitter",
                 "reddit": "📱 Reddit",
             }.get(x, x),
@@ -111,12 +252,12 @@ def render_collection_tab():
     st.divider()
 
     # Collection logs section
-    if "collection_logs" in st.session_state and st.session_state.collection_logs:
+    if st.session_state.collection_logs:
         st.subheader("📝 Collection Logs")
         recent_logs = st.session_state.collection_logs[-15:]  # Show last 15 entries
         st.text_area(
             "",
-            value="\n".join(recent_logs),
+            value="\n".join(_format_log_entry(entry) for entry in recent_logs),
             height=250,
             disabled=True,
             key="collection_logs_display",
@@ -126,9 +267,6 @@ def render_collection_tab():
 
     # Collection history
     st.subheader("📜 Collection History")
-
-    if "collection_history" not in st.session_state:
-        st.session_state.collection_history = []
 
     if st.session_state.collection_history:
         # Show recent collections
@@ -152,7 +290,7 @@ def render_collection_tab():
                 f"{posts_collected} posts - "
                 f"{datetime.fromisoformat(metadata.get('timestamp', datetime.now().isoformat())).strftime('%Y-%m-%d %H:%M')}"
             ):
-                col1, col2, col3 = st.columns(3)
+                col1, col2, col3, col4, col5 = st.columns(5)
 
                 with col1:
                     st.metric("Posts Collected", posts_collected)
@@ -170,6 +308,60 @@ def render_collection_tab():
                 error_msg = result.get('error') if isinstance(result, dict) else getattr(result, 'error', None)
                 if error_msg:
                     st.error(f"Error: {error_msg}")
+
+                automation_info = metadata.get("automation") if isinstance(metadata, dict) else {}
+                if automation_info:
+                    st.markdown("**Automation Summary**")
+                    st.json(automation_info)
+
+                # Recent posts preview to help locate items in DB/Supabase
+                st.markdown("---")
+                st.caption("Recent posts for quick access")
+                try:
+                    # Prefer getting a larger batch and filter/sort client-side for robustness
+                    recent_all = db.get_posts(limit=200) or []
+                    # Filter by platform
+                    recent_platform = [
+                        p for p in recent_all
+                        if isinstance(p, dict) and (p.get("platform") or "").lower() == (platform or "").lower()
+                    ]
+                    # Sort by created_at desc (fallback to analyzed_at)
+                    def _ts(p):
+                        v = p.get("created_at") or p.get("analyzed_at") or ""
+                        return v
+                    recent_platform.sort(key=_ts, reverse=True)
+                    preview = recent_platform[:5]
+                    if preview:
+                        post_ids_for_copy: list[str] = []
+                        for p in preview:
+                            post_id = p.get("post_id") or ""
+                            author = p.get("author") or "unknown"
+                            created_at = p.get("created_at") or ""
+                            url = p.get("url") or ""
+                            content = p.get("content") or ""
+                            if post_id:
+                                post_ids_for_copy.append(post_id)
+                            # Render with preserved formatting and dark card
+                            st.markdown(
+                                f"""
+                                <div class="post-preview">
+                                  <div class="meta"><b>{post_id}</b> &nbsp;|&nbsp; {author} &nbsp;|&nbsp; {(created_at or '')[:19]}</div>
+                                  <div class="content">{(content or '').replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')}</div>
+                                  <div class="url">{url}</div>
+                                </div>
+                                """,
+                                unsafe_allow_html=True
+                            )
+                        if post_ids_for_copy:
+                            st.text_area(
+                                "Post IDs (copy to Supabase filter)",
+                                value=", ".join(post_ids_for_copy),
+                                height=60
+                            )
+                    else:
+                        st.info("No recent posts found for this platform yet.")
+                except Exception as _e:
+                    st.caption(f"Preview unavailable: {str(_e)[:80]}")
     else:
         st.info("No collection history yet. Start a collection to see results here.")
 
@@ -200,6 +392,8 @@ def render_collection_tab():
             help="Sync collected posts to Supabase",
         )
 
+    # Close dark pane wrapper
+    st.markdown('</div>', unsafe_allow_html=True)
 
 def run_collection(
     service: UnifiedCollectionService, platform: Optional[str], collect_all: bool
@@ -213,9 +407,9 @@ def run_collection(
 
     # Initialize logs and history
     if "collection_logs" not in st.session_state:
-        st.session_state.collection_logs = []
+        st.session_state.collection_logs = COLLECTION_STORAGE.load_logs()
     if "collection_history" not in st.session_state:
-        st.session_state.collection_history = []
+        st.session_state.collection_history = COLLECTION_STORAGE.load_history()
 
     # Progress callback with detailed logging
     def update_progress(progress: CollectionProgress):
@@ -238,20 +432,23 @@ def run_collection(
 
         # Add to logs
         timestamp = datetime.now().strftime("%H:%M:%S")
-        log_entry = f"[{timestamp}] {status_emoji} {progress.current_message}"
-        if progress.posts_collected > 0:
-            log_entry += f" (Posts: {progress.posts_collected})"
-        if progress.error:
-            log_entry += f" ❌ Error: {progress.error}"
+        log_entry = {
+            "timestamp": timestamp,
+            "status": status_emoji,
+            "message": progress.current_message,
+            "posts_collected": progress.posts_collected if progress.posts_collected > 0 else 0,
+            "error": progress.error,
+        }
 
         st.session_state.collection_logs.append(log_entry)
+        COLLECTION_STORAGE.append_log(log_entry)
 
         # Display last 10 log entries
         recent_logs = st.session_state.collection_logs[-10:]
         with logs_container.container():
             st.text_area(
                 "📝 Collection Logs",
-                value="\n".join(recent_logs),
+                value="\n".join(_format_log_entry(entry) for entry in recent_logs),
                 height=200,
                 disabled=True,
             )
@@ -284,6 +481,7 @@ def run_collection(
                             'posts_failed': getattr(result, 'posts_failed', 0),
                         }
                         st.session_state.collection_history.append(history_entry)
+                        COLLECTION_STORAGE.append_history(history_entry)
 
                 # Show summary
                 total_collected = sum(r.posts_collected for r in results.values())
@@ -319,6 +517,7 @@ def run_collection(
                         'posts_failed': getattr(result, 'posts_failed', 0),
                     }
                     st.session_state.collection_history.append(history_entry)
+                    COLLECTION_STORAGE.append_history(history_entry)
 
                     # Show result
                     if result.success:

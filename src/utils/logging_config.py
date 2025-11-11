@@ -241,16 +241,33 @@ def setup_logging():
         root_logger.addHandler(handler)
     
     # Suppress noisy third-party loggers
-    for logger_name in ['urllib3', 'requests', 'PIL', 'postgrest', 'gotrue', 'realtime', 'supabase', '_client']:
+    noisy_loggers = {
+        'urllib3': logging.WARNING,
+        'requests': logging.WARNING,
+        'PIL': logging.WARNING,
+        'httpx': logging.WARNING,
+        'httpcore': logging.WARNING,
+        'postgrest': logging.ERROR,
+        'gotrue': logging.ERROR,
+        'realtime': logging.ERROR,
+        'supabase': logging.ERROR,
+        '_client': logging.ERROR,
+        'postgrest._client': logging.ERROR,
+        'postgrest.client': logging.ERROR,
+        'postgrest.request_builder': logging.ERROR,
+    }
+
+    for logger_name, level in noisy_loggers.items():
         logger = logging.getLogger(logger_name)
-        logger.setLevel(logging.WARNING)
+        logger.handlers.clear()
+        logger.setLevel(level)
         logger.propagate = False  # Prevent propagation to root logger
-    
-    # Also suppress postgrest sub-loggers (they use _client internally)
-    for logger_name in ['postgrest._client', 'postgrest.client', 'postgrest.request_builder']:
-        logger = logging.getLogger(logger_name)
-        logger.setLevel(logging.WARNING)
-        logger.propagate = False
+
+        # If we're forcing ERROR level for third-party HTTP loggers, disable them entirely
+        if level >= logging.ERROR:
+            logger.disabled = True
+        else:
+            logger.addHandler(logging.NullHandler())
     
     print(f"📝 Logging configured: level={log_level}, format={log_format}")
 

@@ -169,7 +169,7 @@ class DatabaseAnalysis:
             print(f"❌ Error getting low quality posts: {e}")
             return []
     
-    def get_unanalyzed_posts(self, limit: int = 100, platforms: Optional[List[str]] = None) -> List[Dict]:
+    def get_unanalyzed_posts(self, limit: Optional[int] = 100, platforms: Optional[List[str]] = None) -> List[Dict]:
         """Get posts that haven't been analyzed yet"""
         try:
             with sqlite3.connect(self.db_path) as conn:
@@ -188,8 +188,10 @@ class DatabaseAnalysis:
                     query += f" AND platform IN ({placeholders})"
                     params.extend(platforms)
 
+                # Ensure a valid integer LIMIT; None causes SQLite datatype mismatch
+                effective_limit = int(limit) if isinstance(limit, int) and limit > 0 else 100
                 query += " ORDER BY created_at DESC LIMIT ?"
-                params.append(limit)
+                params.append(effective_limit)
                 
                 cursor.execute(query, params)
                 rows = cursor.fetchall()

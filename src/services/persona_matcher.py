@@ -342,3 +342,9 @@ def get_persona_matcher() -> PersonaMatcher:
         _matcher = PersonaMatcher()
     return _matcher
 
+
+def get_persona_keys() -> List[str]:
+    """Get all persona keys"""
+    matcher = get_persona_matcher()
+    return [persona.get('key', '') for persona in matcher.personas]
+

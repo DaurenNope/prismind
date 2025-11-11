@@ -22,11 +22,21 @@ import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
 
-# Add the project root to the Python path
+# Configure Streamlit page BEFORE importing any modules that might call Streamlit
+st.set_page_config(
+    page_title="🧠 PrisMind - Intelligence Platform",
+    page_icon="🧠",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# Add the project root to the Python path before importing internal packages
 project_root = Path(__file__).resolve().parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
     print(f"Added to path: {project_root}")
+
+from src.utils.logging_config import get_logger
 
 # Import components
 from src.web.components.status_bar import render_status_bar
@@ -34,10 +44,15 @@ from src.web.components.tabs import render_settings_tab
 from src.web.components.unified_feed_tab import render_unified_feed
 from src.web.components.publishing_page import render_publishing_page
 from src.web.components.collection_tab import render_collection_tab
-from src.web.components.persona_pipeline_tab import render_persona_pipeline_tab
-from src.web.components.system_status_tab import render_system_status_tab
 from src.web.components.analysis_tab import render_analysis_tab
-from src.web.components.sources_tab import render_sources_tab
+from src.web.components.dashboard_tab import render_dashboard_tab
+from src.web.components.rewriter_lab_tab import render_rewriter_lab_tab
+from src.web.components.profile_manager_tab import render_profile_manager_tab
+from src.web.components.profile_wizard_tab import render_profile_wizard_tab
+from src.web.components.daily_builder_tab import render_daily_builder_tab
+from src.web.components.feedback_tab import render_feedback_tab
+from src.web.components.diary_tab import render_diary_tab
+from src.web.components.production_pipeline_tab import render_production_pipeline_tab
 from src.pipeline.orchestrator import get_orchestrator
 from src.publishing.worker import get_publisher_worker
 
@@ -49,6 +64,9 @@ warnings.filterwarnings("ignore")
 
 # Use shared database manager
 from src.services.new_database_manager import get_database_manager as _get_db_manager
+
+
+logger = get_logger(__name__)
 
 
 @st.cache_resource
@@ -231,29 +249,285 @@ def main():
     # Initialize session state
     init_session_state()
 
-    # Setup page configuration
-    st.set_page_config(
-        page_title="🧠 PrisMind - Intelligence Platform",
-        page_icon="🧠",
-        layout="wide",
-        initial_sidebar_state="expanded",
-    )
-
-    # Custom CSS for better styling
+    # Professional, clean CSS that works with Streamlit's dark mode
     st.markdown(
         """
     <style>
-        .main { padding-top: 1rem; }
-        .stButton button { width: 100%; }
-        .metric-container {
-            background: #f0f2f6;
-            padding: 1rem;
-            border-radius: 0.5rem;
-            margin: 0.5rem 0;
+        /* Force light theme for better visibility */
+        .stApp {
+            background-color: #ffffff !important;
         }
-        .success-message { color: #28a745; }
-        .error-message { color: #dc3545; }
-        .info-message { color: #17a2b8; }
+        
+        /* Main content area */
+        .main .block-container {
+            background-color: #ffffff !important;
+            color: #1f2937 !important;
+            padding: 2rem;
+        }
+        
+        /* All text elements - ensure visibility */
+        h1, h2, h3, h4, h5, h6, p, span, div, label, .stMarkdown, .stText {
+            color: #1f2937 !important;
+        }
+        
+        /* Headers - clean and professional */
+        h1 {
+            color: #111827 !important;
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+        }
+        
+        h2 {
+            color: #111827 !important;
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-top: 2rem;
+            margin-bottom: 1rem;
+        }
+        
+        h3 {
+            color: #374151 !important;
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+
+        /* Metrics - clean and readable */
+        [data-testid="stMetricValue"] {
+            font-size: 2rem !important;
+            font-weight: 700 !important;
+            color: #111827 !important;
+        }
+
+        [data-testid="stMetricLabel"] {
+            font-size: 0.875rem !important;
+            color: #6b7280 !important;
+            font-weight: 500;
+        }
+
+        /* Buttons - professional, minimal */
+        .stButton > button {
+            background-color: #2563eb !important;
+            color: #ffffff !important;
+            border: 1px solid #2563eb !important;
+            border-radius: 6px;
+            padding: 0.5rem 1rem;
+            font-weight: 500;
+            font-size: 0.875rem;
+            transition: background-color 0.2s;
+        }
+
+        .stButton > button:hover {
+            background-color: #1d4ed8 !important;
+            border-color: #1d4ed8 !important;
+        }
+
+        .stButton > button[kind="secondary"] {
+            background-color: #f9fafb !important;
+            color: #374151 !important;
+            border: 1px solid #d1d5db !important;
+        }
+
+        .stButton > button[kind="secondary"]:hover {
+            background-color: #f3f4f6 !important;
+        }
+
+        /* Input fields - clean borders */
+        .stSelectbox > div > div {
+            background-color: #ffffff !important;
+            border: 1px solid #d1d5db !important;
+            border-radius: 6px;
+            color: #111827 !important;
+        }
+        
+        .stTextInput > div > div > input,
+        .stTextArea > div > div > textarea {
+            background-color: #ffffff !important;
+            border: 1px solid #d1d5db !important;
+            color: #111827 !important;
+        }
+        
+        .stSelectbox label,
+        .stTextInput label,
+        .stTextArea label {
+            color: #374151 !important;
+            font-weight: 500;
+        }
+
+        /* Expanders */
+        .streamlit-expanderHeader {
+            background-color: #f9fafb !important;
+            border: 1px solid #e5e7eb !important;
+            border-radius: 6px;
+            padding: 0.75rem 1rem;
+            color: #111827 !important;
+        }
+
+        .streamlit-expanderHeader:hover {
+            background-color: #f3f4f6 !important;
+        }
+
+        /* Dividers - subtle */
+        hr {
+            border: none;
+            height: 1px;
+            background-color: #e5e7eb;
+            margin: 2rem 0;
+        }
+
+        /* Progress bars - subtle blue */
+        .stProgress > div > div > div {
+            background-color: #2563eb !important;
+        }
+
+        /* Alerts - clean and professional */
+        .stAlert {
+            border-radius: 6px;
+            border-left: 4px solid;
+            padding: 1rem;
+            background-color: #f9fafb !important;
+        }
+
+        .stAlert[data-base="info"] {
+            border-left-color: #3b82f6;
+            background-color: #eff6ff !important;
+            color: #1e40af !important;
+        }
+
+        .stAlert[data-base="success"] {
+            border-left-color: #10b981;
+            background-color: #f0fdf4 !important;
+            color: #065f46 !important;
+        }
+
+        .stAlert[data-base="warning"] {
+            border-left-color: #f59e0b;
+            background-color: #fffbeb !important;
+            color: #92400e !important;
+        }
+
+        .stAlert[data-base="error"] {
+            border-left-color: #ef4444;
+            background-color: #fef2f2 !important;
+            color: #991b1b !important;
+        }
+        
+        /* Dataframes - clean tables */
+        .stDataFrame {
+            background-color: #ffffff !important;
+        }
+        
+        /* Sidebar - light background */
+        [data-testid="stSidebar"] {
+            background-color: #f9fafb !important;
+        }
+        
+        [data-testid="stSidebar"] .stMarkdown,
+        [data-testid="stSidebar"] p,
+        [data-testid="stSidebar"] h1,
+        [data-testid="stSidebar"] h2,
+        [data-testid="stSidebar"] h3 {
+            color: #111827 !important;
+        }
+        
+        [data-testid="stSidebar"] .stMetric [data-testid="stMetricValue"] {
+            color: #111827 !important;
+        }
+        
+        [data-testid="stSidebar"] .stMetric [data-testid="stMetricLabel"] {
+            color: #6b7280 !important;
+        }
+
+        /* Tabs - clean and minimal */
+        .stTabs [data-baseweb="tab-list"] {
+            gap: 0.25rem;
+            border-bottom: 2px solid #e5e7eb;
+        }
+
+        .stTabs [data-baseweb="tab"] {
+            padding: 0.75rem 1.5rem;
+            font-weight: 500;
+            color: #6b7280 !important;
+            border-bottom: 2px solid transparent;
+        }
+
+        .stTabs [aria-selected="true"] {
+            background-color: transparent !important;
+            color: #111827 !important;
+            border-bottom-color: #2563eb !important;
+            font-weight: 600;
+        }
+
+        /* Hero Section - minimal, no gradients */
+        .hero-section {
+            background-color: #f9fafb;
+            padding: 2rem;
+            border-radius: 8px;
+            margin-bottom: 2rem;
+            text-align: center;
+            border: 1px solid #e5e7eb;
+        }
+
+        .hero-title {
+            color: #111827 !important;
+            margin: 0;
+            font-size: 2rem;
+            font-weight: 700;
+        }
+
+        .hero-subtitle {
+            color: #6b7280 !important;
+            font-size: 1rem;
+            margin-top: 0.5rem;
+        }
+        
+        /* Code blocks */
+        .stCodeBlock {
+            background-color: #f9fafb !important;
+            border: 1px solid #e5e7eb !important;
+        }
+        
+        /* Captions and labels */
+        .stCaption {
+            color: #6b7280 !important;
+        }
+        
+        /* Remove any gradient backgrounds */
+        * {
+            background-image: none !important;
+        }
+        
+        /* Ensure Streamlit default elements use light theme */
+        section[data-testid="stSidebar"] {
+            background-color: #f9fafb !important;
+        }
+        
+        /* Make sure all text in sidebar is readable */
+        section[data-testid="stSidebar"] * {
+            color: #111827 !important;
+        }
+        
+        /* Ensure selectboxes and dropdowns are visible */
+        .stSelectbox [data-baseweb="select"] {
+            background-color: #ffffff !important;
+        }
+        
+        /* Tables and dataframes */
+        table {
+            background-color: #ffffff !important;
+            color: #111827 !important;
+        }
+        
+        /* Ensure all Streamlit widgets are visible */
+        .element-container {
+            color: #111827 !important;
+        }
+        
+        /* JSON displays */
+        .stJson {
+            background-color: #f9fafb !important;
+            border: 1px solid #e5e7eb !important;
+        }
     </style>
     """,
         unsafe_allow_html=True,
@@ -278,27 +552,40 @@ def main():
             get_publisher_worker().start()
             st.session_state.publisher_worker_started = True
             # Log to console (Streamlit doesn't show this in UI, but it will appear in terminal)
-            import logging
-
-            logging.basicConfig(level=logging.INFO)
-            logging.info("🚀 Publisher worker started automatically")
+            logger.debug("🚀 Publisher worker started automatically")
         except Exception as e:
-            logging.error(f"Failed to start publisher worker: {e}")
+            logger.error(f"Failed to start publisher worker: {e}")
 
-    # Main title
-    st.title("🧠 PrisMind - Intelligent Bookmark Platform")
-    st.markdown("*Transform your social media bookmarks into structured intelligence*")
+    # Minimal Hero Section - professional and clean
+    st.markdown("""
+    <div class="hero-section">
+        <h1 class="hero-title">PrisMind</h1>
+        <p class="hero-subtitle">Transform your social media bookmarks into structured intelligence</p>
+    </div>
+    """, unsafe_allow_html=True)
 
     # Check for unanalyzed posts and show reminder
     render_analysis_reminder()
 
-    # Navigation tabs: Feed, Collect, Analysis, Sources, Persona Pipeline, Publishing, Perf, System, Settings
-    tab_feed, tab_collect, tab_analysis, tab_sources, tab_persona, tab_pub, tab_perf, tab_system, tab_settings = st.tabs(
-        ["📰 Feed", "📥 Collect", "🤖 Analysis", "📡 Sources", "🎭 Persona Pipeline", "📝 Publishing", "📈 Perf", "🩺 System", "⚙️ Settings"]
+    # Simplified tab structure - removed Persona Pipeline, Perf, System, Sources (merged into Settings)
+    tab_dashboard, tab_feed, tab_diary, tab_daily, tab_pipeline, tab_collect, tab_analysis, tab_pub, tab_rewriter_lab, tab_wizard, tab_profile_mgr, tab_feedback, tab_settings = st.tabs(
+        ["📊 Dashboard", "📰 Feed", "📓 Diary", "🏗️ Daily", "🚀 Pipeline", "📥 Collect", "🤖 Analysis", "📝 Publishing", "🔬 Rewriter Lab", "🧙 AI Wizard", "👤 Profiles", "📝 Feedback", "⚙️ Settings"]
     )
+
+    with tab_dashboard:
+        render_dashboard_tab()
 
     with tab_feed:
         render_unified_feed()
+
+    with tab_diary:
+        render_diary_tab()
+
+    with tab_daily:
+        render_daily_builder_tab()
+
+    with tab_pipeline:
+        render_production_pipeline_tab()
 
     with tab_collect:
         render_collection_tab()
@@ -306,21 +593,20 @@ def main():
     with tab_analysis:
         render_analysis_tab()
 
-    with tab_sources:
-        render_sources_tab()
-
-    with tab_persona:
-        render_persona_pipeline_tab()
-
     with tab_pub:
         render_publishing_page()
 
-    with tab_perf:
-        from src.web.components.publishing_analytics_tab import render_publishing_analytics_tab
-        render_publishing_analytics_tab()
+    with tab_rewriter_lab:
+        render_rewriter_lab_tab()
 
-    with tab_system:
-        render_system_status_tab()
+    with tab_wizard:
+        render_profile_wizard_tab()
+
+    with tab_profile_mgr:
+        render_profile_manager_tab()
+
+    with tab_feedback:
+        render_feedback_tab()
 
     with tab_settings:
         render_settings_tab()

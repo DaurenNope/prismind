@@ -137,11 +137,13 @@ def render_useful_sidebar():
     # === QUICK ACTIONS ===
     st.sidebar.markdown("### ⚡ Quick Actions")
     
-    if st.sidebar.button("📥 Collect All", use_container_width=True):
+    if st.sidebar.button("📥 Collect All", use_container_width=True, key="sidebar_collect"):
         st.session_state.collect_all_platforms = True
+        st.rerun()
     
-    if st.sidebar.button("📝 New Post", use_container_width=True):
-        st.session_state.jump_to_publishing = True
+    if st.sidebar.button("🤖 Analyze", use_container_width=True, key="sidebar_analyze"):
+        st.session_state.run_global_analysis = True
+        st.rerun()
     
     st.sidebar.markdown("---")
     

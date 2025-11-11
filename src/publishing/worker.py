@@ -83,6 +83,7 @@ def post_to_telegram_direct(content: str, chat_id: Optional[str] = None) -> dict
         return {
             "success": False,
             "error": "TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not configured",
+            "permanent_failure": True  # Configuration error is permanent
         }
 
     api_base = f"https://api.telegram.org/bot{bot_token}"
@@ -92,6 +93,7 @@ def post_to_telegram_direct(content: str, chat_id: Optional[str] = None) -> dict
         return {
             "success": False,
             "error": f"Message too long: {len(content)} chars (max 4096)",
+            "permanent_failure": True  # Message too long is permanent
         }
 
     try:
@@ -123,17 +125,45 @@ def post_to_telegram_direct(content: str, chat_id: Optional[str] = None) -> dict
                 "error": None,
             }
         else:
+            # Check if it's a permanent error from Telegram API
+            error_desc = result.get("description", "Unknown Telegram API error")
+            permanent = any(keyword in error_desc.lower() for keyword in [
+                "forbidden", "unauthorized", "bad request", "chat not found",
+                "bot blocked", "bot was blocked", "user is deactivated"
+            ])
+            
             return {
                 "success": False,
-                "error": result.get("description", "Unknown Telegram API error"),
+                "error": error_desc,
+                "permanent_failure": permanent
             }
 
     except requests.exceptions.Timeout:
-        return {"success": False, "error": "Telegram API timeout (30s)"}
+        return {
+            "success": False,
+            "error": "Telegram API timeout (30s)",
+            "permanent_failure": False  # Timeout is transient
+        }
     except requests.exceptions.HTTPError as e:
-        return {"success": False, "error": f"HTTP error: {e.response.status_code}"}
+        status_code = e.response.status_code if e.response else None
+        error_msg = f"HTTP error: {status_code}"
+        
+        # Add more context for common errors
+        if status_code == 403:
+            error_msg += " (Forbidden - check bot token permissions or chat access)"
+        elif status_code == 401:
+            error_msg += " (Unauthorized - invalid bot token)"
+        elif status_code == 400:
+            error_msg += " (Bad Request - check message format or chat_id)"
+        
+        return {
+            "success": False,
+            "error": error_msg,
+            "status_code": status_code,
+            "permanent_failure": status_code in [400, 401, 403]  # Permanent failures
+        }
     except Exception as e:
-        return {"success": False, "error": f"Exception: {str(e)}"}
+        return {"success": False, "error": f"Exception: {str(e)}", "permanent_failure": False}
 
 
 class PublisherWorker:
@@ -156,7 +186,7 @@ class PublisherWorker:
             target=self._run_loop, name="publisher-worker", daemon=True
         )
         self._thread.start()
-        logger.info(
+        logger.debug(
             f"🚀 Publisher worker started (checking every {self.interval_seconds}s)"
         )
 
@@ -166,7 +196,7 @@ class PublisherWorker:
     def _run_loop(self) -> None:
         db = MimesisDB()
 
-        logger.info("Publisher worker loop started")
+        logger.debug("Publisher worker loop started")
 
         while not self._stop.is_set():
             try:
@@ -184,8 +214,29 @@ class PublisherWorker:
                     content = item.get("content", "")
                     item_id = item.get("id")
 
+                    # Global platform gating via config
+                    try:
+                        from src.utils.config import get_config
+                        cfg = get_config()
+                        telegram_enabled = bool(cfg.flags.get("enable_telegram_channels", True))
+                    except Exception:
+                        telegram_enabled = True
+
                     # Route based on platform
                     if platform == "telegram":
+                        # If Telegram is disabled, mark as failed immediately to prevent infinite retries
+                        if not telegram_enabled:
+                            try:
+                                db.sb.client.table("scheduled_posts").update(
+                                    {
+                                        "status": "failed",
+                                        "error_message": "Telegram disabled by config (enable_telegram_channels=false)",
+                                    }
+                                ).eq("id", item_id).execute()
+                            except Exception:
+                                pass
+                            continue
+
                         # Use direct Telegram Bot API (no webhook needed)
                         try:
                             result = post_to_telegram_direct(content)
@@ -206,23 +257,103 @@ class PublisherWorker:
                                 logger.info(log_msg)
                             else:
                                 error = result.get("error", "Unknown error")
-                                logger.error(f"❌ Failed to post to Telegram: {error}")
-                                try:
-                                    db.sb.client.table("scheduled_posts").update(
-                                        {"status": "retry"}
-                                    ).eq("id", item_id).execute()
-                                except Exception:
-                                    pass
+                                status_code = result.get("status_code")
+                                permanent_failure = result.get("permanent_failure", False)
+                                
+                                # Determine if this is a permanent failure
+                                if permanent_failure:
+                                    logger.error(
+                                        f"❌ Permanent failure posting to Telegram (HTTP {status_code}): {error}. "
+                                        f"Marking as failed - check bot token, permissions, or chat_id."
+                                    )
+                                    try:
+                                        db.sb.client.table("scheduled_posts").update(
+                                            {"status": "failed", "error_message": error}
+                                        ).eq("id", item_id).execute()
+                                    except Exception as update_error:
+                                        logger.error(
+                                            f"❌ Failed to update failure status for item {item_id}: {update_error}",
+                                            exc_info=True
+                                        )
+                                else:
+                                    # Transient failure - check retry count
+                                    try:
+                                        # Get current retry count
+                                        current_item = db.sb.client.table("scheduled_posts").select(
+                                            "retry_count"
+                                        ).eq("id", item_id).single().execute()
+                                        
+                                        retry_count = current_item.data.get("retry_count", 0) if current_item.data else 0
+                                        max_retries = 5  # Maximum retry attempts
+                                        
+                                        if retry_count >= max_retries:
+                                            logger.error(
+                                                f"❌ Max retries ({max_retries}) reached for Telegram post {item_id}. "
+                                                f"Marking as failed: {error}"
+                                            )
+                                            db.sb.client.table("scheduled_posts").update(
+                                                {
+                                                    "status": "failed",
+                                                    "error_message": f"Max retries exceeded: {error}",
+                                                    "retry_count": retry_count + 1
+                                                }
+                                            ).eq("id", item_id).execute()
+                                        else:
+                                            logger.warning(
+                                                f"⚠️ Transient failure posting to Telegram (attempt {retry_count + 1}/{max_retries}): {error}. "
+                                                f"Will retry later."
+                                            )
+                                            db.sb.client.table("scheduled_posts").update(
+                                                {
+                                                    "status": "retry",
+                                                    "retry_count": retry_count + 1,
+                                                    "error_message": error
+                                                }
+                                            ).eq("id", item_id).execute()
+                                    except Exception as retry_error:
+                                        logger.error(
+                                            f"❌ Failed to update retry status for item {item_id}: {retry_error}",
+                                            exc_info=True
+                                        )
                         except Exception as e:
                             logger.error(
-                                f"❌ Error posting item {item_id} to Telegram: {e}"
+                                f"❌ Exception posting item {item_id} to Telegram: {e}",
+                                exc_info=True
                             )
+                            # For exceptions, check retry count before marking as retry
                             try:
-                                db.sb.client.table("scheduled_posts").update(
-                                    {"status": "retry"}
-                                ).eq("id", item_id).execute()
-                            except Exception:
-                                pass
+                                current_item = db.sb.client.table("scheduled_posts").select(
+                                    "retry_count"
+                                ).eq("id", item_id).single().execute()
+                                
+                                retry_count = current_item.data.get("retry_count", 0) if current_item.data else 0
+                                max_retries = 5
+                                
+                                if retry_count >= max_retries:
+                                    logger.error(
+                                        f"❌ Max retries ({max_retries}) reached for Telegram post {item_id}. "
+                                        f"Marking as failed after exception: {e}"
+                                    )
+                                    db.sb.client.table("scheduled_posts").update(
+                                        {
+                                            "status": "failed",
+                                            "error_message": f"Max retries exceeded after exception: {str(e)}",
+                                            "retry_count": retry_count + 1
+                                        }
+                                    ).eq("id", item_id).execute()
+                                else:
+                                    db.sb.client.table("scheduled_posts").update(
+                                        {
+                                            "status": "retry",
+                                            "retry_count": retry_count + 1,
+                                            "error_message": f"Exception: {str(e)}"
+                                        }
+                                    ).eq("id", item_id).execute()
+                            except Exception as retry_error:
+                                logger.error(
+                                    f"❌ Failed to update retry status for item {item_id}: {retry_error}",
+                                    exc_info=True
+                                )
                         continue  # Skip webhook logic for telegram
 
                     elif platform == "twitter":
@@ -255,18 +386,25 @@ class PublisherWorker:
                                     db.sb.client.table("scheduled_posts").update(
                                         {"status": "retry"}
                                     ).eq("id", item_id).execute()
-                                except Exception:
-                                    pass
+                                except Exception as retry_error:
+                                    logger.error(
+                                        f"❌ Failed to update retry status for item {item_id}: {retry_error}",
+                                        exc_info=True
+                                    )
                         except Exception as e:
                             logger.error(
-                                f"❌ Error posting item {item_id} to Twitter: {e}"
+                                f"❌ Error posting item {item_id} to Twitter: {e}",
+                                exc_info=True
                             )
                             try:
                                 db.sb.client.table("scheduled_posts").update(
                                     {"status": "retry"}
                                 ).eq("id", item_id).execute()
-                            except Exception:
-                                pass
+                            except Exception as retry_error:
+                                logger.error(
+                                    f"❌ Failed to update retry status for item {item_id}: {retry_error}",
+                                    exc_info=True
+                                )
                         continue  # Skip webhook logic for twitter
 
                     elif platform == "threads":
@@ -299,21 +437,28 @@ class PublisherWorker:
                                     db.sb.client.table("scheduled_posts").update(
                                         {"status": "retry"}
                                     ).eq("id", item_id).execute()
-                                except Exception:
-                                    pass
+                                except Exception as retry_error:
+                                    logger.error(
+                                        f"❌ Failed to update retry status for item {item_id}: {retry_error}",
+                                        exc_info=True
+                                    )
                         except Exception as e:
                             logger.error(
-                                f"❌ Error posting item {item_id} to Threads: {e}"
+                                f"❌ Error posting item {item_id} to Threads: {e}",
+                                exc_info=True
                             )
                             try:
                                 db.sb.client.table("scheduled_posts").update(
                                     {"status": "retry"}
                                 ).eq("id", item_id).execute()
-                            except Exception:
-                                pass
+                            except Exception as retry_error:
+                                logger.error(
+                                    f"❌ Failed to update retry status for item {item_id}: {retry_error}",
+                                    exc_info=True
+                                )
                         continue  # Threads handled
             except Exception as e:
-                logger.error(f"❌ Error in publisher worker: {e}")
+                logger.error(f"❌ Error in publisher worker: {e}", exc_info=True)
             finally:
                 self._stop.wait(self.interval_seconds)
 

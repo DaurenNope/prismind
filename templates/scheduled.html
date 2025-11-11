@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+
+{% block extra_css %}
+<style>
+    .filters {
+        background: #1a1a1a;
+        padding: 15px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+        display: flex;
+        gap: 15px;
+        flex-wrap: wrap;
+    }
+    .filter-btn {
+        padding: 6px 12px;
+        background: #2a2a2a;
+        color: #e0e0e0;
+        border: 1px solid #3a3a3a;
+        border-radius: 4px;
+        text-decoration: none;
+        font-size: 13px;
+    }
+    .filter-btn.active {
+        background: #4a9eff;
+        border-color: #4a9eff;
+    }
+    .posts-grid {
+        display: grid;
+        gap: 15px;
+    }
+    .post-card {
+        background: #1a1a1a;
+        border: 1px solid #2a2a2a;
+        border-radius: 8px;
+        padding: 20px;
+    }
+    .post-content {
+        color: #c0c0c0;
+        font-size: 14px;
+        line-height: 1.8;
+        margin: 15px 0;
+        max-height: 200px;
+        overflow-y: auto;
+        white-space: pre-wrap;
+    }
+    .badge {
+        display: inline-block;
+        padding: 4px 10px;
+        border-radius: 4px;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        margin-right: 8px;
+    }
+    .badge-platform { background: #2a4a7c; color: #6b9bd1; }
+    .badge-language { background: #3a2a4a; color: #b69bd1; }
+    .empty-state {
+        text-align: center;
+        padding: 60px 20px;
+        color: #666;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="page-header">
+        <h1 class="page-title">Scheduled Posts</h1>
+        <p class="page-subtitle">{{stats.total_scheduled}} posts ready to publish</p>
+    </div>
+
+    <div class="filters">
+        <div>
+            <span style="color: #888; font-size: 14px; margin-right: 8px;">Platform:</span>
+            <a href="/scheduled" class="filter-btn {% if not platform_filter %}active{% endif %}">All</a>
+            <a href="/scheduled?platform=threads" class="filter-btn {% if platform_filter == 'threads' %}active{% endif %}">Threads</a>
+            <a href="/scheduled?platform=twitter" class="filter-btn {% if platform_filter == 'twitter' %}active{% endif %}">Twitter</a>
+        </div>
+        <div>
+            <span style="color: #888; font-size: 14px; margin-right: 8px;">Language:</span>
+            <a href="/scheduled?language=russian" class="filter-btn {% if language_filter == 'russian' %}active{% endif %}">Russian</a>
+            <a href="/scheduled?language=english" class="filter-btn {% if language_filter == 'english' %}active{% endif %}">English</a>
+        </div>
+    </div>
+
+    {% if posts %}
+    <div class="posts-grid">
+        {% for post in posts %}
+        <div class="post-card">
+            <div style="margin-bottom: 15px;">
+                <span class="badge badge-platform">{{post.platform}}</span>
+                <span class="badge badge-language">{{post.language}}</span>
+            </div>
+            <div class="post-content">{{post.rewritten_content}}</div>
+            <div style="color: #888; font-size: 13px; margin-top: 15px; padding-top: 15px; border-top: 1px solid #2a2a2a;">
+                <div style="color: #4a9eff; margin-bottom: 5px;">📅 {{post.scheduled_for[:19]}}</div>
+                <div>Priority: {{post.priority}} • {{post.reason[:60]}}...</div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <h2 style="font-size: 24px; margin-bottom: 10px;">No scheduled posts yet</h2>
+        <p>Start reviewing posts to schedule them</p>
+        <a href="/review" class="btn" style="margin-top: 20px;">Review Posts</a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

@@ -49,6 +49,47 @@ def render_publishing_analytics_tab():
     except Exception as e:
         st.error(f"Analytics unavailable: {e}")
 
+    st.markdown("---")
+    st.subheader("🧠 Recent Analyses (Supabase)")
+    try:
+        from src.database.manager import SupabaseManager
+        sm = SupabaseManager()
+        # Fetch latest analyzed posts
+        rows = (
+            sm.client
+            .table("posts")
+            .select("platform,post_id,url,author,author_handle,analyzed_at,value_score,quality_score,ai_summary,tags,analysis_model,time_sensitive,urgency_score,relevance_window")
+            .not_.is_("analyzed_at", "null")
+            .order("urgency_score", desc=True)
+            .order("analyzed_at", desc=True)
+            .limit(25)
+            .execute()
+            .data or []
+        )
+        if not rows:
+            st.info("No analyzed posts yet.")
+        else:
+            # Render compact table
+            table = []
+            for r in rows:
+                urgent_badge = "" if not r.get("time_sensitive") else f"🔥 {round(float(r.get('urgency_score') or 0)*100)}% ({r.get('relevance_window')})"
+                table.append({
+                    "platform": r.get("platform"),
+                    "post_id": r.get("post_id"),
+                    "analyzed_at": r.get("analyzed_at"),
+                    "urgent": urgent_badge,
+                    "value": r.get("value_score"),
+                    "quality": r.get("quality_score"),
+                    "model": r.get("analysis_model"),
+                    "author": r.get("author_handle") or r.get("author"),
+                    "summary": (r.get("ai_summary") or "")[:120] + ("..." if (r.get("ai_summary") and len(r.get("ai_summary"))>120) else ""),
+                    "tags": ", ".join(r.get("tags") or []) if isinstance(r.get("tags"), list) else (r.get("tags") or ""),
+                    "url": r.get("url"),
+                })
+            st.dataframe(table, use_container_width=True)
+    except Exception as e:
+        st.info(f"Recent analyses unavailable: {e}")
+
 import streamlit as st
 from datetime import datetime, timedelta, timezone
 

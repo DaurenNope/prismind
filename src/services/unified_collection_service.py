@@ -15,6 +15,7 @@ import time
 from datetime import datetime
 
 from src.pipeline.orchestrator import get_orchestrator
+from src.pipeline.auto_pipeline import AutoPipeline
 
 
 class CollectionStatus(str, Enum):
@@ -76,7 +77,15 @@ class UnifiedCollectionService:
         self._collecting: bool = False
         self._current_progress: Optional[CollectionProgress] = None
         self._orch = get_orchestrator()
-        self.SUPPORTED_PLATFORMS = ["twitter", "reddit", "threads"]
+        try:
+            auto = AutoPipeline()
+            self._auto_pipeline = auto if auto.enabled else None
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"⚠️ AutoPipeline initialization failed: {e}", exc_info=True)
+            self._auto_pipeline = None
+        self.SUPPORTED_PLATFORMS = ["twitter", "reddit", "threads", "github_trending", "telegram_channels", "discovery"]
 
     def get_supported_platforms(self):
         return list(self.SUPPORTED_PLATFORMS)
@@ -114,20 +123,25 @@ class UnifiedCollectionService:
             if progress_callback:
                 progress_callback(self._current_progress)
 
-            # basic retry-once behavior expected by tests
-            tries = 0
-            last_err: Optional[Exception] = None
-            count = 0
-            while tries < 2:
-                try:
-                    count = await self._collect_from_platform(platform, 50)
-                    last_err = None
-                    break
-                except Exception as e:  # allow injected failures in tests
-                    last_err = e
-                    tries += 1
-                    if tries >= 2:
-                        raise
+            # Retry logic with exponential backoff
+            from src.utils.retry_handler import retry_async
+            import logging
+            logger = logging.getLogger(__name__)
+            
+            try:
+                count = await retry_async(
+                    self._collect_from_platform,
+                    platform,
+                    50,  # limit
+                    max_attempts=3,
+                    base_delay=2.0,
+                    max_delay=30.0,
+                    backoff_factor=2.0,
+                    exceptions=(Exception,)
+                )
+            except Exception as e:
+                logger.error(f"❌ Collection failed after retries for {platform}: {e}", exc_info=True)
+                raise
 
             self._current_progress.posts_collected = int(count or 0)
             self._current_progress.status = CollectionStatus.COMPLETED
@@ -137,12 +151,25 @@ class UnifiedCollectionService:
             if progress_callback:
                 progress_callback(self._current_progress)
 
-            return CollectionResult(
+            result = CollectionResult(
                 platform=platform,
                 posts_collected=self._current_progress.posts_collected,
                 success=True,
                 duration_seconds=max(0.0, time.time() - started),
             )
+            if self._auto_pipeline and self._current_progress.posts_collected:
+                try:
+                    automation_summary = await self._auto_pipeline.handle_collection(
+                        platform, self._current_progress.posts_collected
+                    )
+                    if automation_summary:
+                        result.metadata["automation"] = automation_summary
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"⚠️ Automation pipeline failed for {platform}: {e}", exc_info=True)
+                    # Continue without automation summary - collection was successful
+            return result
         except Exception as e:
             self._current_progress.status = CollectionStatus.FAILED
             self._current_progress.error = str(e)

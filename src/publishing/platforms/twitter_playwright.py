@@ -6,6 +6,7 @@ Like mimesis autoposter - uses Playwright primarily
 import os
 import asyncio
 import json
+import logging
 from pathlib import Path
 from typing import Dict, Optional
 from datetime import datetime
@@ -14,6 +15,8 @@ from playwright.async_api import async_playwright
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
+
+logger = logging.getLogger(__name__)
 
 
 async def post_to_twitter_playwright(content: str) -> Dict:
@@ -82,7 +85,8 @@ async def post_to_twitter_playwright(content: str) -> Dict:
                 '[data-testid="tweetTextarea_0"], [data-testid="tweetTextarea_1"], [contenteditable="true"][role="textbox"]',
                 timeout=10000
             )
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Compose textarea not found, attempting login: {e}")
             # Not logged in - try login
             if password:
                 await page.goto("https://twitter.com/i/flow/login", wait_until="domcontentloaded")
@@ -117,8 +121,8 @@ async def post_to_twitter_playwright(content: str) -> Dict:
                                 "error": "Twitter authentication blocked - rate limiting detected. Please wait 15-30 minutes and try again."
                             }
                     except Exception as e:
-                        logger.debug(f"Rate limit check failed: {e}")
-                        pass  # Continue if check fails
+                        logger.debug(f"Rate limit check failed: {e}", exc_info=True)
+                        # Continue if check fails - non-critical
                         
                 except Exception as e:
                     error_msg = str(e)
@@ -148,9 +152,10 @@ async def post_to_twitter_playwright(content: str) -> Dict:
                                     json.dump(cookies, f, indent=2)
                                 print(f"✅ Saved {len(cookies)} cookies after password login to {cookie_file}")
                         except Exception as e:
-                            print(f"⚠️ Failed to save cookies after login: {e}")
-                except Exception:
-                    return {"success": False, "error": "Could not find compose textarea after login"}
+                            logger.warning(f"⚠️ Failed to save cookies after login: {e}", exc_info=True)
+                except Exception as e:
+                    logger.error(f"❌ Could not find compose textarea after login: {e}", exc_info=True)
+                    return {"success": False, "error": f"Could not find compose textarea after login: {e}"}
             else:
                 return {"success": False, "error": "Not logged in and no password provided"}
         
@@ -192,8 +197,9 @@ async def post_to_twitter_playwright(content: str) -> Dict:
                         if href:
                             tweet_id = href.split("/status/")[-1].split("?")[0]
                             tweet_url = f"https://twitter.com{href}"
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Failed to save cookies: {e}", exc_info=True)
+                # Continue - cookie save is non-critical
         
         # If we couldn't get URL, use current URL or generate synthetic ID
         if not tweet_url:
@@ -232,7 +238,7 @@ async def post_to_twitter_playwright(content: str) -> Dict:
                         json.dump(cookies, f, indent=2)
                     print(f"✅ Saved {len(cookies)} cookies even after error")
         except Exception as cookie_error:
-            print(f"⚠️ Failed to save cookies on error: {cookie_error}")
+            logger.warning(f"⚠️ Failed to save cookies on error: {cookie_error}", exc_info=True)
         
         return {
             "success": False,
@@ -244,20 +250,20 @@ async def post_to_twitter_playwright(content: str) -> Dict:
             try:
                 await page.close()
             except Exception as e:
-                logger.debug(f"Page close failed: {e}")
-                pass
+                logger.debug(f"Page close failed: {e}", exc_info=True)
+                # Continue - cleanup failures are non-critical
         if browser:
             try:
                 await browser.close()
             except Exception as e:
-                logger.debug(f"Browser close failed: {e}")
-                pass
+                logger.debug(f"Browser close failed: {e}", exc_info=True)
+                # Continue - cleanup failures are non-critical
         if playwright:
             try:
                 await playwright.stop()
             except Exception as e:
-                logger.debug(f"Playwright stop failed: {e}")
-                pass
+                logger.debug(f"Playwright stop failed: {e}", exc_info=True)
+                # Continue - cleanup failures are non-critical
 
 
 def post_to_twitter_direct(content: str) -> Dict:

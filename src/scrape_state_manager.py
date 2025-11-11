@@ -57,15 +57,26 @@ class ScrapeStateManager:
         success: bool = True,
         after_parameter: str = None,
     ):
-        """Update scrape state for a platform"""
-        self.db.update_scrape_state(
-            platform,
-            last_post_id,
-            last_post_url,
-            posts_scraped,
-            success,
-            after_parameter,
-        )
+        """Update scrape state for a platform with improved error handling"""
+        try:
+            # Normalize post ID before updating state
+            normalized_id = self.normalize_post_id(last_post_id, platform) if last_post_id else None
+            
+            self.db.update_scrape_state(
+                platform,
+                normalized_id,
+                last_post_url,
+                posts_scraped,
+                success,
+                after_parameter,
+            )
+            
+            status = "✅ SUCCESS" if success else "❌ FAILED"
+            self.logger.info(f"{status} Updated {platform} state: {posts_scraped} posts, last_id: {normalized_id}")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to update scrape state for {platform}: {e}")
+            # Don't raise exception - collection should continue even if state tracking fails
 
     def is_post_scraped(self, post_id: str, platform: str) -> bool:
         """Check if a post has been scraped"""
@@ -83,8 +94,15 @@ class ScrapeStateManager:
         title: str = None,
         author: str = None,
     ):
-        """Mark a post as scraped"""
-        self.db.mark_post_scraped(post_id, platform, url, title, author)
+        """Mark a post as scraped with improved error handling"""
+        try:
+            # Normalize post ID before marking
+            normalized_id = self.normalize_post_id(post_id, platform)
+            self.db.mark_post_scraped(normalized_id, platform, url, title, author)
+            self.logger.debug(f"✅ Marked post {normalized_id} as scraped for {platform}")
+        except Exception as e:
+            self.logger.error(f"❌ Failed to mark post {post_id} as scraped: {e}")
+            # Don't raise exception - collection should continue even if state tracking fails
 
     def get_scraped_posts_count(self, platform: str) -> int:
         """Get count of scraped posts for a platform"""
@@ -135,22 +153,28 @@ class ScrapeStateManager:
         return post_id
 
     def sync_state_from_main_db(self, force: bool = False):
-        """Sync state database from main posts database"""
+        """Sync state database from main posts database with improved error handling"""
         import sqlite3
-
+        
         try:
             # Check if we need to sync (silent check)
             if not force:
                 stats = self.get_scraping_stats()
                 if stats.get("total_posts", 0) > 0:
+                    self.logger.debug("🔄 State already synced, skipping (use force=True to override)")
                     return  # Already synced, skip silently
-
-            # Syncing state from main database (silent operation)
-
+            
+            self.logger.info("🔄 Syncing state from main database...")
+            
+            # Check if main database exists
+            if not Path(self.main_db_path).exists():
+                self.logger.warning(f"⚠️ Main database not found at {self.main_db_path}")
+                return
+            
             # Connect to main database
             main_conn = sqlite3.connect(self.main_db_path)
             main_cursor = main_conn.cursor()
-
+            
             # Get all posts from main database
             main_cursor.execute("""
                 SELECT post_id, platform, url, title, author, created_at
@@ -158,23 +182,25 @@ class ScrapeStateManager:
                 WHERE post_id IS NOT NULL AND post_id != ''
                 ORDER BY created_at ASC
             """)
-
+            
             posts = main_cursor.fetchall()
             main_conn.close()
-
+            
             if not posts:
-                return  # No posts to sync
-
+                self.logger.info("📭 No posts found in main database to sync")
+                return
+            
             # Track posts by platform for state updates
             platform_posts = {}
-
+            
             # Mark each post as scraped
             synced_count = 0
+            failed_count = 0
             for post_id, platform, url, title, author, created_at in posts:
                 try:
                     # Normalize the post ID
                     normalized_id = self.normalize_post_id(post_id, platform)
-
+                    
                     # Mark post as scraped
                     self.mark_post_scraped(
                         post_id=normalized_id,
@@ -183,22 +209,24 @@ class ScrapeStateManager:
                         title=title,
                         author=author,
                     )
-
+                    
                     # Track for platform state update
                     if platform not in platform_posts:
                         platform_posts[platform] = []
                     platform_posts[platform].append((normalized_id, url, created_at))
-
+                    
                     synced_count += 1
-                except Exception:
+                except Exception as e:
+                    failed_count += 1
+                    self.logger.debug(f"⚠️ Failed to sync post {post_id}: {e}")
                     continue  # Skip failed posts silently
-
+            
             # Update platform states with the most recent post from each
             for platform, posts_list in platform_posts.items():
                 # Sort by created_at descending to get the most recent
                 posts_list.sort(key=lambda x: x[2] if x[2] else "", reverse=True)
                 last_post_id, last_post_url, _ = posts_list[0]
-
+                
                 self.update_scrape_state(
                     platform=platform,
                     last_post_id=last_post_id,
@@ -206,12 +234,12 @@ class ScrapeStateManager:
                     posts_scraped=len(posts_list),
                     success=True,
                 )
-
-            # Sync completed silently
-
-        except Exception:
+            
+            self.logger.info(f"✅ State sync completed: {synced_count} synced, {failed_count} failed")
+            
+        except Exception as e:
+            self.logger.error(f"❌ State sync failed: {e}")
             # Sync failure is not critical - collection will continue
-            pass
 
     def validate_state(self, platform: str) -> Dict[str, Any]:
         """Validate state for a platform and return status"""

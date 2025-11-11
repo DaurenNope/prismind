@@ -2,10 +2,14 @@
 Analysis Tab - AI Analysis with Quality Filtering
 """
 
+import asyncio
 import streamlit as st
 from src.services.new_database_manager import NewDatabaseManager
 from src.services.analysis_runner import analyze_recent_posts
 from src.utils.post_validator import PostValidator
+from src.services.analysis.post_analyzer import analyze_and_store_post
+from src.storage.db import get_storage
+from src.services.analysis_lock import analysis_lock_guard
 
 
 def render_analysis_tab():
@@ -13,6 +17,81 @@ def render_analysis_tab():
 
     st.subheader("🤖 AI Analysis & Quality Control")
     st.markdown("Analyze unanalyzed posts and filter out low quality content")
+
+    # Styling for analyzed post previews
+    st.markdown(
+        """
+        <style>
+        .analysis-preview {
+            background-color: #0f172a;
+            border: 1px solid #1f2937;
+            border-radius: 8px;
+            padding: 14px 16px;
+            margin: 10px 0 18px 0;
+        }
+        .analysis-preview .meta {
+            color: #cbd5e1;
+            font-size: 0.9rem;
+            margin-bottom: 8px;
+        }
+        .analysis-preview .section-title {
+            color: #94a3b8;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-top: 6px;
+            margin-bottom: 4px;
+        }
+        .analysis-preview .content {
+            color: #e5e7eb;
+            line-height: 1.5;
+            white-space: pre-wrap;
+        }
+        .analysis-preview .tags {
+            color: #a1a1aa;
+            font-size: 0.8rem;
+            margin-top: 6px;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    def _escape_html(text: str) -> str:
+        if not text:
+            return ""
+        return (
+            text.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("\n", "<br/>")
+        )
+
+    # Show recent builder updates influencing analysis
+    try:
+        from src.utils.diary_storage import DiaryStorage
+        from src.core.discovery.profile_manager import ProfileManager
+        ds = DiaryStorage()
+        pm = None
+        try:
+            pm = ProfileManager()
+            active_profile_id = (pm.get_active_profile() or {}).get("id")
+        except Exception:
+            active_profile_id = None
+        entries = ds.load_entries(profile_key=active_profile_id, limit=2)
+        if entries:
+            with st.expander("📓 Recent builder updates (affecting analysis)", expanded=False):
+                for e in entries:
+                    ts = (e.get("timestamp") or "")[:19].replace("T", " ")
+                    shipped = (e.get("shipped") or "").strip()
+                    focus = (e.get("focus") or "").strip()
+                    st.caption(f"{ts} • {active_profile_id or (e.get('profile_key') or 'all')}")
+                    st.write(shipped)
+                    if focus:
+                        st.caption(f"focus: {focus}")
+                    st.divider()
+    except Exception:
+        pass
 
     db = NewDatabaseManager()
 
@@ -25,23 +104,48 @@ def render_analysis_tab():
         platform = p.get("platform", "unknown")
         by_platform[platform] = by_platform.get(platform, 0) + 1
 
-    # Display stats
+    # Display stats with modern gradient cards
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
-        st.metric("Total Unanalyzed", len(unanalyzed))
+        st.markdown(f"""
+        <div style="background-color: #f9fafb; border: 1px solid #e5e7eb;
+                    padding: 1.5rem; border-radius: 12px; color: #111827; text-align: center;
+                    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+            <div style="font-size: 2rem; font-weight: 700; margin-bottom: 0.5rem; color: #111827;">{len(unanalyzed)}</div>
+            <div style="font-size: 0.875rem; color: #6b7280;">Total Unanalyzed</div>
+        </div>
+        """, unsafe_allow_html=True)
 
     with col2:
         twitter_count = by_platform.get("twitter", 0)
-        st.metric("Twitter", twitter_count)
+        st.markdown(f"""
+        <div style="background-color: #f9fafb; border: 1px solid #e5e7eb;
+                    padding: 1.5rem; border-radius: 8px; text-align: center;">
+            <div style="font-size: 2rem; font-weight: 700; margin-bottom: 0.5rem; color: #111827;">{twitter_count}</div>
+            <div style="font-size: 0.875rem; color: #6b7280;">🐦 Twitter</div>
+        </div>
+        """, unsafe_allow_html=True)
 
     with col3:
         threads_count = by_platform.get("threads", 0)
-        st.metric("Threads", threads_count)
+        st.markdown(f"""
+        <div style="background-color: #f9fafb; border: 1px solid #e5e7eb;
+                    padding: 1.5rem; border-radius: 8px; text-align: center;">
+            <div style="font-size: 2rem; font-weight: 700; margin-bottom: 0.5rem; color: #111827;">{threads_count}</div>
+            <div style="font-size: 0.875rem; color: #6b7280;">🧵 Threads</div>
+        </div>
+        """, unsafe_allow_html=True)
 
     with col4:
         reddit_count = by_platform.get("reddit", 0)
-        st.metric("Reddit", reddit_count)
+        st.markdown(f"""
+        <div style="background-color: #f9fafb; border: 1px solid #e5e7eb;
+                    padding: 1.5rem; border-radius: 8px; text-align: center;">
+            <div style="font-size: 2rem; font-weight: 700; margin-bottom: 0.5rem; color: #111827;">{reddit_count}</div>
+            <div style="font-size: 0.875rem; color: #6b7280;">📱 Reddit</div>
+        </div>
+        """, unsafe_allow_html=True)
 
     st.markdown("---")
 
@@ -77,105 +181,113 @@ def render_analysis_tab():
             log_placeholder = st.empty()
 
             try:
-                # Show initial status
-                progress_placeholder.progress(0)
-                status_placeholder.info(
-                    f"🔄 Starting analysis of {batch_size} posts..."
-                )
+                with analysis_lock_guard() as locked:
+                    if not locked:
+                        status_placeholder.warning("Analysis is already running elsewhere. Try again shortly.")
+                        return
 
-                # Create a log container
-                log_lines = []
-
-                def add_log(message):
-                    log_lines.append(f"{message}")
-                    log_placeholder.text_area(
-                        "📋 Live Log",
-                        "\n".join(log_lines[-20:]),  # Show last 20 lines
-                        height=200,
+                    # Show initial status
+                    progress_placeholder.progress(0)
+                    status_placeholder.info(
+                        f"🔄 Starting analysis of {batch_size} posts..."
                     )
 
-                add_log(f"Starting analysis...")
-                add_log(f"Platform filter: {platform_filter or 'All'}")
-                add_log(f"Batch size: {batch_size}")
-                add_log("")
+                    # Create a log container
+                    log_lines = []
 
-                # Get posts to analyze
-                posts_to_analyze = db.get_unanalyzed_posts(
-                    limit=batch_size,
-                    platforms=[platform_filter] if platform_filter else None,
-                )
-                add_log(f"Found {len(posts_to_analyze)} unanalyzed posts")
-                add_log("")
-
-                if not posts_to_analyze:
-                    status_placeholder.warning("No posts to analyze")
-                    return
-
-                # Analyze with progress
-                successful = 0
-                failed = 0
-                errors = []
-
-                for i, post in enumerate(posts_to_analyze, 1):
-                    try:
-                        # Update progress
-                        progress = i / len(posts_to_analyze)
-                        progress_placeholder.progress(progress)
-                        status_placeholder.info(
-                            f"🤖 Analyzing post {i}/{len(posts_to_analyze)}: {post.get('author', 'Unknown')[:30]}..."
+                    def add_log(message):
+                        log_lines.append(f"{message}")
+                        log_placeholder.text_area(
+                            "📋 Live Log",
+                            "\n".join(log_lines[-20:]),  # Show last 20 lines
+                            height=200,
                         )
 
-                        add_log(
-                            f"[{i}/{len(posts_to_analyze)}] Analyzing: {post.get('platform')} - {post.get('author', 'Unknown')[:30]}"
-                        )
-
-                        # Run analysis on single post using orchestrator
-                        from src.pipeline.orchestrator import get_orchestrator
-                        import asyncio
-                        
-                        orch = get_orchestrator()
-                        # Analyze this specific post (orchestrator will get unanalyzed posts)
-                        analyzed_count = asyncio.run(orch.analyze_batch(limit=1))
-                        
-                        # Check if analysis succeeded
-                        if analyzed_count > 0:
-                            successful += 1
-                            add_log(f"    ✅ Success")
-                        else:
-                            failed += 1
-                            add_log(f"    ❌ Failed (post may already be analyzed)")
-                            errors.append(f"Post {post.get('post_id', 'unknown')} analysis failed")
-
-                    except Exception as e:
-                        failed += 1
-                        add_log(f"    ❌ Error: {str(e)[:50]}")
-                        errors.append(str(e))
-
-                # Final status
-                progress_placeholder.progress(1.0)
-
-                if successful > 0:
-                    status_placeholder.success(
-                        f"✅ Complete! Analyzed {successful}/{len(posts_to_analyze)} posts"
-                    )
+                    add_log(f"Starting analysis...")
+                    add_log(f"Platform filter: {platform_filter or 'All'}")
+                    add_log(f"Batch size: {batch_size}")
                     add_log("")
-                    add_log("=" * 50)
-                    add_log(f"COMPLETE: {successful} successful, {failed} failed")
-                else:
-                    status_placeholder.warning(
-                        f"⚠️ No posts analyzed successfully. {failed} failed."
+
+                    # Get posts to analyze
+                    posts_to_analyze = db.get_unanalyzed_posts(
+                        limit=batch_size,
+                        platforms=[platform_filter] if platform_filter else None,
                     )
+                    add_log(f"Found {len(posts_to_analyze)} unanalyzed posts")
+                    add_log("")
 
-                if errors:
-                    with st.expander("View Errors"):
-                        for error in errors[:10]:
-                            st.text(error)
+                    if not posts_to_analyze:
+                        status_placeholder.warning("No posts to analyze")
+                        return
 
-                # Wait a bit so user can see final status
-                import time
+                    # Analyze with progress
+                    successful = 0
+                    failed = 0
+                    errors = []
 
-                time.sleep(2)
-                st.rerun()
+                    storage = get_storage()
+                    supabase_adapter = getattr(storage, "_supabase", None)
+
+                    for i, post in enumerate(posts_to_analyze, 1):
+                        try:
+                            # Update progress
+                            progress = i / len(posts_to_analyze)
+                            progress_placeholder.progress(progress)
+                            status_placeholder.info(
+                                f"🤖 Analyzing post {i}/{len(posts_to_analyze)}: {post.get('author', 'Unknown')[:30]}..."
+                            )
+
+                            add_log(
+                                f"[{i}/{len(posts_to_analyze)}] Analyzing: {post.get('platform')} - {post.get('author', 'Unknown')[:30]}"
+                            )
+
+                            # Run analysis on this specific post
+                            analyzed_success = asyncio.run(
+                                analyze_and_store_post(
+                                    db,
+                                    post,
+                                    supabase_manager=supabase_adapter,
+                                )
+                            )
+
+                            if analyzed_success:
+                                successful += 1
+                                add_log(f"    ✅ Success")
+                            else:
+                                failed += 1
+                                add_log(f"    ❌ Failed (post may already be analyzed)")
+                                errors.append(f"Post {post.get('post_id', 'unknown')} analysis failed")
+
+                        except Exception as e:
+                            failed += 1
+                            add_log(f"    ❌ Error: {str(e)[:50]}")
+                            errors.append(str(e))
+
+                    # Final status
+                    progress_placeholder.progress(1.0)
+
+                    if successful > 0:
+                        status_placeholder.success(
+                            f"✅ Complete! Analyzed {successful}/{len(posts_to_analyze)} posts"
+                        )
+                        add_log("")
+                        add_log("=" * 50)
+                        add_log(f"COMPLETE: {successful} successful, {failed} failed")
+                    else:
+                        status_placeholder.warning(
+                            f"⚠️ No posts analyzed successfully. {failed} failed."
+                        )
+
+                    if errors:
+                        with st.expander("View Errors"):
+                            for error in errors[:10]:
+                                st.text(error)
+
+                    # Wait a bit so user can see final status
+                    import time
+
+                    time.sleep(2)
+                    st.rerun()
 
             except Exception as e:
                 status_placeholder.error(f"Analysis failed: {e}")
@@ -280,27 +392,33 @@ def render_analysis_tab():
         st.write(f"Showing {min(10, len(analyzed))} of {len(analyzed)} analyzed posts")
 
         for i, post in enumerate(analyzed[:10]):
-            with st.expander(
-                f"{i + 1}. {post.get('author', 'Unknown')} - {post.get('platform', 'unknown')}"
-            ):
-                st.markdown(f"**Content:** {post.get('content', '')[:200]}...")
+            author = post.get("author", "Unknown") or "Unknown"
+            platform = post.get("platform", "unknown") or "unknown"
+            created_at = (post.get("created_at") or "")[:19]
+            post_id = post.get("post_id") or ""
+            original = post.get("content") or ""
+            summary_raw = post.get("ai_summary") or ""
+            summary_clean = " ".join(summary_raw.split())
+            tags = post.get("key_concepts") or []
 
-                if post.get("ai_summary"):
-                    st.markdown(f"**AI Summary:** {post.get('ai_summary')}")
+            quality = post.get("content_quality_score", 0)
+            sentiment = post.get("sentiment", "unknown")
 
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    score = post.get("content_quality_score", 0)
-                    st.metric("Quality Score", f"{score}/10")
-                with col2:
-                    sentiment = post.get("sentiment", "unknown")
-                    st.metric("Sentiment", sentiment)
-                with col3:
-                    created = post.get("created_at", "")[:10]
-                    st.metric("Date", created)
-
-                if post.get("key_concepts"):
-                    st.markdown(f"**Key Concepts:** {post.get('key_concepts')}")
+            st.markdown(
+                f"""
+                <div class="analysis-preview">
+                    <div class="meta"><b>{post_id}</b> &nbsp;|&nbsp; {author} &nbsp;|&nbsp; {platform.title()} &nbsp;|&nbsp; {created_at}</div>
+                    <div class="section-title">Original Content</div>
+                    <div class="content">{_escape_html(original)}</div>
+                    <div class="section-title">AI Summary</div>
+                    <div class="content">{_escape_html(summary_clean)}</div>
+                    <div class="section-title">Metrics</div>
+                    <div class="content">Quality Score: {quality}/10 &nbsp;&nbsp; Sentiment: {sentiment}</div>
+                    {"<div class='section-title'>Key Concepts</div><div class='content'>" + ", ".join(tags) + "</div>" if tags else ""}
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
     else:
         st.info("No analyzed posts yet. Run analysis to see results here.")
 

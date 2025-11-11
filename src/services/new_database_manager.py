@@ -22,7 +22,7 @@ class NewDatabaseManager:
         self.db_operations = DatabaseOperations(db_path)
         self.db_analysis = DatabaseAnalysis(db_path)
         self.db_path = db_path
-        logger.info("🗄️ Database Manager initialized")
+        logger.debug("🗄️ Database Manager initialized")
 
     # Basic Operations
     def get_all_posts(self, include_deleted: bool = False) -> List[Dict]:
@@ -186,3 +186,24 @@ def get_database_manager(db_path: str = "prismind.db") -> NewDatabaseManager:
     if _database_manager_instance is None:
         _database_manager_instance = NewDatabaseManager(db_path)
     return _database_manager_instance
+
+    # GitHub and Telegram methods for unified collection
+    def get_github_trending_repos(self, limit: int = 100) -> List[Dict]:
+        """Get GitHub trending repositories"""
+        try:
+            from src.storage.db import get_storage
+            storage = get_storage()
+            return storage.get_github_trending_repos(limit)
+        except Exception as e:
+            logger.error(f"Failed to get GitHub repos: {e}")
+            return []
+
+    def get_telegram_messages(self, limit: int = 100) -> List[Dict]:
+        """Get Telegram messages"""
+        try:
+            from src.storage.db import get_storage
+            storage = get_storage()
+            return storage.get_telegram_messages(limit)
+        except Exception as e:
+            logger.error(f"Failed to get Telegram messages: {e}")
+            return []

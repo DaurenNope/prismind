@@ -1,0 +1,93 @@
+{
+  "profile_key": "qronoya",
+  "display_name": "Qronoya",
+  "description": "Technical analyst and developer focusing on AI, tools, and industry trends",
+
+  "platforms": {
+    "threads": {
+      "enabled": true,
+      "language": "ru",
+      "post_frequency": "daily",
+      "content_types": ["tech_news", "tool_review", "dev_insight", "ai_discussion"],
+      "format_preferences": {
+        "max_length": 500,
+        "use_line_breaks": true,
+        "use_emojis": false,
+        "use_hashtags": false
+      }
+    },
+    "twitter": {
+      "enabled": true,
+      "language": "en",
+      "post_frequency": "2-3x_daily",
+      "content_types": ["breaking_news", "insight_thread", "tool_comparison", "quick_take"],
+      "format_preferences": {
+        "max_length": 280,
+        "use_threads": true,
+        "use_emojis": false,
+        "use_hashtags": false,
+        "thread_max_tweets": 5
+      }
+    },
+    "telegram": {
+      "enabled": true,
+      "language": "ru",
+      "post_frequency": "weekly",
+      "content_types": ["deep_analysis", "tutorial_guide", "weekly_roundup", "technical_deepdive"],
+      "format_preferences": {
+        "max_length": 4000,
+        "use_markdown": true,
+        "use_emojis": false,
+        "use_formatting": true
+      }
+    }
+  },
+
+  "content_routing": {
+    "same-day": {
+      "platforms": ["twitter", "threads", "telegram"],
+      "priority_order": ["twitter", "threads", "telegram"]
+    },
+    "24-72h": {
+      "platforms": ["threads", "twitter"],
+      "priority_order": ["threads", "twitter"]
+    },
+    "this-week": {
+      "platforms": ["telegram", "threads"],
+      "priority_order": ["telegram", "threads"]
+    },
+    "evergreen": {
+      "platforms": ["telegram"],
+      "priority_order": ["telegram"]
+    }
+  },
+
+  "source_preferences": {
+    "reddit": {
+      "include_comments": true,
+      "min_comment_score": 10,
+      "max_comments": 5
+    },
+    "twitter": {
+      "include_thread_context": true
+    },
+    "hackernews": {
+      "include_discussion": true,
+      "min_discussion_points": 3
+    }
+  },
+
+  "voice_guidelines": {
+    "general": "Analytical, technical, accessible. Thinks out loud, shares insights. No hype, focus on practical impact.",
+    "russian": "\"Думаю вслух\", аналитический стиль, технически грамотно но доступно",
+    "english": "Direct technical analysis, no marketing speak, practical focus"
+  },
+
+  "prompt_templates": {
+    "threads_ru_tech_news": "Ты — {profile_name}, технический аналитик.\n\nЗАДАЧА: Перепиши эту новость для Threads на русском языке.\n\nИСХОДНЫЙ МАТЕРИАЛ:\n{source_content}\n\nКОНТЕКСТ:\n- Категория: {category}\n- Ключевые темы: {topics}\n\nТВОЙ СТИЛЬ ({profile_name}):\n{voice_russian}\n- Пишешь на русском\n- Аналитически, но доступно\n- Добавляешь контекст: почему это важно\n- Без эмодзи и хештегов\n\nФОРМАТ THREADS:\n- Максимум 500 символов\n- Частые переносы строк (\\n\\n) для читаемости\n- Структура: Новость → Анализ → Вывод\n\nВАЖНО:\n- НЕ пересказывай, АНАЛИЗИРУЙ\n- Добавь контекст и значение для индустрии\n- Используй переносы строк\n\nНапиши пост:",
+
+    "twitter_en_breaking_news": "You are {profile_name}, a technical analyst.\n\nTASK: Rewrite this breaking news for Twitter in English.\n\nSOURCE:\n{source_content}\n\nCONTEXT:\n- Category: {category}\n- Topics: {topics}\n\nYOUR STYLE ({profile_name}):\n{voice_english}\n- Technical but accessible\n- Punchy, direct\n- Focus on IMPACT\n\nTWITTER FORMAT:\n- Max 280 characters (STRICT)\n- Single tweet\n- No emojis, no hashtags\n- Structure: News → Why it matters\n\nCRITICAL:\n- MUST be under 280 characters\n- Focus on impact and insight\n\nWrite the tweet:",
+
+    "telegram_ru_deep_analysis": "Ты — {profile_name}, технический аналитик.\n\nЗАДАЧА: Напиши подробный анализ для Telegram-канала на русском.\n\nИСХОДНЫЙ МАТЕРИАЛ:\n{source_content}\n\nКОНТЕКСТ:\n- Категория: {category}\n- Ключевые темы: {topics}\n- Основные концепции: {key_concepts}\n\nТВОЙ СТИЛЬ ({profile_name}):\n{voice_russian}\n- Глубокий технический анализ\n- Структурированный текст\n- Используй форматирование Markdown\n\nФОРМАТ TELEGRAM:\n- До 4000 символов\n- Используй **жирный**, *курсив*, `код`\n- Частые переносы строк (\\n\\n)\n- Структура:\n  1. Суть (2-3 предложения)\n  2. Детальный анализ с контекстом\n  3. Практическое значение\n  4. Выводы\n\nВАЖНО:\n- Добавь глубину: почему, как, что дальше\n- Примеры и сравнения\n- Используй **форматирование**\n\nНапиши анализ:"
+  }
+}

@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 from src.utils.config import get_config
 from src.storage.db import get_storage
 from src.utils.logging import get_logger
+from src.services.analysis_lock import acquire_analysis_lock, release_analysis_lock
 from src.scrape_state_manager import ScrapeStateManager
 
 logger = get_logger(__name__)
@@ -36,7 +37,7 @@ class Orchestrator:
         self, platforms: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         # Default to bookmark platforms only; RSS discovery is separate
-        plat = platforms or ["twitter", "reddit", "threads"]
+        plat = platforms or ["twitter", "reddit", "threads", "github_trending", "telegram_channels", "discovery"]
         if not self.config.flags.get("enable_threads"):
             plat = [p for p in plat if p != "threads"]
 
@@ -62,15 +63,16 @@ class Orchestrator:
                 try:
                     from src.database.database_agent import DatabaseAgent
                     DatabaseAgent().record_collection_result(name, count, success=True)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Failed to record collection result for {name}: {e}")
             except Exception as exc:
                 results["errors"].append(f"{name}: {exc}")
+                logger.warning(f"Collection failed for {name}: {exc}")
                 try:
                     from src.database.database_agent import DatabaseAgent
                     DatabaseAgent().record_collection_result(name, 0, success=False, failure_reason=str(exc)[:200])
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Failed to record collection failure for {name}: {e}")
 
         # Bounded concurrency
         semaphore = asyncio.Semaphore(3)
@@ -115,7 +117,8 @@ class Orchestrator:
             from src.database.manager import SupabaseManager
 
             supabase_manager = SupabaseManager()
-        except Exception:
+        except Exception as e:
+            logger.debug(f"SupabaseManager not available for {platform}: {e}")
             supabase_manager = None
 
         # Get existing IDs and URLs to avoid duplicates (Supabase-first, no local fallback to avoid phantom duplicates)
@@ -148,9 +151,9 @@ class Orchestrator:
                             existing_ids.add(pid)
                     if url:
                         existing_urls.add(url)
-            except Exception:
+            except Exception as e:
                 # keep sets empty if Supabase unavailable to avoid false duplicates
-                pass
+                logger.debug(f"Could not fetch existing IDs/URLs for {platform}: {e}")
 
         if platform == "twitter":
             from src.services.collection.platform_collectors import (
@@ -166,8 +169,8 @@ class Orchestrator:
             try:
                 from src.database.database_agent import DatabaseAgent
                 DatabaseAgent().record_collection_result(platform, count, success=True)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Failed to record Twitter collection result: {e}")
             return count
         if platform == "reddit":
             from src.services.collection.platform_collectors import (
@@ -183,8 +186,8 @@ class Orchestrator:
             try:
                 from src.database.database_agent import DatabaseAgent
                 DatabaseAgent().record_collection_result(platform, count, success=True)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Failed to record Reddit collection result: {e}")
             return count
         if platform == "threads":
             from src.services.collection.platform_collectors import (
@@ -202,13 +205,13 @@ class Orchestrator:
                 try:
                     from src.services.collection.platform_collectors import analyze_threads_posts
                     await analyze_threads_posts(shim_db, supabase_manager)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Threads post-analysis failed: {e}")
             try:
                 from src.database.database_agent import DatabaseAgent
                 DatabaseAgent().record_collection_result(platform, count, success=True)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Failed to record Threads collection result: {e}")
             return count
         if platform == "rss":
             # RSS discovery is separate from bookmarks collection
@@ -219,7 +222,11 @@ class Orchestrator:
             if not self.config.flags.get("enable_github_trending"):
                 return 0
             try:
-                from scripts.github_trending_scraper import scrape_trending
+                try:
+                    from scripts.github_trending_scraper import scrape_trending
+                except Exception as ie:
+                    logger.warning(f"GitHub trending disabled (scraper unavailable): {ie}")
+                    return 0
                 from datetime import datetime
 
                 logger.info("Collecting GitHub trending repositories...")
@@ -252,7 +259,7 @@ class Orchestrator:
                 )
                 return saved_count
             except Exception as e:
-                logger.error(f"GitHub trending collection failed: {e}")
+                logger.warning(f"GitHub trending collection failed: {e}")
                 return 0
         if platform == "telegram_channels":
             if not self.config.flags.get("enable_telegram_channels"):
@@ -364,10 +371,12 @@ class Orchestrator:
             except Exception as e:
                 logger.error(f"Telegram channels collection failed: {e}")
                 return 0
+        if platform == "discovery":
+            return await self.collect_discovery()
         raise ValueError(f"Unsupported platform: {platform}")
 
     async def autonomous_discover(self) -> Dict[str, Any]:
-        from src.services.autonomous_discovery import AutonomousDiscovery
+        from src.services.discovery import AutonomousDiscovery
 
         engine = AutonomousDiscovery()
         return await engine.discover_content()
@@ -375,6 +384,11 @@ class Orchestrator:
     async def analyze_batch(self, limit: int = 20) -> int:
         if not self.config.flags.get("enable_analysis", True):
             return 0
+
+        if not acquire_analysis_lock():
+            logger.info("Analysis skipped: another analysis run is already in progress")
+            return 0
+
         try:
             from src.services.analysis.post_analyzer import analyze_and_store_post
             from src.services.cancel_manager import is_cancelled
@@ -399,13 +413,30 @@ class Orchestrator:
                             return self._s.save_post(post_data)
 
                     shim = _ShimDB(self.storage)
-                    await analyze_and_store_post(shim, p)
+                    # Prefer passing Supabase adapter if available to ensure cloud sync
+                    supabase_mgr = None
+                    try:
+                        supabase_mgr = getattr(self.storage, "_supabase", None)
+                    except Exception as e:
+                        logger.debug(f"Could not get Supabase manager from storage: {e}")
+                        supabase_mgr = None
+                    await analyze_and_store_post(shim, p, supabase_manager=supabase_mgr)
                     count += 1
-                except Exception:
+                except Exception as e:
+                    post_id = p.get("post_id", "unknown")
+                    platform = p.get("platform", "unknown")
+                    logger.warning(f"Failed to analyze post {post_id} ({platform}): {e}")
+                    import traceback
+                    logger.debug(f"Analysis error traceback:\n{traceback.format_exc()}")
                     continue
             return count
-        except Exception:
+        except Exception as e:
+            logger.error(f"analyze_batch failed: {e}")
+            import traceback
+            logger.debug(f"analyze_batch error traceback:\n{traceback.format_exc()}")
             return 0
+        finally:
+            release_analysis_lock()
 
     async def generate_digest(self) -> Dict[str, Any]:
         # Simplified digest generation
@@ -495,3 +526,12 @@ def get_orchestrator() -> Orchestrator:
     if _orchestrator_singleton is None:
         _orchestrator_singleton = Orchestrator()
     return _orchestrator_singleton
+
+    async def collect_discovery(self) -> int:
+        """Collect from autonomous discovery"""
+        try:
+            discovery_result = await self.autonomous_discover()
+            return discovery_result.get("saved", 0)
+        except Exception as e:
+            logger.error(f"Discovery collection failed: {e}")
+            return 0

@@ -214,6 +214,19 @@ def render_browse_tab():
         return
 
     df_display = df.copy()
+    # Prefer collected_at for recency if available
+    if 'collected_at' in df.columns:
+        try:
+            df['collected_at'] = pd.to_datetime(df['collected_at'], errors='coerce', utc=True)
+            df.sort_values(by=['collected_at'], ascending=False, inplace=True, kind='mergesort')
+        except Exception:
+            pass
+        if 'collected_at' in df_display.columns:
+            try:
+                df_display['collected_at'] = pd.to_datetime(df_display['collected_at'], errors='coerce', utc=True)
+                df_display['collected_at'] = df_display['collected_at'].dt.strftime('%Y-%m-%d %H:%M')
+            except Exception:
+                pass
     if 'created_at' in df_display.columns:
         df_display['created_at'] = df_display['created_at'].dt.strftime('%Y-%m-%d %H:%M')
 
@@ -236,6 +249,7 @@ def render_browse_tab():
             'title',
             'platform',
             'author',
+            'collected_at',
             'created_at',
             'value_score',
             'quality_score',
@@ -246,7 +260,7 @@ def render_browse_tab():
 
     st.subheader(f"📝 Posts ({len(df_display)})")
     st.dataframe(
-        df_display[display_columns].rename(columns={'title': 'Title', 'platform': 'Platform', 'author': 'Author', 'created_at': 'Created', 'value_score': 'Value Score', 'quality_score': 'Quality Score', 'sentiment': 'Sentiment'}),
+        df_display[display_columns].rename(columns={'title': 'Title', 'platform': 'Platform', 'author': 'Author', 'created_at': 'Created', 'collected_at': 'Collected', 'value_score': 'Value Score', 'quality_score': 'Quality Score', 'sentiment': 'Sentiment'}),
         use_container_width=True,
         hide_index=True
     )
@@ -286,19 +300,40 @@ def render_browse_tab():
 
 
 def render_settings_tab():
-    """Render the settings view"""
+    """Render the settings view with Sources and System merged in"""
     st.header("⚙️ Settings")
-
-    with st.expander("General Settings", expanded=True):
-        st.selectbox("Theme", ["Light", "Dark", "System"], key="theme_setting")
-        st.slider("Posts per page", 10, 100, 20, key="posts_per_page")
-
-    with st.expander("API Settings"):
-        st.text_input("Reddit API Key", type="password", key="reddit_api_key")
-        st.text_input("Twitter API Key", type="password", key="twitter_api_key")
-
-    if st.button("💾 Save Settings"):
-        st.success("Settings saved successfully!")
+    
+    # Tabs for Settings: General, Sources, System
+    settings_tab1, settings_tab2, settings_tab3 = st.tabs(["⚙️ General", "📡 Sources", "🩺 System"])
+    
+    with settings_tab1:
+        st.subheader("General Settings")
+        with st.expander("App Settings", expanded=True):
+            st.selectbox("Theme", ["Light", "Dark", "System"], key="theme_setting")
+            st.slider("Posts per page", 10, 100, 20, key="posts_per_page")
+        
+        with st.expander("API Settings"):
+            st.text_input("Reddit API Key", type="password", key="reddit_api_key")
+            st.text_input("Twitter API Key", type="password", key="twitter_api_key")
+        
+        if st.button("💾 Save Settings"):
+            st.success("Settings saved successfully!")
+    
+    with settings_tab2:
+        # Sources tab content (merged)
+        try:
+            from src.web.components.sources_tab import render_sources_tab
+            render_sources_tab()
+        except ImportError:
+            st.info("Sources configuration not available")
+    
+    with settings_tab3:
+        # System status tab content (merged)
+        try:
+            from src.web.components.system_status_tab import render_system_status_tab
+            render_system_status_tab()
+        except ImportError:
+            st.info("System status not available")
 
 
 def _format_post_label(row: pd.Series) -> str:

@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <div class="page-header">
+        <h1 class="page-title">Dashboard</h1>
+        <p class="page-subtitle">Your intelligent content publishing system</p>
+    </div>
+
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-label">Database Posts</div>
+            <div class="stat-value">{{ stats.database_posts }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Scheduled</div>
+            <div class="stat-value">{{ stats.total_scheduled }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Corrections</div>
+            <div class="stat-value">{{ stats.corrections }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Approved</div>
+            <div class="stat-value">{{ stats.approved }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Threads (RU)</div>
+            <div class="stat-value">{{ stats.by_platform.threads or 0 }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Twitter (EN)</div>
+            <div class="stat-value">{{ stats.by_platform.twitter or 0 }}</div>
+        </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
+        <div style="background: #1a1a1a; padding: 30px; border-radius: 8px; border: 1px solid #2a2a2a;">
+            <h3 style="font-size: 20px; margin-bottom: 15px;">📝 Review Posts</h3>
+            <p style="color: #888; margin-bottom: 20px;">Review database posts and approve/edit rewrites</p>
+            <a href="/review" class="btn">Start Reviewing</a>
+        </div>
+
+        <div style="background: #1a1a1a; padding: 30px; border-radius: 8px; border: 1px solid #2a2a2a;">
+            <h3 style="font-size: 20px; margin-bottom: 15px;">📅 Scheduled Posts</h3>
+            <p style="color: #888; margin-bottom: 20px;">View all scheduled posts ready for publishing</p>
+            <a href="/scheduled" class="btn">View Schedule</a>
+        </div>
+
+        <div style="background: #1a1a1a; padding: 30px; border-radius: 8px; border: 1px solid #2a2a2a;">
+            <h3 style="font-size: 20px; margin-bottom: 15px;">📈 Trends</h3>
+            <p style="color: #888; margin-bottom: 20px;">See what's trending and get content suggestions</p>
+            <a href="/trends" class="btn">View Trends</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

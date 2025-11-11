@@ -3,11 +3,6 @@ import streamlit as st
 import requests
 
 
-def badge(text: str, ok: bool) -> str:
-    color = "#28a745" if ok else "#dc3545"
-    return f"<span style='background:{color};color:#fff;padding:4px 8px;border-radius:6px;margin-right:8px;font-size:12px;'>{text}</span>"
-
-
 def render_status_bar():
     supabase_ok = bool(os.getenv("SUPABASE_URL") and os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
 
@@ -20,10 +15,16 @@ def render_status_bar():
     except Exception:
         auto_ok = False
 
-    html = (
-        badge("Supabase", supabase_ok)
-        + badge("Autoposter", auto_ok)
-    )
-    st.markdown(f"<div style='margin:6px 0'>{html}</div>", unsafe_allow_html=True)
+    st.markdown(f"""
+    <div style="display: flex; gap: 0.75rem; align-items: center; padding: 0.75rem 1rem;
+                background: #f8fafc; border-radius: 12px; margin-bottom: 1rem; border: 1px solid #e2e8f0;">
+        <span class="status-badge {'success' if supabase_ok else 'error'}">
+            {'✅' if supabase_ok else '❌'} Supabase
+        </span>
+        <span class="status-badge {'success' if auto_ok else 'error'}">
+            {'✅' if auto_ok else '❌'} Autoposter
+        </span>
+    </div>
+    """, unsafe_allow_html=True)
 
 

@@ -79,7 +79,7 @@ def render_system_status_tab():
         
         # Backfill button for existing posts
         st.markdown("---")
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns(3)
         with col1:
             if st.button("🔄 Backfill Quality Metrics", help="Track quality metrics for existing posts"):
                 with st.spinner("Backfilling quality metrics..."):
@@ -114,6 +114,26 @@ def render_system_status_tab():
                             st.success("✅ No issues found!")
                     except Exception as e:
                         st.error(f"❌ Audit failed: {e}")
+
+        with col3:
+            if st.button("🧹 Normalize Platform Values", help="Fix posts with invalid platform names and missing handles"):
+                with st.spinner("Normalizing platform values..."):
+                    try:
+                        fix_result = agent.fix_invalid_platforms(limit=2000, dry_run=False, auto=False)
+                        updated = fix_result.get("updated", 0)
+                        if updated > 0:
+                            st.success(f"✅ Normalized {updated} posts")
+                        else:
+                            st.info("No invalid platform values detected")
+
+                        unresolved = fix_result.get("unresolved") or []
+                        if unresolved:
+                            st.warning(f"⚠️ {len(unresolved)} posts still need manual review")
+                            with st.expander("View unresolved items"):
+                                for item in unresolved:
+                                    st.caption(f"{item.get('post_id')} → {item.get('platform')} ({item.get('url', '')})")
+                    except Exception as e:
+                        st.error(f"❌ Platform normalization failed: {e}")
         
         # Check recent posts quality
         st.markdown("---")
@@ -196,6 +216,22 @@ def render_system_status_tab():
         
     except Exception as e:
         st.info(f"Quality monitoring unavailable: {e}")
+    
+    st.markdown("---")
+    st.subheader("Completeness")
+    try:
+        agent2 = DatabaseAgent()
+        incomplete = agent2.count_incomplete_posts()
+        col_c, col_d = st.columns(2)
+        with col_c:
+            st.metric("Incomplete Posts (required fields)", incomplete)
+        with col_d:
+            if st.button("🔧 Repair Missing Fields", use_container_width=True):
+                with st.spinner("Repairing posts (backfilling required fields)..."):
+                    fixed = agent2.repair_incomplete_posts(limit=200)
+                st.success(f"✅ Repaired {fixed} posts")
+    except Exception as e:
+        st.info(f"Completeness check unavailable: {e}")
     
     st.markdown("---")
     st.subheader("Database Health & Activity")
@@ -323,8 +359,16 @@ def render_system_status_tab():
                     mtimes.append((pth, p.stat().st_mtime))
             if mtimes:
                 freshest = min(mtimes, key=lambda x: now - x[1])
-                age_min = int((now - freshest[1]) / 60)
-                st.write(f"{name}: age ~{age_min} min ({freshest[0]})")
+                age_minutes = int((now - freshest[1]) / 60)
+                days, rem = divmod(age_minutes, 1440)
+                hours, minutes = divmod(rem, 60)
+                if days >= 1:
+                    age_str = f"{days}d {hours}h"
+                elif hours >= 1:
+                    age_str = f"{hours}h {minutes}m"
+                else:
+                    age_str = f"{minutes}m"
+                st.write(f"{name}: age ~{age_str} ({freshest[0]})")
             else:
                 st.warning(f"{name}: missing")
 

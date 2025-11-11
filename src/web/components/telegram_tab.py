@@ -228,7 +228,7 @@ def render_telegram_tab():
                 col_checkbox, col_content = st.columns([0.05, 0.95])
                 
                 with col_checkbox:
-                    if st.checkbox("", value=is_selected, key=f"check_{unique_suffix}"):
+                    if st.checkbox("Select", value=is_selected, key=f"check_{unique_suffix}", label_visibility="collapsed"):
                         st.session_state.selected_messages.add(msg_id)
                     else:
                         st.session_state.selected_messages.discard(msg_id)

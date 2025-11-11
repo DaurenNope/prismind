@@ -199,8 +199,8 @@ async def post_to_threads_playwright(content: str, image_url: Optional[str] = No
                         elif aria_label and ('compose' in str(aria_label).lower() or 'new' in str(aria_label).lower() or 'post' in str(aria_label).lower() or 'thread' in str(aria_label).lower()):
                             compose_candidates.append((i, text, aria_label))
                 except Exception as e:
-                    logger.debug(f"Button inspection failed: {e}")
-                    pass
+                    logger.debug(f"Button inspection failed: {e}", exc_info=True)
+                    # Continue - button inspection is non-critical
             
             if compose_candidates:
                 print(f"🎯 Found {len(compose_candidates)} potential compose buttons:")

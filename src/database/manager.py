@@ -232,7 +232,7 @@ class SupabaseManager:
                 'post_id','title','content','url','platform','author','author_handle',
                 'created_at','ai_summary','topic','content_type','post_type','media_urls',
                 'hashtags','mentions','is_saved','analyzed_at','sentiment','key_concepts',
-                'tags','analysis_model','value_score','quality_score','embedding',
+                'analysis_model','value_score','quality_score','embedding',
                 'embedding_model','language'
             }
             
@@ -261,7 +261,7 @@ class SupabaseManager:
                     elif isinstance(value, list):
                         clean_data[key] = (
                             json.dumps(value)
-                            if key in ["smart_tags", "media_urls"]
+                            if key in ["smart_tags", "media_urls", "hashtags", "mentions"]
                             else value
                         )
                     else:

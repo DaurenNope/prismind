@@ -1,0 +1,244 @@
+{% extends "base.html" %}
+
+{% block extra_css %}
+<style>
+    .review-container {
+        max-width: 900px;
+        margin: 0 auto;
+    }
+    .post-card {
+        background: #1a1a1a;
+        border: 1px solid #2a2a2a;
+        border-radius: 8px;
+        padding: 30px;
+        margin-bottom: 20px;
+    }
+    .post-section {
+        margin-bottom: 25px;
+    }
+    .section-label {
+        color: #888;
+        font-size: 12px;
+        text-transform: uppercase;
+        font-weight: 600;
+        margin-bottom: 10px;
+    }
+    .post-content {
+        background: #0f0f0f;
+        padding: 20px;
+        border-radius: 6px;
+        border: 1px solid #2a2a2a;
+        color: #c0c0c0;
+        line-height: 1.8;
+        white-space: pre-wrap;
+    }
+    .badge {
+        display: inline-block;
+        padding: 4px 10px;
+        border-radius: 4px;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        margin-right: 8px;
+    }
+    .badge-platform { background: #2a4a7c; color: #6b9bd1; }
+    .badge-language { background: #3a2a4a; color: #b69bd1; }
+    .actions {
+        display: flex;
+        gap: 10px;
+        margin-top: 20px;
+    }
+    .loading {
+        text-align: center;
+        padding: 40px;
+        color: #888;
+    }
+    textarea {
+        width: 100%;
+        min-height: 200px;
+        background: #0f0f0f;
+        color: #e0e0e0;
+        border: 1px solid #2a2a2a;
+        border-radius: 6px;
+        padding: 15px;
+        font-family: inherit;
+        font-size: 14px;
+        line-height: 1.8;
+        resize: vertical;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="page-header">
+        <h1 class="page-title">Review Posts</h1>
+        <p class="page-subtitle">Review and approve rewrites from your database ({{stats.database_posts}} posts available)</p>
+    </div>
+
+    <div class="review-container" id="reviewContainer">
+        <div class="loading">Loading posts...</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentQueue = [];
+let currentIndex = 0;
+let currentRewrite = null;
+
+async function loadQueue() {
+    const response = await fetch('/api/queue?limit=5');
+    const data = await response.json();
+    currentQueue = data.posts;
+    currentIndex = 0;
+    showNextPost();
+}
+
+async function generateRewrite(post) {
+    const response = await fetch('/api/rewrite', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({post})
+    });
+    return await response.json();
+}
+
+async function showNextPost() {
+    if (currentIndex >= currentQueue.length) {
+        document.getElementById('reviewContainer').innerHTML = `
+            <div class="post-card">
+                <h3 style="margin-bottom: 15px;">✅ Review Complete!</h3>
+                <p style="color: #888; margin-bottom: 20px;">You've reviewed all posts in this batch.</p>
+                <button class="btn" onclick="loadQueue()">Load More Posts</button>
+            </div>
+        `;
+        return;
+    }
+
+    const post = currentQueue[currentIndex];
+
+    document.getElementById('reviewContainer').innerHTML = `
+        <div class="post-card">
+            <div class="post-section">
+                <div class="section-label">Source Post (${currentIndex + 1}/${currentQueue.length})</div>
+                <div style="margin-bottom: 15px;">
+                    <span class="badge badge-platform">${post.platform}</span>
+                </div>
+                <div class="post-content">${escapeHtml(post.content || post.title)}</div>
+            </div>
+            <div class="post-section">
+                <div class="section-label">Generating Rewrite...</div>
+                <div class="loading">⏳ Generating...</div>
+            </div>
+        </div>
+    `;
+
+    try {
+        const rewrite = await generateRewrite(post);
+        currentRewrite = rewrite;
+        showRewrite(post, rewrite);
+    } catch (error) {
+        document.getElementById('reviewContainer').innerHTML = `
+            <div class="post-card">
+                <h3 style="color: #ef4444;">❌ Error</h3>
+                <p style="color: #888;">${error.message}</p>
+                <button class="btn" onclick="skipPost()">Skip to Next</button>
+            </div>
+        `;
+    }
+}
+
+function showRewrite(post, rewrite) {
+    document.getElementById('reviewContainer').innerHTML = `
+        <div class="post-card">
+            <div class="post-section">
+                <div class="section-label">Source Post (${currentIndex + 1}/${currentQueue.length})</div>
+                <div style="margin-bottom: 15px;">
+                    <span class="badge badge-platform">${post.platform}</span>
+                </div>
+                <div class="post-content">${escapeHtml(post.content || post.title)}</div>
+            </div>
+
+            <div class="post-section">
+                <div class="section-label">Rewritten Content</div>
+                <div style="margin-bottom: 15px;">
+                    <span class="badge badge-platform">${rewrite.platform}</span>
+                    <span class="badge badge-language">${rewrite.language}</span>
+                </div>
+                <textarea id="rewriteContent">${escapeHtml(rewrite.rewritten_content)}</textarea>
+            </div>
+
+            <div class="actions">
+                <button class="btn" onclick="approvePost()">✅ Approve & Schedule</button>
+                <button class="btn btn-danger" onclick="rejectPost()">❌ Reject</button>
+                <button class="btn btn-secondary" onclick="skipPost()">⏭️ Skip</button>
+            </div>
+        </div>
+    `;
+}
+
+async function approvePost() {
+    const content = document.getElementById('rewriteContent').value;
+
+    try {
+        const response = await fetch('/api/approve', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                rewritten_content: content,
+                platform: currentRewrite.platform,
+                language: currentRewrite.language,
+                source_post: currentRewrite.source_post
+            })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            currentIndex++;
+            showNextPost();
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+}
+
+async function rejectPost() {
+    const reason = prompt('Why reject? (helps improve system)');
+    if (!reason) return;
+
+    try {
+        await fetch('/api/reject', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                source_post: currentRewrite.source_post,
+                rewritten_content: document.getElementById('rewriteContent').value,
+                reason
+            })
+        });
+
+        currentIndex++;
+        showNextPost();
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+}
+
+function skipPost() {
+    currentIndex++;
+    showNextPost();
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Load on page load
+loadQueue();
+</script>
+{% endblock %}
