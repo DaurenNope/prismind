@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS usable_posts (
     id BIGSERIAL PRIMARY KEY,
     post_id TEXT NOT NULL,
     platform TEXT NOT NULL,
-    
+
     -- Core content (essential for rewriter)
     content TEXT NOT NULL,
     title TEXT,
@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS usable_posts (
     author TEXT,
     author_handle TEXT,
     created_at TIMESTAMPTZ NOT NULL,
-    
+
     -- Essential analysis fields (required)
     ai_summary TEXT NOT NULL,
     category TEXT NOT NULL,
@@ -24,19 +24,19 @@ CREATE TABLE IF NOT EXISTS usable_posts (
     value_score NUMERIC NOT NULL CHECK (value_score > 0),
     quality_score NUMERIC NOT NULL CHECK (quality_score > 0),
     rewrite_score NUMERIC NOT NULL CHECK (rewrite_score > 0),
-    
+
     -- Time sensitivity
     relevance_window TEXT NOT NULL,
     urgency_score NUMERIC,
     time_sensitive BOOLEAN DEFAULT FALSE,
-    
+
     -- Persona matching (required for rewriter)
     best_persona_key TEXT,
     best_persona_score NUMERIC,
     persona_fit_scores JSONB,
     persona_fit_reasons JSONB,
     best_persona_reasons TEXT[],
-    
+
     -- Discovery fields
     tags TEXT[],
     key_concepts TEXT[],
@@ -45,22 +45,22 @@ CREATE TABLE IF NOT EXISTS usable_posts (
     language TEXT,
     embedding TEXT,  -- JSON-encoded vector
     embedding_model TEXT,
-    
+
     -- Rewrite-focused fields
     rewrite_readiness TEXT,
     rewrite_reasons TEXT[],
     rewrite_risks TEXT[],
     analysis_confidence NUMERIC,
-    
+
     -- Metadata
     analysis_model TEXT NOT NULL,
     analyzed_at TIMESTAMPTZ NOT NULL,
-    
+
     -- Curation metadata
     included_at TIMESTAMPTZ DEFAULT NOW(),
     inclusion_reason TEXT,  -- Why this post was included (e.g., 'truly_evergreen', 'fresh_time_sensitive')
     commentary_worthy BOOLEAN DEFAULT FALSE,  -- Manual flag for old but valuable posts
-    
+
     -- Constraints
     UNIQUE(platform, post_id),
     CONSTRAINT valid_relevance_window CHECK (relevance_window IN ('same-day', '24-72h', 'this-week', 'this-month', 'evergreen')),
@@ -87,6 +87,3 @@ CREATE INDEX IF NOT EXISTS idx_posts_commentary_worthy ON posts(commentary_worth
 COMMENT ON TABLE usable_posts IS 'Curated table containing only high-quality, evergreen or fresh time-sensitive posts suitable for rewriting';
 COMMENT ON COLUMN usable_posts.inclusion_reason IS 'Reason for inclusion: truly_evergreen, fresh_time_sensitive, or commentary_worthy';
 COMMENT ON COLUMN usable_posts.commentary_worthy IS 'Manual flag for old posts that are still valuable for commentary/rewriting';
-
-
-

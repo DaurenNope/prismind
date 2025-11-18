@@ -6,9 +6,10 @@ Tracks scraping progress and save points to avoid rescraping the same content
 
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
 from dotenv import load_dotenv
+
 from src.database.scrape_state import ScrapeStateDatabase
 
 # Load environment variables
@@ -25,7 +26,7 @@ class ScrapeStateManager:
             db_path = str(var_dir / "scrape_state.db")
 
         self.db = ScrapeStateDatabase(db_path)
-        self.main_db_path = main_db_path or "prismind.db"
+        self.main_db_path = main_db_path or "beyondlines.db"
         self.logger = self._setup_logger()
 
     def _setup_logger(self):
@@ -60,8 +61,10 @@ class ScrapeStateManager:
         """Update scrape state for a platform with improved error handling"""
         try:
             # Normalize post ID before updating state
-            normalized_id = self.normalize_post_id(last_post_id, platform) if last_post_id else None
-            
+            normalized_id = (
+                self.normalize_post_id(last_post_id, platform) if last_post_id else None
+            )
+
             self.db.update_scrape_state(
                 platform,
                 normalized_id,
@@ -70,10 +73,12 @@ class ScrapeStateManager:
                 success,
                 after_parameter,
             )
-            
+
             status = "✅ SUCCESS" if success else "❌ FAILED"
-            self.logger.info(f"{status} Updated {platform} state: {posts_scraped} posts, last_id: {normalized_id}")
-            
+            self.logger.info(
+                f"{status} Updated {platform} state: {posts_scraped} posts, last_id: {normalized_id}"
+            )
+
         except Exception as e:
             self.logger.error(f"❌ Failed to update scrape state for {platform}: {e}")
             # Don't raise exception - collection should continue even if state tracking fails
@@ -99,7 +104,9 @@ class ScrapeStateManager:
             # Normalize post ID before marking
             normalized_id = self.normalize_post_id(post_id, platform)
             self.db.mark_post_scraped(normalized_id, platform, url, title, author)
-            self.logger.debug(f"✅ Marked post {normalized_id} as scraped for {platform}")
+            self.logger.debug(
+                f"✅ Marked post {normalized_id} as scraped for {platform}"
+            )
         except Exception as e:
             self.logger.error(f"❌ Failed to mark post {post_id} as scraped: {e}")
             # Don't raise exception - collection should continue even if state tracking fails
@@ -155,44 +162,59 @@ class ScrapeStateManager:
     def sync_state_from_main_db(self, force: bool = False):
         """Sync state database from main posts database with improved error handling"""
         import sqlite3
-        
+
         try:
             # Check if we need to sync (silent check)
             if not force:
                 stats = self.get_scraping_stats()
                 if stats.get("total_posts", 0) > 0:
-                    self.logger.debug("🔄 State already synced, skipping (use force=True to override)")
+                    self.logger.debug(
+                        "🔄 State already synced, skipping (use force=True to override)"
+                    )
                     return  # Already synced, skip silently
-            
+
             self.logger.info("🔄 Syncing state from main database...")
-            
+
             # Check if main database exists
             if not Path(self.main_db_path).exists():
-                self.logger.warning(f"⚠️ Main database not found at {self.main_db_path}")
+                self.logger.warning(
+                    f"⚠️ Main database not found at {self.main_db_path}"
+                )
                 return
-            
+
             # Connect to main database
             main_conn = sqlite3.connect(self.main_db_path)
             main_cursor = main_conn.cursor()
-            
-            # Get all posts from main database
-            main_cursor.execute("""
-                SELECT post_id, platform, url, title, author, created_at
-                FROM posts
-                WHERE post_id IS NOT NULL AND post_id != ''
-                ORDER BY created_at ASC
-            """)
-            
+
+            try:
+                # Get all posts from main database
+                main_cursor.execute(
+                    """
+                    SELECT post_id, platform, url, title, author, created_at
+                    FROM posts
+                    WHERE post_id IS NOT NULL AND post_id != ''
+                    ORDER BY created_at ASC
+                """
+                )
+            except sqlite3.OperationalError as exc:
+                if "no such table: posts" in str(exc):
+                    main_conn.close()
+                    self.logger.warning(
+                        "⚠️ Main SQLite cache is present but missing posts table; skipping state sync."
+                    )
+                    return
+                raise
+
             posts = main_cursor.fetchall()
             main_conn.close()
-            
+
             if not posts:
                 self.logger.info("📭 No posts found in main database to sync")
                 return
-            
+
             # Track posts by platform for state updates
             platform_posts = {}
-            
+
             # Mark each post as scraped
             synced_count = 0
             failed_count = 0
@@ -200,7 +222,7 @@ class ScrapeStateManager:
                 try:
                     # Normalize the post ID
                     normalized_id = self.normalize_post_id(post_id, platform)
-                    
+
                     # Mark post as scraped
                     self.mark_post_scraped(
                         post_id=normalized_id,
@@ -209,24 +231,24 @@ class ScrapeStateManager:
                         title=title,
                         author=author,
                     )
-                    
+
                     # Track for platform state update
                     if platform not in platform_posts:
                         platform_posts[platform] = []
                     platform_posts[platform].append((normalized_id, url, created_at))
-                    
+
                     synced_count += 1
                 except Exception as e:
                     failed_count += 1
                     self.logger.debug(f"⚠️ Failed to sync post {post_id}: {e}")
                     continue  # Skip failed posts silently
-            
+
             # Update platform states with the most recent post from each
             for platform, posts_list in platform_posts.items():
                 # Sort by created_at descending to get the most recent
                 posts_list.sort(key=lambda x: x[2] if x[2] else "", reverse=True)
                 last_post_id, last_post_url, _ = posts_list[0]
-                
+
                 self.update_scrape_state(
                     platform=platform,
                     last_post_id=last_post_id,
@@ -234,9 +256,11 @@ class ScrapeStateManager:
                     posts_scraped=len(posts_list),
                     success=True,
                 )
-            
-            self.logger.info(f"✅ State sync completed: {synced_count} synced, {failed_count} failed")
-            
+
+            self.logger.info(
+                f"✅ State sync completed: {synced_count} synced, {failed_count} failed"
+            )
+
         except Exception as e:
             self.logger.error(f"❌ State sync failed: {e}")
             # Sync failure is not critical - collection will continue

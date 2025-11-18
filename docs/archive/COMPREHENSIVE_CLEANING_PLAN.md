@@ -1,7 +1,7 @@
-# 🧹 Comprehensive Cleaning Plan - PrisMind Project
+# 🧹 Comprehensive Cleaning Plan - BEYONDLINES Project
 
-**Generated:** $(date)  
-**Branch:** cleanup/project-structure  
+**Generated:** $(date)
+**Branch:** cleanup/project-structure
 **Status:** Ready for execution
 
 ---
@@ -15,12 +15,12 @@
 - **Python cache directories:** 336 `__pycache__` folders
 - **Compiled Python files:** 2,428 `.pyc` files
 - **Log directory size:** 7.6 MB
-- **Database files:** 2 (prismind.db + backup)
+- **Database files:** 2 (beyondlines.db + backup)
 - **Uncommitted changes:** 100+ files staged for deletion
 
 ### Core Application Structure
 ```
-prismind/
+beyondlines/
 ├── src/                    ✅ Well organized (15 subdirectories)
 │   ├── agents/            ✅ 8 research/librarian agents
 │   ├── api/               ✅ API endpoints
@@ -30,7 +30,7 @@ prismind/
 │   ├── services/          ✅ 24 service files
 │   ├── storage/           ✅ Database adapters
 │   ├── utils/             ✅ Utilities
-│   └── web/               ✅ Streamlit UI
+│   └── web/               ✅ Svelte UI
 ├── scripts/               ✅ 8 utility scripts (properly organized)
 ├── config/                ⚠️  4 config files (some redundant)
 ├── cookies/               ⚠️  Cookie storage
@@ -46,7 +46,7 @@ prismind/
 ### Priority 1: CRITICAL - Root Directory Cleanup (38 MD files + 35 test files = 73 files to relocate/delete)
 
 #### A. Documentation Consolidation
-**Problem:** 38 documentation files creating confusion  
+**Problem:** 38 documentation files creating confusion
 **Impact:** High - Makes project navigation impossible
 
 **Files to DELETE (Redundant/Obsolete Status Docs):**
@@ -102,7 +102,7 @@ QUICK_REFERENCE.txt        # Outdated reference
 ```
 
 #### B. Test Files Reorganization
-**Problem:** 35 test files scattered in root directory  
+**Problem:** 35 test files scattered in root directory
 **Impact:** High - Violates Python project structure conventions
 
 **Action:** Move ALL test_*.py files to tests/ directory
@@ -134,7 +134,7 @@ test_twitter_collector.py
 - Need proper test structure
 
 #### C. Temporary/Utility Scripts Cleanup
-**Problem:** 15+ temporary Python scripts in root  
+**Problem:** 15+ temporary Python scripts in root
 **Impact:** Medium - Clutters root, unclear which are needed
 
 **Files to MOVE to scripts/:**
@@ -171,7 +171,7 @@ run_full_collection.py          # Quick collection runner
 ### Priority 2: HIGH - Build Artifacts & Cache Cleanup
 
 #### A. Python Cache Cleanup
-**Problem:** 336 `__pycache__` directories + 2,428 `.pyc` files  
+**Problem:** 336 `__pycache__` directories + 2,428 `.pyc` files
 **Impact:** High - Wastes disk space, slows git operations
 
 **Action:**
@@ -186,7 +186,7 @@ find . -type f -name "*.pyd" -delete
 **Verification:** Check `.gitignore` properly excludes them (✅ Already configured)
 
 #### B. Log File Management
-**Problem:** 7.6 MB of logs accumulated  
+**Problem:** 7.6 MB of logs accumulated
 **Impact:** Medium - Wastes disk space
 
 **Action:**
@@ -220,13 +220,13 @@ config/
 #### B. Database Files
 **Current databases:**
 ```
-prismind.db            # 708 KB - Active database
-prismind.db.backup     # 596 KB - Backup (Oct 9)
-data/prismind.db       # 0 KB - Empty duplicate
+beyondlines.db            # 708 KB - Active database
+beyondlines.db.backup     # 596 KB - Backup (Oct 9)
+data/beyondlines.db       # 0 KB - Empty duplicate
 ```
 
 **Action:**
-- Delete data/prismind.db (empty duplicate)
+- Delete data/beyondlines.db (empty duplicate)
 - Move backups to dedicated backup/ directory
 - Add database backup automation script
 
@@ -292,7 +292,7 @@ src/core/research/search_methods.py:80
 - Not urgent, but good practice
 
 #### B. Unused Imports & Dead Code
-**Status:** Minor occurrences found  
+**Status:** Minor occurrences found
 **Action:** Run automated linting tools
 
 ---
@@ -306,7 +306,7 @@ git add -A
 git commit -m "WIP: Before comprehensive cleanup"
 
 # 2. Create backup
-tar -czf ../prismind_backup_$(date +%Y%m%d).tar.gz .
+tar -czf ../beyondlines_backup_$(date +%Y%m%d).tar.gz .
 
 # 3. Create new branch
 git checkout -b cleanup/comprehensive-cleanup
@@ -391,7 +391,7 @@ mv config/threads_cookies.json cookies/
 mv config/twitter_cookies_cryptoniard.json cookies/
 
 # Clean up databases
-rm -f data/prismind.db
+rm -f data/beyondlines.db
 
 # Organize SQL migrations
 mkdir -p migrations
@@ -471,7 +471,7 @@ git push -u origin cleanup/comprehensive-cleanup
 
 ### Expected Root Directory (15 essential files)
 ```
-prismind/
+beyondlines/
 ├── .env.example              # Environment template
 ├── .gitignore               # Git ignore rules
 ├── .pre-commit-config.yaml  # Pre-commit hooks
@@ -493,7 +493,7 @@ prismind/
 
 ### Organized Directory Structure
 ```
-prismind/
+beyondlines/
 ├── config/                  # Configuration files (2-3 files)
 ├── cookies/                 # Cookie storage (3-4 files)
 ├── data/                    # Data directory
@@ -545,7 +545,7 @@ prismind/
 - [ ] `python main.py web` - Launches web UI
 - [ ] `python main.py --help` - Shows help
 - [ ] `python run_full_collection.py` - Runs collection
-- [ ] `./start_web.sh` - Starts Streamlit
+- [ ] `./start_web.sh` - Starts Svelte
 - [ ] `pytest tests/ -v` - All tests run
 - [ ] Import test: `python -c "from src.services.telegram_bot import *"`
 - [ ] Database access works
@@ -556,8 +556,8 @@ prismind/
 ## ⚠️ Risks & Mitigation
 
 ### Risk 1: Breaking Imports
-**Likelihood:** Medium  
-**Impact:** High  
+**Likelihood:** Medium
+**Impact:** High
 **Mitigation:**
 - Test imports after each phase
 - Keep virtual environment active
@@ -565,8 +565,8 @@ prismind/
 - Rollback capability with git
 
 ### Risk 2: Lost Critical Files
-**Likelihood:** Low  
-**Impact:** Critical  
+**Likelihood:** Low
+**Impact:** Critical
 **Mitigation:**
 - Full backup before starting
 - Review each deletion carefully
@@ -574,8 +574,8 @@ prismind/
 - Don't force delete
 
 ### Risk 3: Test Failures After Move
-**Likelihood:** Medium  
-**Impact:** Medium  
+**Likelihood:** Medium
+**Impact:** Medium
 **Mitigation:**
 - Update test imports systematically
 - Use relative imports where possible
@@ -593,7 +593,7 @@ git reset --hard HEAD~1
 
 # Option 2: Restore from backup
 cd ..
-tar -xzf prismind_backup_YYYYMMDD.tar.gz
+tar -xzf beyondlines_backup_YYYYMMDD.tar.gz
 
 # Option 3: Cherry-pick good changes
 git cherry-pick <commit-hash>
@@ -658,8 +658,8 @@ git cherry-pick <commit-hash>
 
 ---
 
-**Status:** Ready for execution  
-**Reviewer:** Requires approval before execution  
+**Status:** Ready for execution
+**Reviewer:** Requires approval before execution
 **Automation:** Can be partially scripted (see execution plan)
 
 ---

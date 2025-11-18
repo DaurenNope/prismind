@@ -1,3 +1,6 @@
+import logging
+
+logger = logging.getLogger(__name__)
 """
 AI Profile Onboarding Wizard
 
@@ -7,15 +10,16 @@ This is the "selling point" feature that makes profile setup accessible to non-t
 
 import json
 import os
-from typing import Dict, List, Optional, Any
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
+from typing import Any, Dict, List, Optional
+
 import google.generativeai as genai
 from dotenv import load_dotenv
 
 load_dotenv()
 
 # Configure Gemini
-gemini_key = os.getenv('GEMINI_API_KEY')
+gemini_key = os.getenv("GEMINI_API_KEY")
 if gemini_key:
     genai.configure(api_key=gemini_key)
 
@@ -23,6 +27,7 @@ if gemini_key:
 @dataclass
 class WizardState:
     """Tracks the state of the wizard interview"""
+
     step: int = 1
     project_name: str = ""
     project_description: str = ""
@@ -72,7 +77,7 @@ class ProfileWizard:
     """AI-powered conversational wizard for creating profile configurations"""
 
     def __init__(self):
-        model_name = os.getenv('ANALYZER_GEMINI_MODEL', 'gemini-2.0-flash-exp')
+        model_name = os.getenv("ANALYZER_GEMINI_MODEL", "gemini-2.0-flash-exp")
         self.model = genai.GenerativeModel(model_name)
 
     def get_step_prompt(self, step: int, state: WizardState) -> str:
@@ -142,7 +147,9 @@ Keep it simple and actionable."""
 
         return ""
 
-    async def process_user_input(self, user_message: str, state: WizardState) -> Dict[str, Any]:
+    async def process_user_input(
+        self, user_message: str, state: WizardState
+    ) -> Dict[str, Any]:
         """
         Process user input for the current wizard step.
         Returns: {
@@ -173,10 +180,10 @@ Keep it simple and actionable."""
         next_step = state.step + 1 if complete else state.step
 
         return {
-            'ai_response': ai_text,
-            'extracted_data': extracted,
-            'next_step': next_step,
-            'complete': complete
+            "ai_response": ai_text,
+            "extracted_data": extracted,
+            "next_step": next_step,
+            "complete": complete,
         }
 
     def _get_extraction_instructions(self, step: int) -> str:
@@ -246,7 +253,9 @@ End your response with a JSON block:
 
         return ""
 
-    def _extract_data_from_response(self, ai_response: str, step: int, user_input: str) -> dict:
+    def _extract_data_from_response(
+        self, ai_response: str, step: int, user_input: str
+    ) -> dict:
         """Extract structured data from AI response"""
 
         # Look for JSON block in response
@@ -258,6 +267,7 @@ End your response with a JSON block:
             try:
                 return json.loads(json_str)
             except json.JSONDecodeError:
+                logger.error(f"Error: {e}")
                 pass
 
         # Fallback: basic extraction from user input
@@ -270,25 +280,21 @@ End your response with a JSON block:
             return {
                 "project_description": user_input,
                 "target_audience": "",
-                "unique_value": ""
+                "unique_value": "",
             }
         elif step == 2:
             return {
                 "tone_tags": [],
                 "example_posts": [user_input] if len(user_input) > 50 else [],
                 "avoid_phrases": [],
-                "voice_description": user_input
+                "voice_description": user_input,
             }
         elif step == 3:
-            return {
-                "platforms": [],
-                "platform_frequencies": {},
-                "content_topics": []
-            }
+            return {"platforms": [], "platform_frequencies": {}, "content_topics": []}
         elif step == 4:
             return {
                 "auto_reply": "yes" in user_input.lower(),
-                "reply_strategy": user_input
+                "reply_strategy": user_input,
             }
 
         return {}
@@ -297,13 +303,15 @@ End your response with a JSON block:
         """Check if a step has enough information to proceed"""
 
         if step == 1:
-            return bool(extracted.get('project_description'))
+            return bool(extracted.get("project_description"))
         elif step == 2:
-            return bool(extracted.get('tone_tags') or extracted.get('voice_description'))
+            return bool(
+                extracted.get("tone_tags") or extracted.get("voice_description")
+            )
         elif step == 3:
-            return bool(extracted.get('platforms'))
+            return bool(extracted.get("platforms"))
         elif step == 4:
-            return 'auto_reply' in extracted
+            return "auto_reply" in extracted
 
         return False
 
@@ -314,7 +322,9 @@ End your response with a JSON block:
         """
 
         # Generate profile key from project name
-        profile_key = self._generate_profile_key(state.project_name or state.project_description)
+        profile_key = self._generate_profile_key(
+            state.project_name or state.project_description
+        )
 
         # Use AI to generate voice guidelines
         voice_guidelines = await self._generate_voice_guidelines(state)
@@ -323,7 +333,9 @@ End your response with a JSON block:
         content_topics = await self._expand_content_topics(state)
 
         # Generate prompt templates for each platform
-        prompt_templates = await self._generate_prompt_templates(state, voice_guidelines)
+        prompt_templates = await self._generate_prompt_templates(
+            state, voice_guidelines
+        )
 
         # Build the complete config
         config = {
@@ -338,8 +350,8 @@ End your response with a JSON block:
             "content_topics": content_topics,
             "reply_strategy": {
                 "enabled": state.auto_reply,
-                "strategy": state.reply_strategy
-            }
+                "strategy": state.reply_strategy,
+            },
         }
 
         return config
@@ -348,8 +360,8 @@ End your response with a JSON block:
         """Generate a valid profile key from project name"""
         # Convert to lowercase, replace spaces with underscores, remove special chars
         key = name.lower().strip()
-        key = ''.join(c if c.isalnum() or c == ' ' else '' for c in key)
-        key = key.replace(' ', '_')
+        key = "".join(c if c.isalnum() or c == " " else "" for c in key)
+        key = key.replace(" ", "_")
         return key[:30]  # Limit length
 
     async def _generate_voice_guidelines(self, state: WizardState) -> dict:
@@ -392,11 +404,13 @@ Return ONLY a JSON object:
 
         try:
             return json.loads(json_str)
-        except:
+        except Exception as e:
+            logger.error(f"Error: {e}")
             return {
-                "general": state.voice_description or "Professional yet approachable voice",
+                "general": state.voice_description
+                or "Professional yet approachable voice",
                 "dos": state.tone_tags,
-                "donts": state.avoid_phrases
+                "donts": state.avoid_phrases,
             }
 
     async def _expand_content_topics(self, state: WizardState) -> list:
@@ -436,10 +450,13 @@ Return ONLY a JSON array of topic strings:
         try:
             topics = json.loads(json_str)
             return topics if isinstance(topics, list) else state.content_topics
-        except:
+        except Exception as e:
+            logger.error(f"Error: {e}")
             return state.content_topics or []
 
-    async def _generate_prompt_templates(self, state: WizardState, voice_guidelines: dict) -> dict:
+    async def _generate_prompt_templates(
+        self, state: WizardState, voice_guidelines: dict
+    ) -> dict:
         """Generate prompt templates for each platform + language + content type"""
 
         templates = {}
@@ -465,8 +482,12 @@ Return ONLY a JSON array of topic strings:
         return templates
 
     async def _generate_single_template(
-        self, platform: str, lang: str, content_type: str,
-        state: WizardState, voice_guidelines: dict
+        self,
+        platform: str,
+        lang: str,
+        content_type: str,
+        state: WizardState,
+        voice_guidelines: dict,
     ) -> str:
         """Generate a single prompt template"""
 
@@ -503,7 +524,7 @@ Return ONLY the prompt template text (no JSON, no explanation)."""
                 "daily": "daily",
                 "2-3x daily": "2-3x_daily",
                 "few times a week": "3x_weekly",
-                "weekly": "weekly"
+                "weekly": "weekly",
             }
 
             platform_config[platform.lower()] = {
@@ -514,10 +535,11 @@ Return ONLY the prompt template text (no JSON, no explanation)."""
                 "format_preferences": {
                     "max_length": 280 if platform.lower() == "twitter" else 500,
                     "use_line_breaks": True,
-                    "use_emojis": "casual" in state.tone_tags or "memey" in state.tone_tags,
+                    "use_emojis": "casual" in state.tone_tags
+                    or "memey" in state.tone_tags,
                     "use_hashtags": True,
-                    "use_markdown": platform.lower() in ["telegram", "linkedin"]
-                }
+                    "use_markdown": platform.lower() in ["telegram", "linkedin"],
+                },
             }
 
         return platform_config
@@ -531,13 +553,7 @@ Return ONLY the prompt template text (no JSON, no explanation)."""
             "same-day": {
                 "platforms": platforms[:2] if len(platforms) > 2 else platforms
             },
-            "24-72h": {
-                "platforms": platforms
-            },
-            "this-week": {
-                "platforms": platforms
-            },
-            "evergreen": {
-                "platforms": platforms
-            }
+            "24-72h": {"platforms": platforms},
+            "this-week": {"platforms": platforms},
+            "evergreen": {"platforms": platforms},
         }

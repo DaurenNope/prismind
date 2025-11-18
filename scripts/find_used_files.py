@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Find all Python files that are actually imported/used in the prismind app.
+Find all Python files that are actually imported/used in the beyondlines app.
 """
 
 import re
-from pathlib import Path
 from collections import defaultdict
+from pathlib import Path
 
 
 def extract_imports(filepath):
@@ -47,7 +47,7 @@ def import_to_file(import_path, src_root):
 
 
 # Start from entry point
-src_root = Path("/Users/mac/Documents/Development/prismind/src")
+src_root = Path("/Users/mac/Documents/Development/beyondlines/src")
 entry_point = src_root / "web" / "app.py"
 
 used_files = set()

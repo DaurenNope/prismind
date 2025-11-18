@@ -7,7 +7,7 @@
    - Full automation/posting system
    - Twitter, Threads, Telegram posters
    - Autoposter service (FastAPI)
-   - Complete UI (Streamlit)
+   - Complete UI (Svelte)
    - Scheduler, queue, editor
 
 2. **`/src/mimesis/`** - Partially integrated (12 references to `from src.mimesis`)
@@ -30,7 +30,7 @@
 
 ## Goal: Single Unified Project
 
-All functionality accessible as **one project** called **prismind** with:
+All functionality accessible as **one project** called **beyondlines** with:
 - Collection (Reddit, Twitter, Threads) → Analysis → Publishing
 - No duplicate files
 - Clear, consistent imports
@@ -40,7 +40,7 @@ All functionality accessible as **one project** called **prismind** with:
 
 ### Option A: Move Everything to src/ (RECOMMENDED)
 ```
-prismind/
+beyondlines/
 ├── src/
 │   ├── collection/           # Reddit, Twitter, Threads extractors
 │   ├── analysis/             # AI analysis, content analyzer
@@ -166,7 +166,7 @@ mv src/services/threads_poster.py src/publishing/posters/
 ## Expected Final Structure
 
 ```
-prismind/
+beyondlines/
 ├── src/
 │   ├── collection/          # Data gathering (existing)
 │   ├── analysis/            # AI analysis (existing)

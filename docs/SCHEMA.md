@@ -1,8 +1,8 @@
-# PrisMind Database Schema
+# BEYONDLINES Database Schema
 
 ## Overview
 
-This document describes the **essential schema** for the PrisMind analyzer, focusing on fields that are:
+This document describes the **essential schema** for the BEYONDLINES analyzer, focusing on fields that are:
 1. **Required for the rewriter** (main purpose)
 2. **Required for discovery method** (future use)
 
@@ -213,10 +213,3 @@ Use `DatabaseAgent().get_id_format_health()` and analyzer fill-rate metrics to m
 - **Analysis is always performed** before rewrite attempts
 - **Persona matching is built into analysis** - not a separate step
 - **Schema is versioned** via `analysis_model` and `analysis_depth` fields
-
-
-
-
-
-
-

@@ -5,10 +5,10 @@ Extracts key facts (entities, numbers, dates) from source content and validates
 they're preserved in rewritten output.
 """
 
-import re
 import logging
-from typing import Dict, List, Any, Set
+import re
 from datetime import datetime
+from typing import Any, Dict, List, Set
 
 logger = logging.getLogger(__name__)
 
@@ -29,14 +29,37 @@ class FactValidator:
         # Common tech companies, products, people for quick matching
         self.known_entities = {
             # Companies
-            'openai', 'anthropic', 'google', 'microsoft', 'meta', 'apple', 'amazon',
-            'tesla', 'twitter', 'x.com', 'threads', 'instagram', 'facebook',
+            "openai",
+            "anthropic",
+            "google",
+            "microsoft",
+            "meta",
+            "apple",
+            "amazon",
+            "tesla",
+            "twitter",
+            "x.com",
+            "threads",
+            "instagram",
+            "facebook",
             # Products
-            'chatgpt', 'claude', 'gemini', 'gpt-4', 'dall-e', 'midjourney',
-            'copilot', 'cursor', 'github', 'gitlab',
+            "chatgpt",
+            "claude",
+            "gemini",
+            "gpt-4",
+            "dall-e",
+            "midjourney",
+            "copilot",
+            "cursor",
+            "github",
+            "gitlab",
             # People (common in tech)
-            'sam altman', 'elon musk', 'mark zuckerberg', 'satya nadella',
-            'sundar pichai', 'jeff bezos'
+            "sam altman",
+            "elon musk",
+            "mark zuckerberg",
+            "satya nadella",
+            "sundar pichai",
+            "jeff bezos",
         }
 
     def extract_facts(self, content: str) -> Dict[str, Any]:
@@ -57,11 +80,11 @@ class FactValidator:
             }
         """
         facts = {
-            'numbers': self._extract_numbers(content),
-            'percentages': self._extract_percentages(content),
-            'dates': self._extract_dates(content),
-            'entities': self._extract_entities(content),
-            'urls': self._extract_urls(content)
+            "numbers": self._extract_numbers(content),
+            "percentages": self._extract_percentages(content),
+            "dates": self._extract_dates(content),
+            "entities": self._extract_entities(content),
+            "urls": self._extract_urls(content),
         }
 
         return facts
@@ -69,20 +92,20 @@ class FactValidator:
     def _extract_numbers(self, text: str) -> List[str]:
         """Extract significant numbers (not years or common words)"""
         # Match numbers with optional commas, decimals, K/M/B suffixes
-        pattern = r'\b\d+(?:,\d{3})*(?:\.\d+)?(?:[KMB])?\b'
+        pattern = r"\b\d+(?:,\d{3})*(?:\.\d+)?(?:[KMB])?\b"
         numbers = re.findall(pattern, text, re.IGNORECASE)
 
         # Filter out years (1900-2099)
         numbers = [n for n in numbers if not (n.isdigit() and 1900 <= int(n) <= 2099)]
 
         # Filter out common meaningless numbers
-        numbers = [n for n in numbers if n not in ['1', '2', '3', '10']]
+        numbers = [n for n in numbers if n not in ["1", "2", "3", "10"]]
 
         return list(set(numbers))
 
     def _extract_percentages(self, text: str) -> List[str]:
         """Extract percentages"""
-        pattern = r'\b\d+(?:\.\d+)?%'
+        pattern = r"\b\d+(?:\.\d+)?%"
         return list(set(re.findall(pattern, text)))
 
     def _extract_dates(self, text: str) -> List[str]:
@@ -90,15 +113,17 @@ class FactValidator:
         dates = []
 
         # Month Day, Year (e.g., "October 27, 2024")
-        pattern1 = r'\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}\b'
+        pattern1 = r"\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}\b"
         dates.extend(re.findall(pattern1, text, re.IGNORECASE))
 
         # ISO format (2024-10-27)
-        pattern2 = r'\b\d{4}-\d{2}-\d{2}\b'
+        pattern2 = r"\b\d{4}-\d{2}-\d{2}\b"
         dates.extend(re.findall(pattern2, text))
 
         # Relative dates (e.g., "yesterday", "last week")
-        pattern3 = r'\b(?:yesterday|today|tomorrow|last\s+week|next\s+week|this\s+week)\b'
+        pattern3 = (
+            r"\b(?:yesterday|today|tomorrow|last\s+week|next\s+week|this\s+week)\b"
+        )
         dates.extend(re.findall(pattern3, text, re.IGNORECASE))
 
         return list(set(dates))
@@ -126,15 +151,28 @@ class FactValidator:
 
         # Capitalized words (potential proper nouns)
         # Pattern: Word starting with capital, not at sentence start
-        capitalized = re.findall(r'(?<!^)(?<!\. )\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', text)
+        capitalized = re.findall(
+            r"(?<!^)(?<!\. )\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b", text
+        )
         entities.extend(capitalized)
 
         # @mentions
-        mentions = re.findall(r'@\w+', text)
+        mentions = re.findall(r"@\w+", text)
         entities.extend(mentions)
 
         # Remove common words that are capitalized but not entities
-        common_words = {'The', 'This', 'That', 'These', 'Those', 'A', 'An', 'It', 'He', 'She'}
+        common_words = {
+            "The",
+            "This",
+            "That",
+            "These",
+            "Those",
+            "A",
+            "An",
+            "It",
+            "He",
+            "She",
+        }
         entities = [e for e in entities if e not in common_words]
 
         return list(set(entities))
@@ -145,10 +183,7 @@ class FactValidator:
         return list(set(re.findall(pattern, text)))
 
     def validate_preservation(
-        self,
-        source: str,
-        output: str,
-        critical_threshold: float = 0.8
+        self, source: str, output: str, critical_threshold: float = 0.8
     ) -> Dict[str, Any]:
         """
         Validate that key facts from source are preserved in output
@@ -172,19 +207,19 @@ class FactValidator:
         output_lower = output.lower()
 
         missing = {
-            'numbers': [],
-            'percentages': [],
-            'dates': [],
-            'entities': [],
-            'urls': []
+            "numbers": [],
+            "percentages": [],
+            "dates": [],
+            "entities": [],
+            "urls": [],
         }
 
         preserved = {
-            'numbers': [],
-            'percentages': [],
-            'dates': [],
-            'entities': [],
-            'urls': []
+            "numbers": [],
+            "percentages": [],
+            "dates": [],
+            "entities": [],
+            "urls": [],
         }
 
         warnings = []
@@ -196,7 +231,7 @@ class FactValidator:
 
             for fact in facts:
                 # Check if fact appears in output (case-insensitive for most)
-                if fact_type == 'urls':
+                if fact_type == "urls":
                     # URLs must match exactly
                     found = fact in output
                 else:
@@ -220,14 +255,14 @@ class FactValidator:
 
         # Check critical facts (numbers, percentages, entities)
         critical_facts = (
-            len(source_facts['numbers']) +
-            len(source_facts['percentages']) +
-            len(source_facts['entities'])
+            len(source_facts["numbers"])
+            + len(source_facts["percentages"])
+            + len(source_facts["entities"])
         )
         critical_preserved = (
-            len(preserved['numbers']) +
-            len(preserved['percentages']) +
-            len(preserved['entities'])
+            len(preserved["numbers"])
+            + len(preserved["percentages"])
+            + len(preserved["entities"])
         )
 
         if critical_facts > 0:
@@ -236,41 +271,53 @@ class FactValidator:
             critical_preservation_rate = 1.0
 
         # Generate warnings
-        if missing['numbers']:
-            warnings.append(f"Missing {len(missing['numbers'])} numbers: {', '.join(missing['numbers'][:3])}")
+        if missing["numbers"]:
+            warnings.append(
+                f"Missing {len(missing['numbers'])} numbers: {', '.join(missing['numbers'][:3])}"
+            )
 
-        if missing['percentages']:
-            warnings.append(f"Missing {len(missing['percentages'])} percentages: {', '.join(missing['percentages'])}")
+        if missing["percentages"]:
+            warnings.append(
+                f"Missing {len(missing['percentages'])} percentages: {', '.join(missing['percentages'])}"
+            )
 
-        if missing['entities']:
-            warnings.append(f"Missing {len(missing['entities'])} entities: {', '.join(missing['entities'][:3])}")
+        if missing["entities"]:
+            warnings.append(
+                f"Missing {len(missing['entities'])} entities: {', '.join(missing['entities'][:3])}"
+            )
 
-        if missing['dates']:
-            warnings.append(f"Missing {len(missing['dates'])} dates: {', '.join(missing['dates'][:2])}")
+        if missing["dates"]:
+            warnings.append(
+                f"Missing {len(missing['dates'])} dates: {', '.join(missing['dates'][:2])}"
+            )
 
-        if missing['urls']:
+        if missing["urls"]:
             warnings.append(f"Missing {len(missing['urls'])} URLs")
 
         # Determine if valid
         valid = critical_preservation_rate >= critical_threshold
 
         result = {
-            'valid': valid,
-            'preservation_score': round(preservation_score, 1),
-            'critical_preservation_rate': round(critical_preservation_rate * 100, 1),
-            'total_facts': total_facts,
-            'preserved_facts': preserved,
-            'missing_facts': missing,
-            'warnings': warnings
+            "valid": valid,
+            "preservation_score": round(preservation_score, 1),
+            "critical_preservation_rate": round(critical_preservation_rate * 100, 1),
+            "total_facts": total_facts,
+            "preserved_facts": preserved,
+            "missing_facts": missing,
+            "warnings": warnings,
         }
 
         # Log results
         if not valid:
-            logger.warning(f"❌ Fact preservation below threshold: {critical_preservation_rate*100:.1f}% < {critical_threshold*100}%")
+            logger.warning(
+                f"❌ Fact preservation below threshold: {critical_preservation_rate*100:.1f}% < {critical_threshold*100}%"
+            )
             for warning in warnings:
                 logger.warning(f"   {warning}")
         else:
-            logger.info(f"✅ Fact preservation: {preservation_score:.1f}% ({total_preserved}/{total_facts} facts)")
+            logger.info(
+                f"✅ Fact preservation: {preservation_score:.1f}% ({total_preserved}/{total_facts} facts)"
+            )
 
         return result
 
@@ -299,18 +346,18 @@ if __name__ == "__main__":
     ожидает значительный рост в следующем году.
     """
 
-    print("=" * 80)
-    print("TEST 1: Good Output (facts preserved)")
-    print("=" * 80)
+    logger.info("=" * 80)
+    logger.info("TEST 1: Good Output (facts preserved)")
+    logger.info("=" * 80)
     result = validator.validate_preservation(source, output_good)
-    print(f"Valid: {result['valid']}")
-    print(f"Score: {result['preservation_score']}")
-    print(f"Warnings: {result['warnings']}")
+    logger.info(f"Valid: {result['valid']}")
+    logger.info(f"Score: {result['preservation_score']}")
+    logger.warning(f"Warnings: {result['warnings']}")
 
-    print("\n" + "=" * 80)
-    print("TEST 2: Bad Output (facts missing)")
+    logger.info("\n" + "=" * 80)
+    logger.warning("TEST 2: Bad Output (facts missing)")
     print("=" * 80)
     result = validator.validate_preservation(source, output_bad)
-    print(f"Valid: {result['valid']}")
-    print(f"Score: {result['preservation_score']}")
-    print(f"Warnings: {result['warnings']}")
+    logger.info(f"Valid: {result['valid']}")
+    logger.info(f"Score: {result['preservation_score']}")
+    logger.warning(f"Warnings: {result['warnings']}")

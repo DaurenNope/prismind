@@ -1,4 +1,4 @@
-# PrisMind Publishing Pipeline Architecture
+# BEYONDLINES Publishing Pipeline Architecture
 
 **Complete End-to-End Publishing System**
 
@@ -20,7 +20,7 @@ Status: ✅ **PRODUCTION READY**
 
 ## Overview
 
-PrisMind's publishing pipeline transforms discovered social media posts into multi-persona, platform-optimized content that's intelligently scheduled and automatically published.
+BEYONDLINES's publishing pipeline transforms discovered social media posts into multi-persona, platform-optimized content that's intelligently scheduled and automatically published.
 
 ### Key Features
 
@@ -666,7 +666,7 @@ Tests actual posting to Threads (requires credentials).
 
 ## Summary
 
-PrisMind's publishing pipeline is a **complete, production-ready system** that:
+BEYONDLINES's publishing pipeline is a **complete, production-ready system** that:
 
 1. ✅ **Analyzes** social posts with enhanced discovery signals
 2. ✅ **Rewrites** for 5 distinct personas using AI-generated angles

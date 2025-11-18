@@ -8,7 +8,7 @@ Focused two-week plan to deliver a robust, provably working core: collectors and
 1. Scraping + Storage: perfect, deterministic collectors with idempotent persistence
 2. Analysis Quality: complete, consistent AI fields; deterministic scoring
 3. RSS/Discoveries: stable ingestion, dedupe, ranking, Supabase sync
-4. Surface: minimal Streamlit Discoveries and minimal Telegram commands
+4. Surface: minimal Svelte Discoveries and minimal Telegram commands
 
 Guardrails:
 - No schema changes; use `posts`, `discoveries`, `telegram_messages`
@@ -84,7 +84,7 @@ Proposed `config/collection.json` extensions:
 - Collectors: `pytest tests/test_twitter_collector.py -v`, `pytest tests/test_reddit_collector.py -v`, `pytest tests/test_threads_collector.py -v`
 - Analysis: `pytest tests/test_ai_analyzer.py -v`, `pytest tests/test_post_analyzer.py -v`
 - Discovery: `pytest tests/test_collection.py -v`, `pytest tests/test_collectors.py -v`
-- UI/Bot smoke: `streamlit run src/web/app.py` and `/status`, `/latest 5`
+- UI/Bot smoke: `svelte run src/web/app.py` and `/status`, `/latest 5`
 
 Success criteria:
 - Deterministic incremental collection; no bans; 0 critical errors in logs
@@ -94,6 +94,6 @@ Success criteria:
 
 ---
 
-**Last Updated:** October 31, 2025  
-**Current Phase:** Phase 0–1 (Safety + Collectors)  
+**Last Updated:** October 31, 2025
+**Current Phase:** Phase 0–1 (Safety + Collectors)
 **Status:** Ready to implement 🚀

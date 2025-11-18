@@ -3,7 +3,6 @@ import os
 from pathlib import Path
 from typing import Optional
 
-
 BASE_DIR = Path("var")
 BASE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -20,10 +19,9 @@ def clear_cancel(name: str = "all") -> None:
     try:
         _flag_path(name).unlink()
     except FileNotFoundError:
+        logger.error(f"Error: {e}")
         pass
 
 
 def is_cancelled(name: str = "all") -> bool:
     return _flag_path(name).exists()
-
-

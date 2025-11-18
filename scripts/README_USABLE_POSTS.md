@@ -126,6 +126,3 @@ The `usable_posts` table can be used by:
 - Quality metrics dashboard
 - Persona-specific views
 - Category-specific views
-
-
-

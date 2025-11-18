@@ -34,11 +34,13 @@ class MimesisDB:
         try:
             # Check if Supabase client is available
             if not self.sb or not self.sb.client:
-                logger.warning("Supabase client not available, skipping due posts check")
+                logger.warning(
+                    "Supabase client not available, skipping due posts check"
+                )
                 return []
-            
-            from datetime import datetime, timezone
+
             import socket
+            from datetime import datetime, timezone
 
             now_iso = datetime.now(timezone.utc).isoformat()
             q = (
@@ -48,14 +50,25 @@ class MimesisDB:
                 .in_("status", ["pending", "retry"])  # type: ignore[attr-defined]
             )
             return q.order("scheduled_time", desc=False).execute().data
-        except (ConnectionError, ValueError, AttributeError, socket.gaierror, socket.herror) as e:
+        except (
+            ConnectionError,
+            ValueError,
+            AttributeError,
+            socket.gaierror,
+            socket.herror,
+        ) as e:
             # Network/DNS errors - fail gracefully (don't spam logs)
-            logger.debug(f"Supabase unavailable for due posts check (DNS/network error): {e}")
+            logger.debug(
+                f"Supabase unavailable for due posts check (DNS/network error): {e}"
+            )
             return []
         except Exception as e:
             error_str = str(e)
             # Check for DNS errors in string form (supabase-py might wrap them)
-            if "nodename nor servname provided" in error_str or "Name or service not known" in error_str:
+            if (
+                "nodename nor servname provided" in error_str
+                or "Name or service not known" in error_str
+            ):
                 logger.debug(f"Supabase DNS error (Supabase may be unreachable): {e}")
                 return []
             # Only log unexpected errors as error level
@@ -85,10 +98,11 @@ class MimesisDB:
 
         post_data = scheduled_post[0]
 
-        # Update status to posted
-        self.sb.client.table("scheduled_posts").update({"status": "posted"}).eq(
-            "id", scheduled_id
-        ).execute()
+        # Update status to posted - use DatabaseAgent
+        from src.database.database_agent import DatabaseAgent
+
+        db_agent = DatabaseAgent()
+        db_agent.update_scheduled_post(scheduled_id, {"status": "posted"})
 
         # Create posted_content record with all required fields
         posted_content = {
@@ -107,18 +121,40 @@ class MimesisDB:
         if post_url:
             posted_content["post_url"] = post_url
 
-        self.sb.client.table("posted_content").insert(posted_content).execute()
+        # Use DatabaseAgent (delegates to StorageFacade)
+        from src.database.database_agent import DatabaseAgent
+
+        db_agent = DatabaseAgent()
+        db_agent.save_posted_content(posted_content)
 
     def insert_scheduled(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """Insert a scheduled post, with error handling for Supabase downtime."""
+        """Insert a scheduled post - uses DatabaseAgent (delegates to StorageFacade)."""
         try:
-            return (
-                self.sb.client.table("scheduled_posts")
-                .insert(payload)
-                .execute()
-                .data[0]
-            )
+            from src.database.database_agent import DatabaseAgent
+
+            db_agent = DatabaseAgent()
+            if db_agent.save_scheduled_post(payload):
+                # Get the inserted record
+                try:
+                    result = (
+                        self.sb.client.table("scheduled_posts")
+                        .select("*")
+                        .eq("content", payload.get("content"))
+                        .eq("scheduled_time", payload.get("scheduled_time"))
+                        .limit(1)
+                        .execute()
+                    )
+                    if result.data:
+                        return result.data[0]
+                except Exception as e:
+                    logger.error(f"Error: {e}")
+                    pass
+                # Fallback: return payload with id if available
+                return payload
+            else:
+                raise Exception("Failed to save scheduled post via DatabaseAgent")
         except Exception as e:
+            logger.error(f"Error: {e}")
             error_msg = str(e)
             # Check if it's a Cloudflare 520 or connection error
             if (
@@ -147,13 +183,101 @@ class MimesisDB:
     def update_transformation(
         self, transformation_id: int, fields: Dict[str, Any]
     ) -> Dict[str, Any]:
-        return (
+        # Get existing transformation first
+        existing = (
             self.sb.client.table("mimesis_transformations")
-            .update(fields)
+            .select("*")
             .eq("id", transformation_id)
+            .limit(1)
             .execute()
-            .data[0]
         )
+        if not existing.data:
+            raise ValueError(f"Transformation {transformation_id} not found")
+
+        # Merge fields and save via DatabaseAgent
+        updated = {**existing.data[0], **fields}
+        from src.database.database_agent import DatabaseAgent
+
+        db_agent = DatabaseAgent()
+        if db_agent.save_transformation(updated):
+            return updated
+        else:
+            raise Exception("Failed to update transformation via DatabaseAgent")
+
+    def delete_transformation(self, transformation_id: int) -> None:
+        """Delete a transformation by ID"""
+        self.sb.client.table("mimesis_transformations").delete().eq(
+            "id", transformation_id
+        ).execute()
+
+    def delete_old_transformations(self, days: int = 30) -> int:
+        """Delete transformations older than specified days. Returns count deleted."""
+        from datetime import datetime, timedelta, timezone
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        cutoff_iso = cutoff.isoformat()
+
+        logger.info(
+            f"Deleting transformations older than {cutoff_iso} (>{days} days old)"
+        )
+
+        # Get count before deletion
+        try:
+            count_query = (
+                self.sb.client.table("mimesis_transformations")
+                .select("*", count="exact")
+                .lt("created_at", cutoff_iso)
+                .execute()
+            )
+            count = getattr(count_query, "count", 0) or 0
+            logger.info(f"Found {count} transformations to delete")
+        except Exception as e:
+            logger.error(f"Error counting transformations: {e}")
+            count = 0
+
+        # Delete old transformations
+        try:
+            result = (
+                self.sb.client.table("mimesis_transformations")
+                .delete()
+                .lt("created_at", cutoff_iso)
+                .execute()
+            )
+            # Supabase delete doesn't return count, so we use the count from the query
+            logger.info(f"Delete operation completed")
+            return count
+        except Exception as e:
+            logger.error(f"Error deleting transformations: {e}")
+            raise
+
+    def delete_all_transformations(self) -> int:
+        """Delete ALL transformations. Returns count deleted."""
+        logger.warning("Deleting ALL transformations")
+
+        # Get count before deletion
+        try:
+            count_query = (
+                self.sb.client.table("mimesis_transformations")
+                .select("*", count="exact")
+                .execute()
+            )
+            count = getattr(count_query, "count", 0) or 0
+            logger.info(f"Found {count} total transformations to delete")
+        except Exception as e:
+            logger.error(f"Error counting transformations: {e}")
+            count = 0
+
+        # Delete all transformations
+        try:
+            # Delete all rows (no filter)
+            self.sb.client.table("mimesis_transformations").delete().neq(
+                "id", 0
+            ).execute()
+            logger.info(f"All transformations deleted")
+            return count
+        except Exception as e:
+            logger.error(f"Error deleting all transformations: {e}")
+            raise
 
     def approve_to_schedule(
         self,

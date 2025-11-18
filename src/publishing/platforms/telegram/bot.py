@@ -1,4 +1,4 @@
-"""Telegram bot integration for PrisMind."""
+"""Telegram bot integration for BEYONDLINES."""
 
 import asyncio
 import html
@@ -7,43 +7,42 @@ import logging
 import math
 import os
 import time
+from datetime import time as dt_time
 from typing import Dict, List, Optional, Set
 
 from dotenv import load_dotenv
-
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import (
     Application,
     ApplicationBuilder,
+    CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
-    CallbackQueryHandler,
 )
-from datetime import time as dt_time
+
+from src.agents.github_research_agent import get_github_agent
+from src.agents.librarian_book_agent import get_librarian
+from src.core.discovery.deep_discovery import DeepDiscovery
 
 # Local imports
 from src.scrape_state_manager import state_manager
-from src.services.new_database_manager import get_database_manager
 from src.services.automation import IntelligenceAutomation
-from src.services.digest import DigestGenerator
-from src.core.discovery.deep_discovery import DeepDiscovery
-from src.services.telegram_formatting import format_posts_list, format_post_stats
-from src.services.health import get_health_monitor
 from src.services.content_rewriter import get_rewriter
-from src.agents.github_research_agent import get_github_agent
-from src.agents.librarian_book_agent import get_librarian
-from src.utils.duplicate_detector import get_duplicate_detector
+from src.services.digest import DigestGenerator
+from src.services.health import get_health_monitor
+from src.services.new_database_manager import get_database_manager
 
 # Import agent command handlers
 from src.services.telegram_bot_agents_extension import (
-    research_repo_command,
     get_book_command,
-    rewrite_command,
-    personas_command,
     library_command,
+    personas_command,
+    research_repo_command,
+    rewrite_command,
 )
-
+from src.services.telegram_formatting import format_post_stats, format_posts_list
+from src.utils.duplicate_detector import get_duplicate_detector
 
 LOGGER = logging.getLogger(__name__)
 
@@ -61,6 +60,7 @@ def _parse_allowed_user_ids(raw: str) -> Set[int]:
         try:
             allowed.add(int(part))
         except ValueError:
+            logger.error(f"Error: {e}")
             LOGGER.warning("Ignoring invalid TELEGRAM_ALLOWED_USER_IDS entry: %s", part)
     return allowed
 
@@ -70,6 +70,7 @@ def _load_access_controls() -> tuple[Set[int], int]:
     try:
         cooldown = int(os.getenv("TELEGRAM_COMMAND_COOLDOWN", "15"))
     except ValueError:
+        logger.error(f"Error: {e}")
         cooldown = 15
     return allowed_ids, max(0, cooldown)
 
@@ -131,7 +132,7 @@ async def _cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     # Modern welcome message with emojis
     msg = (
         "╔═══════════════════════════╗\n"
-        "║   🧠 <b>PrisMind AI</b>   ║\n"
+        "║   🧠 <b>BEYONDLINES AI</b>   ║\n"
         "╚═══════════════════════════╝\n\n"
         "✨ <b>Your Autonomous Intelligence Companion</b>\n\n"
         "🎯 <b>Quick Start:</b>\n"
@@ -222,6 +223,7 @@ async def _cmd_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
 
     except Exception as e:
+        logger.error(f"Error: {e}")
         await update.message.reply_text(f"Error: {e}")
 
 
@@ -239,6 +241,7 @@ async def _cmd_topics(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await update.message.reply_text(summary, parse_mode=ParseMode.HTML)
 
     except Exception as e:
+        logger.error(f"Error: {e}")
         await update.message.reply_text(f"Error showing topics: {e}")
 
 
@@ -290,9 +293,9 @@ async def _cmd_discover_new(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                         saved_count += 1
 
             if saved_count > 0:
-                print(f"   💾 Saved {saved_count} discovered posts to database")
+                logger.info(f"   💾 Saved {saved_count} discovered posts to database")
         except Exception as e:
-            print(f"   ⚠️ Failed to save to database: {e}")
+            logger.error(f"   ⚠️ Failed to save to database: {e}")
 
         # Build comprehensive report
         curated = report.get("curated", {})
@@ -371,9 +374,7 @@ async def _cmd_discover_new(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                     InlineKeyboardButton(
                         f"📖 Read #{i}", callback_data=f"read_discovered_{i - 1}"
                     ),
-                    InlineKeyboardButton(f"🔗 Open", url=post.url)
-                    if post.url
-                    else None,
+                    InlineKeyboardButton(f"🔗 Open", url=post.url) if post.url else None,
                 ]
             )
 
@@ -391,6 +392,7 @@ async def _cmd_discover_new(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         await progress_msg.edit_text("\n".join(lines), parse_mode=ParseMode.HTML)
 
     except Exception as e:
+        logger.error(f"Error: {e}")
         LOGGER.exception("Active discovery failed")
         await update.message.reply_text(f"Discovery error: {e}")
 
@@ -411,8 +413,9 @@ async def _cmd_discover(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         posts_data = db.get_posts(limit=100)
 
         # Convert to SocialPost objects
-        from src.core.extraction.social_extractor_base import SocialPost
         from datetime import datetime
+
+        from src.core.extraction.social_extractor_base import SocialPost
 
         posts = []
         for p in posts_data:
@@ -487,6 +490,7 @@ async def _cmd_discover(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
 
     except Exception as e:
+        logger.error(f"Error: {e}")
         LOGGER.exception("Discovery failed")
         await update.message.reply_text(f"Discovery error: {e}")
 
@@ -676,6 +680,7 @@ async def _cmd_collections(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await msg.edit_text("\n".join(lines), parse_mode=ParseMode.HTML)
 
     except Exception as e:
+        logger.error(f"Error: {e}")
         await msg.edit_text(f"❌ Error: {e}")
 
 
@@ -770,6 +775,7 @@ async def _cmd_digest(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await msg.edit_text(f"<pre>{digest}</pre>", parse_mode=ParseMode.HTML)
 
     except Exception as e:
+        logger.error(f"Error: {e}")
         await msg.edit_text(f"❌ Error: {e}")
 
 
@@ -797,6 +803,7 @@ async def _cmd_morning_digest(
         await msg.edit_text(telegram_text, parse_mode=ParseMode.HTML)
 
     except Exception as e:
+        logger.error(f"Error: {e}")
         LOGGER.exception("Morning digest failed")
         await msg.edit_text(f"❌ Error: {e}")
 
@@ -822,6 +829,7 @@ async def _cmd_evening_summary(
         await msg.edit_text(telegram_text, parse_mode=ParseMode.HTML)
 
     except Exception as e:
+        logger.error(f"Error: {e}")
         LOGGER.exception("Evening summary failed")
         await msg.edit_text(f"❌ Error: {e}")
 
@@ -870,6 +878,7 @@ async def _cmd_health(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await msg.edit_text("\n".join(lines), parse_mode=ParseMode.HTML)
 
     except Exception as e:
+        logger.error(f"Error: {e}")
         await msg.edit_text(f"❌ Health check error: {e}")
 
 
@@ -959,6 +968,7 @@ async def _cmd_deep_research(
         await msg.edit_text("\n".join(lines), parse_mode=ParseMode.HTML)
 
     except Exception as e:
+        logger.error(f"Error: {e}")
         LOGGER.exception("Deep research failed")
         await msg.edit_text(
             f"❌ Research error: {e}\n\n"
@@ -1058,6 +1068,7 @@ async def _cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             text, parse_mode=ParseMode.HTML, reply_markup=reply_markup
         )
     except Exception as exc:  # pylint: disable=broad-except
+        logger.error(f"Error: {e}")
         LOGGER.exception("Failed to get status: %s", exc)
         await update.message.reply_text(f"❌ Status error: {exc}")
 
@@ -1119,7 +1130,8 @@ async def _cmd_collect(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             lines.append(f"\n💬 <i>{msg}</i>")
 
             await progress_msg.edit_text("\n".join(lines), parse_mode=ParseMode.HTML)
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error: {e}")
             pass  # Ignore edit errors
 
     try:
@@ -1221,11 +1233,13 @@ async def _cmd_collect(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 await message.reply_text(
                     text, parse_mode=ParseMode.HTML, disable_web_page_preview=True
                 )
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error: {e}")
             # Non-fatal; skip summaries if any error occurs
             pass
 
     except Exception as exc:  # pylint: disable=broad-except
+        logger.error(f"Error: {e}")
         LOGGER.exception("Collection failed: %s", exc)
         await message.reply_text(
             "━━━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -1258,6 +1272,7 @@ async def _job_collect(context: ContextTypes.DEFAULT_TYPE) -> None:
                 chat_id=chat_id, text=msg, parse_mode=ParseMode.HTML
             )
     except Exception as exc:  # pylint: disable=broad-except
+        logger.error(f"Error: {e}")
         if chat_id:
             await context.bot.send_message(
                 chat_id=chat_id, text=f"Scheduled collection error: {exc}"
@@ -1302,7 +1317,8 @@ async def _cmd_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             hh_i = max(0, min(23, hh_i))
             mm_i = max(0, min(59, mm_i))
             run_time = dt_time(hour=hh_i, minute=mm_i)
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error: {e}")
             await message.reply_text("Time must be in HH:MM format, e.g., 09:00")
             return
 
@@ -1339,6 +1355,7 @@ async def _cmd_analyze(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             try:
                 limit = int(arg)
             except ValueError:
+                logger.error(f"Error: {e}")
                 if message:
                     await message.reply_text(
                         "Usage: /analyze [count] [platform] — platform options: twitter, reddit, threads"
@@ -1360,7 +1377,8 @@ async def _cmd_analyze(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             unanalyzed = db.get_unanalyzed_posts(
                 limit=limit, platforms=platforms_filter
             )  # type: ignore[attr-defined]
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error: {e}")
             unanalyzed = []
         posts = unanalyzed or db.get_posts(limit=limit, platforms=platforms_filter)
 
@@ -1380,6 +1398,7 @@ async def _cmd_analyze(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 else:
                     errors.append(f"{post_id}: storage failed")
             except Exception as inner_exc:  # pylint: disable=broad-except
+                logger.error(f"Error: {e}")
                 LOGGER.warning("Analyze failed for post %s: %s", post_id, inner_exc)
                 errors.append(f"{post_id}: {inner_exc}")
 
@@ -1402,9 +1421,11 @@ async def _cmd_analyze(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 chat_id=update.effective_chat.id,
                 text="🔔 Analysis completed.",
             )
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error: {e}")
             pass
     except Exception as exc:  # pylint: disable=broad-except
+        logger.error(f"Error: {e}")
         LOGGER.exception("Analysis failed: %s", exc)
         await update.message.reply_text(f"Analysis error: {exc}")
 
@@ -1448,11 +1469,13 @@ async def _cmd_latest(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 if len(args) > 1:
                     platform = args[1].lower()
             except ValueError:
+                logger.error(f"Error: {e}")
                 platform = args[0].lower()
                 if len(args) > 1:
                     try:
                         limit = max(1, min(10, int(args[1])))
                     except ValueError:
+                        logger.error(f"Error: {e}")
                         pass
 
         if platform and platform not in VALID_PLATFORMS:
@@ -1481,6 +1504,7 @@ async def _cmd_latest(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await update.message.reply_text(message_text, parse_mode=ParseMode.HTML)
 
     except Exception as exc:  # pylint: disable=broad-except
+        logger.error(f"Error: {e}")
         LOGGER.exception("Latest failed: %s", exc)
         await update.message.reply_text(f"Latest error: {exc}")
 
@@ -1622,6 +1646,7 @@ async def _send_posts_feed(message, posts: list, platform_filter: str = None):
             disable_web_page_preview=True,
         )
     except Exception as e:
+        logger.error(f"Error: {e}")
         # Fallback to simple format
         simple_lines = [
             f"{i}. {p.get('author', 'Unknown')}: {(p.get('content') or '')[:80]}..."
@@ -1688,7 +1713,8 @@ async def _cmd_insight(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         if isinstance(sentiment_info, str):
             try:
                 sentiment_info = json.loads(sentiment_info)
-            except Exception:
+            except Exception as e:
+                logger.error(f"Error: {e}")
                 sentiment_info = {}
         sentiment_label = "Unknown"
         if isinstance(sentiment_info, dict):
@@ -1759,6 +1785,7 @@ async def _cmd_insight(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             disable_web_page_preview=True,
         )
     except Exception as exc:  # pylint: disable=broad-except
+        logger.error(f"Error: {e}")
         LOGGER.exception("Insight failed: %s", exc)
         await update.effective_message.reply_text(f"Insight error: {exc}")
 
@@ -1843,6 +1870,7 @@ async def _cmd_ask(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
 
     except Exception as exc:  # pylint: disable=broad-except
+        logger.error(f"Error: {e}")
         LOGGER.exception("Research failed: %s", exc)
         await message.reply_text(f"❌ Research error: {exc}")
 
@@ -1865,6 +1893,7 @@ async def _cmd_recommend(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             try:
                 limit = max(1, min(20, int(arg)))
             except ValueError:
+                logger.error(f"Error: {e}")
                 pass
 
     message = update.effective_message
@@ -1938,6 +1967,7 @@ async def _cmd_recommend(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
 
     except Exception as exc:  # pylint: disable=broad-except
+        logger.error(f"Error: {e}")
         LOGGER.exception("Recommend failed: %s", exc)
         await message.reply_text(f"❌ Recommendation error: {exc}")
 
@@ -1954,6 +1984,7 @@ async def _cmd_research(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         try:
             limit = max(1, min(10, int(args[0])))
         except ValueError:
+            logger.error(f"Error: {e}")
             pass
 
     message = update.effective_message
@@ -1998,6 +2029,7 @@ async def _cmd_research(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
 
     except Exception as exc:  # pylint: disable=broad-except
+        logger.error(f"Error: {e}")
         LOGGER.exception("Research failed: %s", exc)
         await message.reply_text(f"❌ Research error: {exc}")
 
@@ -2064,6 +2096,7 @@ async def _cmd_curate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
 
     except Exception as exc:  # pylint: disable=broad-except
+        logger.error(f"Error: {e}")
         LOGGER.exception("Curate failed: %s", exc)
         await message.reply_text(f"❌ Curation error: {exc}")
 
@@ -2128,6 +2161,7 @@ async def _cmd_publish(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             )
 
     except Exception as exc:  # pylint: disable=broad-except
+        logger.error(f"Error: {e}")
         LOGGER.exception("Publish failed: %s", exc)
         await message.reply_text(f"❌ Publish error: {exc}")
 
@@ -2185,6 +2219,7 @@ async def _cmd_transform(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
 
     except Exception as exc:  # pylint: disable=broad-except
+        logger.error(f"Error: {e}")
         LOGGER.exception("Transform failed: %s", exc)
         await message.reply_text(f"❌ Transform error: {exc}")
 
@@ -2275,7 +2310,8 @@ async def _handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             await query.edit_message_text(
                 "⏳ <i>Processing...</i>", parse_mode=ParseMode.HTML
             )
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error: {e}")
             pass
 
         # Execute the command
@@ -2348,7 +2384,7 @@ def build_application() -> Application:
 
 def run_bot() -> None:
     app = build_application()
-    LOGGER.info("Starting PrisMind Telegram bot...")
+    LOGGER.info("Starting BEYONDLINES Telegram bot...")
     # Use single polling loop to avoid multiple updater conflicts
     app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
 

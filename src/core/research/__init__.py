@@ -1,7 +1,7 @@
-"""Advanced research and search functionality for PrisMind."""
+"""Advanced research and search functionality for BEYONDLINES."""
 
+from .content_analyzer import ContentAnalyzer
 from .research_engine import ResearchEngine
 from .semantic_search import SemanticSearchEngine
-from .content_analyzer import ContentAnalyzer
 
-__all__ = ['ResearchEngine', 'SemanticSearchEngine', 'ContentAnalyzer']
+__all__ = ["ResearchEngine", "SemanticSearchEngine", "ContentAnalyzer"]

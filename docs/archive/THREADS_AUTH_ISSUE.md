@@ -90,7 +90,7 @@ python3 refresh_threads_cookies.py
 # 2. After successful login, collect normally
 python3 collect_threads_now.py
 
-# Or use Streamlit UI
+# Or use Svelte UI
 # Just go to Collection tab and click "Collect from Threads"
 ```
 

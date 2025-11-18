@@ -1,7 +1,7 @@
 # Posting Integration Fix - Summary
 
 ## Problem
-After merging the mimesis project into prismind, posting to Twitter, Threads, and Telegram stopped working because:
+After merging the mimesis project into beyondlines, posting to Twitter, Threads, and Telegram stopped working because:
 
 1. **Missing environment variable**: `AUTOMATION_URL` wasn't defined in the main `.env`
 2. **Webhook dependency**: The system relied on n8n webhooks forwarding to an autoposter service that wasn't running
@@ -53,7 +53,7 @@ After merging the mimesis project into prismind, posting to Twitter, Threads, an
 ## How It Works Now
 
 ### Background Worker (Auto-posting)
-The `PublisherWorker` runs in the background when the Streamlit app starts:
+The `PublisherWorker` runs in the background when the Svelte app starts:
 
 ```python
 # In src/web/app.py
@@ -81,7 +81,7 @@ Users can manually trigger posting from the "Publishing" tab → "Scheduler" sec
 ```python
 from src.services.twitter_poster import post_to_twitter_direct
 
-result = post_to_twitter_direct("Test tweet from prismind!")
+result = post_to_twitter_direct("Test tweet from beyondlines!")
 print(result)
 # {'success': True, 'tweet_id': '...', 'url': 'https://twitter.com/...', ...}
 ```
@@ -90,7 +90,7 @@ print(result)
 ```python
 from src.services.publisher_worker import post_to_telegram_direct
 
-result = post_to_telegram_direct("Test message from prismind!")
+result = post_to_telegram_direct("Test message from beyondlines!")
 print(result)
 # {'success': True, 'message_id': '...', 'url': None, ...}
 ```
@@ -99,7 +99,7 @@ print(result)
 ```python
 from src.services.threads_poster import post_to_threads_direct
 
-result = post_to_threads_direct("Test thread from prismind! 🧵")
+result = post_to_threads_direct("Test thread from beyondlines! 🧵")
 print(result)
 # {'success': True, 'post_id': '...', 'url': 'https://www.threads.net/@...', ...}
 ```
@@ -152,7 +152,7 @@ THREADS_USER_ID=your_threads_user_id
 
 ### Before (Broken)
 ```
-prismind
+beyondlines
   ↓ webhook
 n8n (not running)
   ↓ forward
@@ -163,9 +163,9 @@ Platform
 
 ### After (Working) ✅
 ```
-Twitter:   prismind → Tweepy → Twitter API v2
-Telegram:  prismind → requests → Telegram Bot API
-Threads:   prismind → requests → Meta Graph API
+Twitter:   beyondlines → Tweepy → Twitter API v2
+Telegram:  beyondlines → requests → Telegram Bot API
+Threads:   beyondlines → requests → Meta Graph API
 ```
 
 **All platforms now use direct API calls - no external services needed!**
@@ -175,7 +175,7 @@ Threads:   prismind → requests → Meta Graph API
 - **Twitter threads**: The TwitterPoster supports threads via `post_thread()` method
 - **Telegram long messages**: Automatically splits messages over 4096 chars
 - **Retry logic**: Failed posts are marked with `status: "retry"` for manual review
-- **Publisher worker**: Runs as daemon thread, started once per Streamlit session
+- **Publisher worker**: Runs as daemon thread, started once per Svelte session
 - **Rate limiting**: 3-second delay between thread tweets (Twitter best practice)
 
 ## Next Steps (Optional)

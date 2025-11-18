@@ -7,14 +7,14 @@
    - `threads_extractor.py` - ✅ Fixed and working
    - `twitter_extractor_playwright.py` - Needs verification
    - `reddit_extractor.py` - Needs verification
-   
+
 2. **Collection Layer** (Partial):
    - `platform_collectors.py` - Has async collection functions
    - `collection_service.py` - Orchestrator wrapper
    - `orchestrator.py` - Main pipeline orchestrator
 
 3. **UI Integration** (Partial):
-   - Streamlit app has collection buttons
+   - Svelte app has collection buttons
    - Telegram bot has collection commands
    - Both delegate to orchestrator
 
@@ -37,7 +37,7 @@
 ┌─────────────────────────────────────────┐
 │         User Interfaces                  │
 │  ┌─────────────┐    ┌─────────────┐    │
-│  │  Streamlit  │    │  Telegram   │    │
+│  │  Svelte  │    │  Telegram   │    │
 │  │     UI      │    │    Bot      │    │
 │  └──────┬──────┘    └──────┬──────┘    │
 │         │                   │            │
@@ -89,7 +89,7 @@
 - [ ] Add CI/CD tests
 
 ### Phase 3: UI Integration (Priority: HIGH)
-- [ ] Update Streamlit UI with new service
+- [ ] Update Svelte UI with new service
 - [ ] Add real-time progress display
 - [ ] Add collection scheduling
 - [ ] Show collection history
@@ -132,7 +132,7 @@
 
 - **Phase 1**: 2-3 hours (Core service)
 - **Phase 2**: 2-3 hours (Tests)
-- **Phase 3**: 1-2 hours (Streamlit)
+- **Phase 3**: 1-2 hours (Svelte)
 - **Phase 4**: 1 hour (Telegram)
 - **Phase 5**: 1 hour (Monitoring)
 

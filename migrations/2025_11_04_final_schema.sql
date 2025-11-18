@@ -37,9 +37,9 @@ ALTER TABLE posts
   ADD COLUMN IF NOT EXISTS best_persona_reasons text[];
 
 -- Verify the columns exist
-SELECT column_name, data_type 
-FROM information_schema.columns 
-WHERE table_name = 'posts' 
+SELECT column_name, data_type
+FROM information_schema.columns
+WHERE table_name = 'posts'
   AND column_name IN (
     'rewrite_score', 'rewrite_readiness', 'rewrite_reasons', 'rewrite_risks',
     'persona_fit_scores', 'persona_fit_reasons', 'best_persona_key',
@@ -47,9 +47,3 @@ WHERE table_name = 'posts'
     'analysis_depth', 'needs_deep_analysis'
   )
 ORDER BY column_name;
-
-
-
-
-
-

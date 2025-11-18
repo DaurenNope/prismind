@@ -7,7 +7,8 @@ Automatically finds and curates valuable content without manual bookmarking
 import asyncio
 import logging
 from datetime import datetime, timedelta
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
@@ -53,6 +54,7 @@ class AutonomousDiscovery:
             return DEFAULT_TOPICS
 
         except ImportError:
+            logger.error(f"Error: {e}")
             # Final fallback to diverse default topics
             return [
                 "AI",
@@ -289,9 +291,9 @@ class AutonomousDiscovery:
                 if item.get("platform") == "rss":
                     item["quality_score"] = 8.0
                 elif item.get("platform") == "github":
-                    item["quality_score"] = (
-                        7.5  # GitHub trending repos are usually good
-                    )
+                    item[
+                        "quality_score"
+                    ] = 7.5  # GitHub trending repos are usually good
                 elif item.get("platform") == "reddit":
                     item["quality_score"] = 7.0  # Reddit posts vary in quality
                 else:
@@ -536,36 +538,36 @@ def get_discovery_engine() -> AutonomousDiscovery:
 
 async def test_discovery():
     """Test discovery engine"""
-    print("🧪 Testing Autonomous Discovery Engine\n")
+    logger.info("🧪 Testing Autonomous Discovery Engine\n")
 
     engine = get_discovery_engine()
 
     # Test discovery
-    print("Running discovery...")
+    logger.info("Running discovery...")
     result = await engine.discover_content()
 
-    print("\n📊 Discovery Results:")
-    print(f"  Total discovered: {result.get('total_discovered', 0)}")
-    print(f"  Quality filtered: {result.get('quality_filtered', 0)}")
-    print(f"  Relevant: {result.get('relevant', 0)}")
-    print(f"  Unique: {result.get('unique', 0)}")
-    print(f"  Saved: {result.get('saved', 0)}")
-    print(f"  Duration: {result.get('duration_seconds', 0):.1f}s")
+    logger.info("\n📊 Discovery Results:")
+    logger.info(f"  Total discovered: {result.get('total_discovered', 0)}")
+    logger.info(f"  Quality filtered: {result.get('quality_filtered', 0)}")
+    logger.info(f"  Relevant: {result.get('relevant', 0)}")
+    logger.info(f"  Unique: {result.get('unique', 0)}")
+    logger.info(f"  Saved: {result.get('saved', 0)}")
+    logger.info(f"  Duration: {result.get('duration_seconds', 0):.1f}s")
 
-    print("\n📰 Sources:")
+    logger.info("\n📰 Sources:")
     sources = result.get("sources", {})
     for source, count in sources.items():
-        print(f"  {source}: {count}")
+        logger.info(f"  {source}: {count}")
 
     # Test digest
-    print("\n📊 Generating daily digest...")
+    logger.info("\n📊 Generating daily digest...")
     digest = await engine.generate_daily_digest()
 
-    print(f"  Total posts: {digest.get('total_posts', 0)}")
-    print(f"  Top stories: {len(digest.get('top_stories', []))}")
-    print(f"  Trending topics: {len(digest.get('trending_topics', []))}")
+    logger.info(f"  Total posts: {digest.get('total_posts', 0)}")
+    logger.info(f"  Top stories: {len(digest.get('top_stories', []))}")
+    logger.info(f"  Trending topics: {len(digest.get('trending_topics', []))}")
 
-    print("\n✅ Discovery engine working!")
+    logger.info("\n✅ Discovery engine working!")
 
 
 if __name__ == "__main__":

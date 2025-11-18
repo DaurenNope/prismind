@@ -1,4 +1,4 @@
-# 🗺️ PrisMind Project Map - Files, Features & Tests
+# 🗺️ BEYONDLINES Project Map - Files, Features & Tests
 
 **Complete mapping of codebase → features → tests**
 
@@ -7,7 +7,7 @@
 ## 📂 Root Directory Structure
 
 ```
-prismind/
+beyondlines/
 ├── 📁 backups/          # Database backups
 ├── 📁 config/           # Configuration files
 ├── 📁 cookies/          # Authentication cookies
@@ -25,18 +25,18 @@ prismind/
 ├── run_full_collection.py  # Quick collection runner
 ├── start_web.sh         # Web UI launcher
 ├── run_telegram_bot.sh  # Telegram bot launcher
-└── prismind.db          # SQLite database
+└── beyondlines.db          # SQLite database
 ```
 
 ---
 
 ## 🎯 Feature → File → Test Mapping
 
-### 1. 🌐 WEB DASHBOARD (Streamlit UI)
+### 1. 🌐 WEB DASHBOARD (Svelte UI)
 
 #### Feature: Main Web Application
 **Files:**
-- `src/web/app.py` - Main Streamlit application entry point
+- `src/web/app.py` - Main Svelte application entry point
 - `src/web/__main__.py` - Module entry point
 
 **Components:**
@@ -53,7 +53,7 @@ prismind/
 
 **How to Run:**
 ```bash
-streamlit run src/web/app.py
+svelte run src/web/app.py
 # Or
 ./start_web.sh
 ```
@@ -228,7 +228,7 @@ python src/services/telegram_bot.py
 ```env
 REDDIT_CLIENT_ID=your_client_id
 REDDIT_CLIENT_SECRET=your_client_secret
-REDDIT_USER_AGENT=prismind:v1.0
+REDDIT_USER_AGENT=beyondlines:v1.0
 ```
 
 **How it Works:**
@@ -558,8 +558,8 @@ python run_full_collection.py
 - `tests/test_duplicate_handling.py` - Duplicate detection
 
 **Database Files:**
-- `prismind.db` - SQLite database (708 KB)
-- `backups/prismind_20241009.db` - Backup
+- `beyondlines.db` - SQLite database (708 KB)
+- `backups/beyondlines_20241009.db` - Backup
 
 **Tables:**
 - `posts` - All collected posts
@@ -869,7 +869,7 @@ python run_full_collection.py
 
 ### Start Web UI
 ```bash
-streamlit run src/web/app.py
+svelte run src/web/app.py
 # Or
 ./start_web.sh
 ```
@@ -965,7 +965,7 @@ python main.py --help       # Show help
 ## 📝 Notes
 
 ### Database Schema
-**SQLite (prismind.db):**
+**SQLite (beyondlines.db):**
 - `posts` - All social media posts
 - `discoveries` - RSS/Reddit/GitHub discoveries
 - `telegram_messages` - Telegram messages
@@ -979,7 +979,7 @@ python main.py --help       # Show help
 
 ### Dependencies
 **Core:**
-- streamlit - Web UI
+- svelte - Web UI
 - playwright - Browser automation
 - supabase - Cloud database
 - praw - Reddit API
@@ -994,5 +994,5 @@ python main.py --help       # Show help
 
 ---
 
-**Last Updated:** October 14, 2024  
+**Last Updated:** October 14, 2024
 **Status:** Complete and verified ✅

@@ -1,18 +1,24 @@
 from __future__ import annotations
 
+import logging
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
-from datetime import datetime, timezone, timedelta
 
 from src.pipeline.orchestrator import get_orchestrator
-from src.utils.config import get_config
+from src.publishing.circuit_breaker import get_circuit_breaker
 from src.services.profile_content_selector import ProfileContentSelector
 from src.services.profile_publishing_orchestrator import ProfilePublishingOrchestrator
-from src.publishing.circuit_breaker import get_circuit_breaker
+from src.utils.config import get_config
+
+logger = logging.getLogger(__name__)
 
 try:
     from src.database.manager import SupabaseManager
-except Exception:  # pragma: no cover - Supabase optional during local tests
-    SupabaseManager = None  # type: ignore
+
+    supabase_manager = SupabaseManager  # type: ignore
+except Exception as e:  # pragma: no cover - Supabase optional during local tests
+    logger.error(f"Error: {e}")
+    supabase_manager = None  # type: ignore
 
 
 class AutoPipeline:
@@ -34,14 +40,17 @@ class AutoPipeline:
     def _get_profile_keys(self) -> List[str]:
         if self._profiles is None:
             try:
-                from src.services.profile_content_pipeline import list_available_profiles
+                from src.services.profile_content_pipeline import (
+                    list_available_profiles,
+                )
 
                 self._profiles = [
                     profile["profile_key"]
                     for profile in list_available_profiles()
                     if profile.get("profile_key")
                 ]
-            except Exception:
+            except Exception as e:
+                logger.error(f"Error: {e}")
                 self._profiles = []
         return self._profiles or []
 
@@ -64,9 +73,7 @@ class AutoPipeline:
         batch_limit = int(flags.get("auto_pipeline_batch_limit", 25))
 
         if flags.get("auto_analyze_after_collection", True):
-            analyzed = await self._safe_analyze_batch(
-                max(posts_collected, batch_limit)
-            )
+            analyzed = await self._safe_analyze_batch(max(posts_collected, batch_limit))
             summary["analyzed"] = analyzed
 
         if flags.get("auto_rewrite_after_analysis", True):
@@ -79,30 +86,46 @@ class AutoPipeline:
     async def _safe_analyze_batch(self, limit: int) -> int:
         try:
             return await self._orch.analyze_batch(limit=limit)
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error: {e}")
             return 0
 
     async def _auto_rewrite_cycle(self) -> Dict[str, Any]:
-        profiles = self._get_profile_keys()
-        if not profiles:
+        return await self.run_rewrite_cycle()
+
+    async def run_rewrite_cycle(
+        self,
+        profiles: Optional[List[str]] = None,
+        posts_per_profile: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """
+        Rewrite/schedule posts for the specified profiles (or all profiles by default).
+
+        This is separated so external callers (e.g., manual analysis runs) can trigger
+        the rewrite pipeline without re-running collection/analysis.
+        """
+        targets = profiles or self._get_profile_keys()
+        if not targets:
             return {}
 
         flags = self.config.flags
-        posts_per_profile = max(
-            0, int(flags.get("auto_rewrite_posts_per_profile", 3))
+        limit = max(
+            0, int(posts_per_profile or flags.get("auto_rewrite_posts_per_profile", 3))
         )
-        if posts_per_profile <= 0:
+        if limit <= 0:
             return {}
 
         report: Dict[str, Any] = {}
-        for profile_key in profiles:
-            processed = await self._process_profile(profile_key, posts_per_profile)
+        for profile_key in targets:
+            processed = await self._process_profile(profile_key, limit)
             if processed:
                 report[profile_key] = processed
         return report
 
     async def process_backlog_for_profiles(
-        self, profiles: Optional[List[str]] = None, posts_per_profile: Optional[int] = None
+        self,
+        profiles: Optional[List[str]] = None,
+        posts_per_profile: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
         Process existing posts (no new collection) end-to-end:
@@ -120,7 +143,8 @@ class AutoPipeline:
                     limit=int(flags.get("auto_pipeline_batch_limit", 25))
                 )
                 report["analyzed"] = analyzed
-            except Exception:
+            except Exception as e:
+                logger.error(f"Error: {e}")
                 pass
 
         # Rewrite + schedule from backlog
@@ -139,13 +163,45 @@ class AutoPipeline:
             report["rewritten"] = per_profile
         return report
 
-    async def _process_profile(
-        self, profile_key: str, limit: int
+    async def _process_single_post_for_rewrite(
+        self, post: Dict[str, Any], profile_key: str, schedule: bool = False
     ) -> Dict[str, Any]:
+        """
+        Process a single post for rewriting after angles are generated.
+        Called automatically after angle generation in curation.
+        """
+        try:
+            from src.services.profile_publishing_orchestrator import (
+                ProfilePublishingOrchestrator,
+            )
+
+            orchestrator = ProfilePublishingOrchestrator(profile_key)
+            result = await orchestrator.process_post(post, dry_run=not schedule)
+            rewrites = result.get("rewrites") or {}
+
+            if not rewrites:
+                return {"transformations": 0, "scheduled": 0}
+
+            created = self._persist_rewrites(
+                profile_key, post, rewrites, schedule=schedule
+            )
+            return created
+        except Exception as e:
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.error(
+                f"❌ Error processing single post {post.get('post_id', 'unknown')} for {profile_key}: {e}",
+                exc_info=True,
+            )
+            return {"transformations": 0, "scheduled": 0, "error": str(e)}
+
+    async def _process_profile(self, profile_key: str, limit: int) -> Dict[str, Any]:
         # 🚨 CHECK CIRCUIT BREAKER FIRST
         circuit_breaker = get_circuit_breaker()
         if circuit_breaker.all_providers_exhausted():
             import logging
+
             logger = logging.getLogger(__name__)
             logger.warning(
                 "🚫 Circuit breaker: All API providers exhausted. "
@@ -154,11 +210,31 @@ class AutoPipeline:
             return {
                 "skipped": True,
                 "reason": "circuit_breaker_open",
-                "status": circuit_breaker.get_status()
+                "status": circuit_breaker.get_status(),
             }
-        
+
         selector = ProfileContentSelector(profile_key)
-        posts = selector.select_posts_for_rewrite(limit=limit)
+
+        # Prioritize posts that will route to Twitter and Threads (this-week, 24-72h)
+        # Only fall back to evergreen if we don't have enough
+        posts = []
+        priority_windows = ["this-week", "24-72h", "same-day"]
+        for window in priority_windows:
+            window_posts = selector.select_posts_for_rewrite(
+                limit=limit, time_windows=[window]
+            )
+            posts.extend(window_posts)
+            if len(posts) >= limit:
+                posts = posts[:limit]
+                break
+
+        # If we still need more, get evergreen posts
+        if len(posts) < limit:
+            evergreen_posts = selector.select_posts_for_rewrite(
+                limit=limit - len(posts), time_windows=["evergreen"]
+            )
+            posts.extend(evergreen_posts)
+
         if not posts:
             return {}
 
@@ -171,7 +247,7 @@ class AutoPipeline:
 
         for post in posts:
             try:
-                result = await orchestrator.process_post(post, dry_run=True)
+                result = await orchestrator.process_post(post, dry_run=dry_run)
                 rewrites = result.get("rewrites") or {}
                 if not rewrites:
                     continue
@@ -183,10 +259,11 @@ class AutoPipeline:
                 scheduled += created.get("scheduled", 0)
             except Exception as exc:  # pragma: no cover - defensive guard
                 import logging
+
                 logger = logging.getLogger(__name__)
                 logger.error(
                     f"❌ Error processing post {post.get('post_id', 'unknown')} for {profile_key}: {exc}",
-                    exc_info=True
+                    exc_info=True,
                 )
                 errors.append(str(exc))
 
@@ -211,7 +288,8 @@ class AutoPipeline:
 
         try:
             manager = SupabaseManager()
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error: {e}")
             return {}
 
         post_id = str(source_post.get("post_id") or "")
@@ -255,10 +333,11 @@ class AutoPipeline:
                 transformations_created += 1
             except Exception as e:
                 import logging
+
                 logger = logging.getLogger(__name__)
                 logger.warning(
                     f"⚠️ Failed to insert transformation for {profile_key}/{platform}: {e}",
-                    exc_info=True
+                    exc_info=True,
                 )
                 continue
 
@@ -277,10 +356,14 @@ class AutoPipeline:
                     continue
                 scheduled_payload = {
                     "persona_key": profile_key,
+                    "personality_key": profile_key,  # Required by database schema
                     "platform": platform,
                     "content": rewritten_content,
                     "content_type": _map_content_type(content_type),
                     "scheduled_time": _compute_schedule_time(
+                        self.config.flags.get("auto_schedule_delay_minutes", 90)
+                    ),
+                    "scheduled_at": _compute_schedule_time(  # Also include scheduled_at for compatibility
                         self.config.flags.get("auto_schedule_delay_minutes", 90)
                     ),
                     "status": "pending",
@@ -292,10 +375,11 @@ class AutoPipeline:
                     scheduled_created += 1
                 except Exception as e:
                     import logging
+
                     logger = logging.getLogger(__name__)
                     logger.warning(
                         f"⚠️ Failed to schedule post for {profile_key}/{platform}: {e}",
-                        exc_info=True
+                        exc_info=True,
                     )
                     continue
 
@@ -316,4 +400,3 @@ def _compute_schedule_time(delay_minutes: int) -> str:
     delay_minutes = max(5, int(delay_minutes or 0))
     scheduled_at = datetime.now(timezone.utc) + timedelta(minutes=delay_minutes)
     return scheduled_at.isoformat()
-

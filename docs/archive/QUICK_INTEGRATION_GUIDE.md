@@ -1,6 +1,6 @@
 # Quick Integration Guide - 15 Minutes
 
-## For Streamlit App
+## For Svelte App
 
 ### Step 1: Update `src/web/app.py`
 
@@ -22,7 +22,7 @@ tabs = ["Dashboard", "Collection", "Browse", "Settings", ...]
 
 ### Step 2: Test
 ```bash
-streamlit run src/web/app.py
+svelte run src/web/app.py
 ```
 
 Click on "Collection" tab → Should see collection interface!
@@ -110,7 +110,7 @@ UNIFIED COLLECTION SERVICE TEST
 
 You now have:
 - ✅ Unified collection service
-- ✅ Streamlit UI with collection tab
+- ✅ Svelte UI with collection tab
 - ✅ Telegram bot with collection commands
 - ✅ Full test coverage
 - ✅ Progress tracking
@@ -126,7 +126,7 @@ You now have:
 ### "Module not found"
 ```bash
 # Make sure you're in project root
-cd /Users/mac/Documents/Development/prismind
+cd /Users/mac/Documents/Development/beyondlines
 python3 test_integration.py
 ```
 
@@ -143,7 +143,7 @@ Only one collection can run at a time. Wait for current to finish or restart ser
 
 ## Next Steps
 
-1. ✅ Integrate into Streamlit (5 min)
+1. ✅ Integrate into Svelte (5 min)
 2. ✅ Integrate into Telegram (5 min)
 3. ✅ Test both UIs (5 min)
 4. 🚀 Start using!

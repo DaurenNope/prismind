@@ -7,9 +7,9 @@ Each profile has its own configuration for platforms, languages, prompts, and ro
 
 import json
 import logging
-from pathlib import Path
-from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -35,18 +35,23 @@ class ProfileContentPipeline:
         """
         self.profile_key = profile_key
         self.config = self._load_profile_config(profile_key)
-        self.profile_name = self.config['display_name']
+        self.profile_name = self.config["display_name"]
 
         logger.info(f"✅ Initialized ProfileContentPipeline for {self.profile_name}")
 
     def _load_profile_config(self, profile_key: str) -> Dict:
         """Load profile configuration from JSON"""
-        config_path = Path(__file__).parent.parent.parent / 'config' / 'profiles' / f'{profile_key}.json'
+        config_path = (
+            Path(__file__).parent.parent.parent
+            / "config"
+            / "profiles"
+            / f"{profile_key}.json"
+        )
 
         if not config_path.exists():
             raise FileNotFoundError(f"Profile config not found: {config_path}")
 
-        with open(config_path, 'r', encoding='utf-8') as f:
+        with open(config_path, "r", encoding="utf-8") as f:
             config = json.load(f)
 
         logger.info(f"📄 Loaded config for {config['display_name']}")
@@ -56,8 +61,8 @@ class ProfileContentPipeline:
         """Get list of enabled platforms for this profile"""
         return [
             platform
-            for platform, settings in self.config['platforms'].items()
-            if settings.get('enabled', False)
+            for platform, settings in self.config["platforms"].items()
+            if settings.get("enabled", False)
         ]
 
     def route_content(self, relevance_window: str) -> List[str]:
@@ -70,8 +75,8 @@ class ProfileContentPipeline:
         Returns:
             List of platform keys in priority order
         """
-        routing = self.config.get('content_routing', {}).get(relevance_window, {})
-        platforms = routing.get('platforms', [])
+        routing = self.config.get("content_routing", {}).get(relevance_window, {})
+        platforms = routing.get("platforms", [])
 
         # Filter to only enabled platforms
         enabled = self.get_enabled_platforms()
@@ -81,10 +86,7 @@ class ProfileContentPipeline:
         return platforms
 
     def select_prompt_template(
-        self,
-        platform: str,
-        content_type: str,
-        language: Optional[str] = None
+        self, platform: str, content_type: str, language: Optional[str] = None
     ) -> Optional[str]:
         """
         Select the appropriate prompt template
@@ -97,22 +99,24 @@ class ProfileContentPipeline:
         Returns:
             Prompt template string or None if not found
         """
-        platform_config = self.config['platforms'].get(platform, {})
+        platform_config = self.config["platforms"].get(platform, {})
 
         # Auto-detect language from platform config if not provided
         if language is None:
-            language = platform_config.get('language', 'en')
+            language = platform_config.get("language", "en")
 
         # Build prompt template key: platform_language_contenttype
         template_key = f"{platform}_{language}_{content_type}"
 
         # Try to find template
-        template = self.config.get('prompt_templates', {}).get(template_key)
+        template = self.config.get("prompt_templates", {}).get(template_key)
 
         if not template:
             # Try fallback without content type
             template_key_fallback = f"{platform}_{language}"
-            template = self.config.get('prompt_templates', {}).get(template_key_fallback)
+            template = self.config.get("prompt_templates", {}).get(
+                template_key_fallback
+            )
 
         if template:
             logger.info(f"📝 Selected prompt template: {template_key}")
@@ -122,10 +126,7 @@ class ProfileContentPipeline:
         return template
 
     def format_prompt(
-        self,
-        template: str,
-        source_content: str,
-        metadata: Dict[str, Any]
+        self, template: str, source_content: str, metadata: Dict[str, Any]
     ) -> str:
         """
         Fill in prompt template with content and metadata
@@ -139,29 +140,29 @@ class ProfileContentPipeline:
             Formatted prompt ready for LLM
         """
         # Get voice guidelines
-        voice_russian = self.config['voice_guidelines'].get('russian', '')
-        voice_english = self.config['voice_guidelines'].get('english', '')
-        voice_general = self.config['voice_guidelines'].get('general', '')
+        voice_russian = self.config["voice_guidelines"].get("russian", "")
+        voice_english = self.config["voice_guidelines"].get("english", "")
+        voice_general = self.config["voice_guidelines"].get("general", "")
 
         # Build replacement dict
         replacements = {
-            'profile_name': self.profile_name,
-            'profile_key': self.profile_key,
-            'source_content': source_content,
-            'voice_russian': voice_russian,
-            'voice_english': voice_english,
-            'voice_general': voice_general,
-            'category': metadata.get('category', 'general'),
-            'topics': ', '.join(metadata.get('topics', [])),
-            'key_concepts': ', '.join(metadata.get('key_concepts', [])),
-            'title': metadata.get('title', ''),
-            'content_type': metadata.get('content_type', ''),
+            "profile_name": self.profile_name,
+            "profile_key": self.profile_key,
+            "source_content": source_content,
+            "voice_russian": voice_russian,
+            "voice_english": voice_english,
+            "voice_general": voice_general,
+            "category": metadata.get("category", "general"),
+            "topics": ", ".join(metadata.get("topics", [])),
+            "key_concepts": ", ".join(metadata.get("key_concepts", [])),
+            "title": metadata.get("title", ""),
+            "content_type": metadata.get("content_type", ""),
         }
 
         # Fill template
         prompt = template
         for key, value in replacements.items():
-            prompt = prompt.replace(f'{{{key}}}', str(value))
+            prompt = prompt.replace(f"{{{key}}}", str(value))
 
         return prompt
 
@@ -175,26 +176,27 @@ class ProfileContentPipeline:
         Returns:
             Dict with max_length, use_markdown, use_emojis, etc.
         """
-        platform_config = self.config['platforms'].get(platform, {})
-        return platform_config.get('format_preferences', {})
+        platform_config = self.config["platforms"].get(platform, {})
+        return platform_config.get("format_preferences", {})
 
     def should_include_reddit_comments(self) -> bool:
         """Check if Reddit comments should be included"""
-        return self.config.get('source_preferences', {}).get('reddit', {}).get('include_comments', False)
+        return (
+            self.config.get("source_preferences", {})
+            .get("reddit", {})
+            .get("include_comments", False)
+        )
 
     def get_reddit_comment_settings(self) -> Dict[str, int]:
         """Get Reddit comment extraction settings"""
-        reddit_prefs = self.config.get('source_preferences', {}).get('reddit', {})
+        reddit_prefs = self.config.get("source_preferences", {}).get("reddit", {})
         return {
-            'min_score': reddit_prefs.get('min_comment_score', 10),
-            'max_comments': reddit_prefs.get('max_comments', 5)
+            "min_score": reddit_prefs.get("min_comment_score", 10),
+            "max_comments": reddit_prefs.get("max_comments", 5),
         }
 
     def prepare_content_for_rewrite(
-        self,
-        post: Dict[str, Any],
-        platform: str,
-        content_type: str
+        self, post: Dict[str, Any], platform: str, content_type: str
     ) -> Dict[str, Any]:
         """
         Prepare post content for rewriting
@@ -215,46 +217,40 @@ class ProfileContentPipeline:
 
         # Prepare metadata
         metadata = {
-            'category': post.get('category', ''),
-            'topics': post.get('tags', []),
-            'key_concepts': post.get('key_concepts', []),
-            'title': post.get('title', ''),
-            'content_type': content_type,
-            'platform': post.get('platform', ''),
-            'source_url': post.get('url', ''),
+            "category": post.get("category", ""),
+            "topics": post.get("tags", []),
+            "key_concepts": post.get("key_concepts", []),
+            "title": post.get("title", ""),
+            "content_type": content_type,
+            "platform": post.get("platform", ""),
+            "source_url": post.get("url", ""),
         }
 
         # Format prompt
         prompt = self.format_prompt(
-            template=template,
-            source_content=post['content'],
-            metadata=metadata
+            template=template, source_content=post["content"], metadata=metadata
         )
 
         # Get platform constraints
         constraints = self.get_platform_constraints(platform)
 
         return {
-            'prompt': prompt,
-            'constraints': constraints,
-            'metadata': metadata,
-            'profile_key': self.profile_key,
-            'profile_name': self.profile_name,
-            'target_platform': platform,
-            'content_type': content_type,
-            'source_post_id': post.get('post_id'),
+            "prompt": prompt,
+            "constraints": constraints,
+            "metadata": metadata,
+            "profile_key": self.profile_key,
+            "profile_name": self.profile_name,
+            "target_platform": platform,
+            "content_type": content_type,
+            "source_post_id": post.get("post_id"),
         }
 
     def get_content_types_for_platform(self, platform: str) -> List[str]:
         """Get supported content types for a platform"""
-        platform_config = self.config['platforms'].get(platform, {})
-        return platform_config.get('content_types', [])
+        platform_config = self.config["platforms"].get(platform, {})
+        return platform_config.get("content_types", [])
 
-    def match_content_type(
-        self,
-        post_category: str,
-        platform: str
-    ) -> Optional[str]:
+    def match_content_type(self, post_category: str, platform: str) -> Optional[str]:
         """
         Match post category to platform-specific content type
 
@@ -269,12 +265,12 @@ class ProfileContentPipeline:
 
         # Simple mapping (can be enhanced with more sophisticated matching)
         category_mapping = {
-            'tech_trend': ['tech_news', 'design_news', 'breaking_news'],
-            'tool_review': ['tool_review', 'tool_showcase', 'tool_comparison'],
-            'ai_news': ['tech_news', 'breaking_news', 'ai_discussion'],
-            'dev_insight': ['dev_insight', 'creative_insight', 'quick_take'],
-            'tutorial': ['tutorial_guide', 'design_tip'],
-            'industry_analysis': ['deep_analysis', 'design_discussion'],
+            "tech_trend": ["tech_news", "design_news", "breaking_news"],
+            "tool_review": ["tool_review", "tool_showcase", "tool_comparison"],
+            "ai_news": ["tech_news", "breaking_news", "ai_discussion"],
+            "dev_insight": ["dev_insight", "creative_insight", "quick_take"],
+            "tutorial": ["tutorial_guide", "design_tip"],
+            "industry_analysis": ["deep_analysis", "design_discussion"],
         }
 
         possible_types = category_mapping.get(post_category, [])
@@ -293,12 +289,12 @@ class ProfileContentPipeline:
     def get_pipeline_summary(self) -> Dict[str, Any]:
         """Get summary of pipeline configuration"""
         return {
-            'profile_key': self.profile_key,
-            'profile_name': self.profile_name,
-            'description': self.config.get('description', ''),
-            'enabled_platforms': self.get_enabled_platforms(),
-            'total_prompt_templates': len(self.config.get('prompt_templates', {})),
-            'content_routing': self.config.get('content_routing', {}),
+            "profile_key": self.profile_key,
+            "profile_name": self.profile_name,
+            "description": self.config.get("description", ""),
+            "enabled_platforms": self.get_enabled_platforms(),
+            "total_prompt_templates": len(self.config.get("prompt_templates", {})),
+            "content_routing": self.config.get("content_routing", {}),
         }
 
 
@@ -309,7 +305,7 @@ def list_available_profiles() -> List[Dict[str, str]]:
     Returns:
         List of dicts with profile_key, display_name, description
     """
-    profiles_dir = Path(__file__).parent.parent.parent / 'config' / 'profiles'
+    profiles_dir = Path(__file__).parent.parent.parent / "config" / "profiles"
 
     if not profiles_dir.exists():
         logger.warning(f"Profiles directory not found: {profiles_dir}")
@@ -317,20 +313,23 @@ def list_available_profiles() -> List[Dict[str, str]]:
 
     profiles = []
 
-    for config_file in profiles_dir.glob('*.json'):
+    for config_file in profiles_dir.glob("*.json"):
         try:
-            with open(config_file, 'r', encoding='utf-8') as f:
+            with open(config_file, "r", encoding="utf-8") as f:
                 config = json.load(f)
 
-            profiles.append({
-                'profile_key': config.get('profile_key', config_file.stem),
-                'display_name': config.get('display_name', config_file.stem),
-                'description': config.get('description', ''),
-                'enabled_platforms': [
-                    p for p, s in config.get('platforms', {}).items()
-                    if s.get('enabled', False)
-                ]
-            })
+            profiles.append(
+                {
+                    "profile_key": config.get("profile_key", config_file.stem),
+                    "display_name": config.get("display_name", config_file.stem),
+                    "description": config.get("description", ""),
+                    "enabled_platforms": [
+                        p
+                        for p, s in config.get("platforms", {}).items()
+                        if s.get("enabled", False)
+                    ],
+                }
+            )
         except Exception as e:
             logger.error(f"Error loading profile {config_file}: {e}")
 
@@ -341,78 +340,76 @@ def list_available_profiles() -> List[Dict[str, str]]:
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
-    print("="*80)
-    print("PROFILE CONTENT PIPELINE - DEMO")
-    print("="*80)
+    logger.info("=" * 80)
+    logger.info("PROFILE CONTENT PIPELINE - DEMO")
+    logger.info("=" * 80)
 
     # List available profiles
-    print("\n📋 Available Profiles:\n")
+    logger.info("\n📋 Available Profiles:\n")
     for profile in list_available_profiles():
-        print(f"  • {profile['display_name']} ({profile['profile_key']})")
-        print(f"    {profile['description']}")
-        print(f"    Platforms: {', '.join(profile['enabled_platforms'])}")
-        print()
+        logger.info(f"  • {profile['display_name']} ({profile['profile_key']})")
+        logger.info(f"    {profile['description']}")
+        logger.info(f"    Platforms: {', '.join(profile['enabled_platforms'])}")
+        logger.info()
 
     # Test with qronoya
-    print("="*80)
-    print("Testing with Qronoya profile:")
-    print("="*80)
+    logger.info("=" * 80)
+    logger.info("Testing with Qronoya profile:")
+    logger.info("=" * 80)
 
-    pipeline = ProfileContentPipeline('qronoya')
+    pipeline = ProfileContentPipeline("qronoya")
 
     # Show summary
     summary = pipeline.get_pipeline_summary()
-    print(f"\n✅ Loaded: {summary['profile_name']}")
-    print(f"   Description: {summary['description']}")
-    print(f"   Enabled platforms: {summary['enabled_platforms']}")
-    print(f"   Prompt templates: {summary['total_prompt_templates']}")
+    logger.info(f"\n✅ Loaded: {summary['profile_name']}")
+    logger.info(f"   Description: {summary['description']}")
+    logger.info(f"   Enabled platforms: {summary['enabled_platforms']}")
+    logger.info(f"   Prompt templates: {summary['total_prompt_templates']}")
 
     # Test routing
-    print("\n📍 Content Routing:")
-    for window in ['same-day', '24-72h', 'this-week', 'evergreen']:
+    logger.info("\n📍 Content Routing:")
+    for window in ["same-day", "24-72h", "this-week", "evergreen"]:
         platforms = pipeline.route_content(window)
-        print(f"   {window:12} → {platforms}")
+        logger.info(f"   {window:12} → {platforms}")
 
     # Test prompt selection
-    print("\n📝 Prompt Template Selection:")
+    logger.info("\n📝 Prompt Template Selection:")
     test_cases = [
-        ('twitter', 'breaking_news'),
-        ('threads', 'tech_news'),
-        ('telegram', 'deep_analysis'),
+        ("twitter", "breaking_news"),
+        ("threads", "tech_news"),
+        ("telegram", "deep_analysis"),
     ]
 
     for platform, content_type in test_cases:
         template = pipeline.select_prompt_template(platform, content_type)
         if template:
-            preview = template[:100].replace('\n', ' ')
-            print(f"   {platform}/{content_type}: {preview}...")
+            preview = template[:100].replace("\n", " ")
+            logger.info(f"   {platform}/{content_type}: {preview}...")
         else:
-            print(f"   {platform}/{content_type}: NOT FOUND")
+            logger.info(f"   {platform}/{content_type}: NOT FOUND")
 
     # Test content preparation
-    print("\n🔧 Content Preparation:")
+    logger.info("\n🔧 Content Preparation:")
     sample_post = {
-        'post_id': 'test123',
-        'content': 'Sample tech news about AI breakthroughs',
-        'category': 'tech_trend',
-        'tags': ['ai', 'ml', 'research'],
-        'key_concepts': ['neural networks', 'transformers'],
-        'title': 'New AI Model Released',
-        'platform': 'twitter',
-        'url': 'https://example.com/post'
+        "post_id": "test123",
+        "content": "Sample tech news about AI breakthroughs",
+        "category": "tech_trend",
+        "tags": ["ai", "ml", "research"],
+        "key_concepts": ["neural networks", "transformers"],
+        "title": "New AI Model Released",
+        "platform": "twitter",
+        "url": "https://example.com/post",
     }
 
     prepared = pipeline.prepare_content_for_rewrite(
-        post=sample_post,
-        platform='twitter',
-        content_type='breaking_news'
+        post=sample_post, platform="twitter", content_type="breaking_news"
     )
 
-    print(f"   Target: {prepared['target_platform']}")
-    print(f"   Content type: {prepared['content_type']}")
-    print(f"   Constraints: {prepared['constraints']}")
-    print(f"   Prompt preview: {prepared['prompt'][:150]}...")
+    logger.info(f"   Target: {prepared['target_platform']}")
+    logger.info(f"   Content type: {prepared['content_type']}")
+    logger.info(f"   Constraints: {prepared['constraints']}")
+    logger.info(f"   Prompt preview: {prepared['prompt'][:150]}...")
 
-    print("\n" + "="*80)
-    print("✅ Pipeline test complete!")
-    print("="*80)
+    logger.info("\n" + "=" * 80)
+    logger.info("✅ Pipeline test complete!")
+    print("=" * 80)

@@ -35,7 +35,7 @@ src/
 **Impact**: 9 files import from these modules - some use `src.mimesis`, some use `src.publishing`, creating confusion.
 
 **Files affected**:
-- `src/services/publisher_worker.py` 
+- `src/services/publisher_worker.py`
 - `src/web/components/mimesis_scheduler_tab.py`
 - `src/web/components/mimesis_analytics_tab.py`
 - `src/web/components/mimesis_queue_tab.py`
@@ -329,12 +329,12 @@ After each phase:
    python -c "from src.web.app import *"
    ```
 
-2. **Streamlit Test**: Start the web app
+2. **Svelte Test**: Start the web app
    ```bash
-   streamlit run src/web/app.py
+   svelte run src/web/app.py
    ```
 
-3. **Functional Test**: 
+3. **Functional Test**:
    - Phase 1: Check publishing tab loads
    - Phase 2: Verify database queries work
    - Phase 3: Test posting to Twitter/Telegram/Threads
@@ -386,15 +386,15 @@ git branch -D feature/professional-structure
 
 ## Success Criteria
 
-✅ No duplicate modules (mimesis/ deleted)  
-✅ All database files in `src/database/`  
-✅ All publishing files in `src/publishing/`  
-✅ Services directory has <10 files, all high-level  
-✅ Web components use "publishing_" not "mimesis_"  
-✅ Zero import errors  
-✅ Streamlit UI loads all tabs  
-✅ Publishing system can post to all 3 platforms  
-✅ Collection/analysis systems still work  
+✅ No duplicate modules (mimesis/ deleted)
+✅ All database files in `src/database/`
+✅ All publishing files in `src/publishing/`
+✅ Services directory has <10 files, all high-level
+✅ Web components use "publishing_" not "mimesis_"
+✅ Zero import errors
+✅ Svelte UI loads all tabs
+✅ Publishing system can post to all 3 platforms
+✅ Collection/analysis systems still work
 
 ---
 

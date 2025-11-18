@@ -1,4 +1,4 @@
-# 🧠 PrisMind - Autonomous Intelligence System
+# 🚀 Beyondlines Intelligence Platform
 
 **AI-powered content discovery and curation system with zero manual bookmarking**
 
@@ -8,19 +8,19 @@
 
 ---
 
-## 🎯 What is PrisMind?
+## 🎯 What is Beyondlines?
 
-PrisMind is an **autonomous intelligence pipeline** that discovers, analyzes, and curates high-value content from 60+ curated sources across crypto, hacking, conspiracy, AI, and alternative news — **with zero mainstream BS**.
+Beyondlines is an **autonomous intelligence pipeline** that discovers, analyzes, and curates high-value content from 60+ curated sources across crypto, hacking, conspiracy, AI, and alternative news — **with zero mainstream BS**.
 
 ### Key Features
 
-✅ **Autonomous Discovery** - Collects from 60 edgy RSS sources automatically  
-✅ **Smart Curation** - AI-powered quality filtering and categorization  
-✅ **Intelligent Learning** - Learns from your dismissals and saves  
-✅ **Telegram Bot** - Full control via 13 bot commands  
-✅ **Web Dashboard** - Beautiful Streamlit UI with real-time feeds  
-✅ **Multi-Source** - RSS, Reddit, Telegram, GitHub trending  
-✅ **Zero Mainstream** - No Amazon deals, lifestyle, or celebrity fluff  
+✅ **Autonomous Discovery** - Collects from 60 edgy RSS sources automatically
+✅ **Smart Curation** - AI-powered quality filtering and categorization
+✅ **Intelligent Learning** - Learns from your dismissals and saves
+✅ **Telegram Bot** - Full control via 13 bot commands
+✅ **Web Dashboard** - Modern Svelte UI with FastAPI backend
+✅ **Multi-Source** - RSS, Reddit, Telegram, GitHub trending
+✅ **Zero Mainstream** - No Amazon deals, lifestyle, or celebrity fluff
 
 ---
 
@@ -36,8 +36,8 @@ PrisMind is an **autonomous intelligence pipeline** that discovers, analyzes, an
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/prismind.git
-cd prismind
+git clone https://github.com/yourusername/beyondlines.git
+cd beyondlines
 
 # Create virtual environment
 python3.11 -m venv .venv
@@ -71,7 +71,7 @@ TELEGRAM_CHAT_ID=your_chat_id
 # Reddit (Optional - for bookmarks)
 REDDIT_CLIENT_ID=your_client_id
 REDDIT_CLIENT_SECRET=your_client_secret
-REDDIT_USER_AGENT=prismind:v1.0
+REDDIT_USER_AGENT=beyondlines:v1.0
 
 # Twitter (Optional - for bookmarks)
 TWITTER_USERNAME=your_username
@@ -105,14 +105,18 @@ CREATE INDEX idx_discoveries_created_at ON discoveries(created_at DESC);
 ### Web Dashboard
 
 ```bash
-# Start web UI
-streamlit run src/web/app.py
+# Start FastAPI backend (required)
+python3 src/api/main.py
 
-# Or use convenience script
-./start_web.sh
+# Start Svelte frontend (in separate terminal)
+cd frontend
+npm run dev
 ```
 
-Access at: `http://localhost:8501`
+See [HOW_TO_RUN.md](HOW_TO_RUN.md) for detailed instructions.
+
+Access at: `http://localhost:5173` (Svelte frontend)
+API at: `http://localhost:8000` (FastAPI backend)
 
 **Dashboard Features:**
 - 📰 **Discoveries Tab** - RSS + Reddit + GitHub feeds
@@ -195,7 +199,7 @@ Collects from:
 │  ┌──────────────┐    ┌──────────────┐    ┌──────────┐ │
 │  │     UI       │◀───│   LEARNING   │◀───│   USER   │ │
 │  └──────────────┘    └──────────────┘    └──────────┘ │
-│   • Web (Streamlit)    • Preferences        Actions:  │
+│   • Web (Svelte)       • Preferences        Actions:  │
 │   • Bot (Telegram)     • Patterns           • Save    │
 │                        • Trends             • Dismiss  │
 │                                             • Skip     │
@@ -207,7 +211,7 @@ Collects from:
 ## 📂 Project Structure (lean)
 
 ```
-prismind/
+beyondlines/
 ├── src/
 │   ├── core/
 │   │   ├── extraction/          # Content collectors
@@ -226,11 +230,11 @@ prismind/
 │   │   ├── telegram_bot.py              # Bot commands
 │   │   └── new_database_manager.py      # SQLite DB operations
 │   │
-│   └── web/
-│       ├── app.py               # Main Streamlit app
-│       └── components/          # UI components
-│           ├── discoveries_tab.py
-│           └── telegram_tab.py
+│   └── api/
+│       ├── main.py              # FastAPI backend
+│       └── routes/              # API routes
+│           ├── collection.py
+│           └── publishing.py
 │
 ├── tests/
 │   ├── test_discovery_pipeline.py  # Integration tests
@@ -343,7 +347,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🙏 Acknowledgments
 
-- Built with [Streamlit](https://streamlit.io/) for web UI
+- Built with [Svelte](https://svelte.dev/) for frontend and [FastAPI](https://fastapi.tiangolo.com/) for backend
 - Powered by [Supabase](https://supabase.com/) for database
 - Uses [Playwright](https://playwright.dev/) for browser automation
 - Inspired by the need for **real** intelligence, not mainstream garbage
@@ -353,7 +357,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 📧 Contact
 
 Questions? Issues? Reach out:
-- GitHub Issues: [Create an issue](https://github.com/yourusername/prismind/issues)
+- GitHub Issues: [Create an issue](https://github.com/yourusername/beyondlines/issues)
 - Telegram: [@your_username](https://t.me/your_username)
 
 ---

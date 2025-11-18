@@ -39,8 +39,10 @@ ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS intelligent_value_score DOUBLE
 ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS content_quality_score DOUBLE PRECISION;
 ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS learning_recommendations TEXT;
 ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS suggested_tags TEXT[];
+ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS collected_at TIMESTAMP WITH TIME ZONE;
 
 -- Update existing indexes to include new columns if needed
 CREATE INDEX IF NOT EXISTS idx_posts_analyzed_at ON public.posts (analyzed_at);
 CREATE INDEX IF NOT EXISTS idx_posts_value_score ON public.posts (value_score);
 CREATE INDEX IF NOT EXISTS idx_posts_quality_score ON public.posts (quality_score);
+CREATE INDEX IF NOT EXISTS idx_posts_collected_at ON public.posts (collected_at);

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import Any, Dict, Optional, Callable
+from typing import Any, Callable, Dict, Optional
 
 from src.utils.logging_config import get_logger
 
@@ -48,7 +48,7 @@ class DatabaseHealth:
         # SQLite
         if self._sqlite is not None:
             try:
-                _ = self._sqlite.get_posts(limit=1)
+                temp_posts = self._sqlite.get_posts(limit=1)
                 sqlite_ok = True
                 # Get sync status
                 if hasattr(self._sqlite, "get_sync_status"):
@@ -61,7 +61,8 @@ class DatabaseHealth:
             for plat in ("twitter", "reddit", "threads"):
                 try:
                     latest_per_platform[plat] = self._get_last_post_id(plat)
-                except Exception:
+                except Exception as e:
+                    logger.error(f"Error: {e}")
                     latest_per_platform[plat] = None
 
         return {
@@ -92,7 +93,9 @@ class DatabaseHealth:
                     if isinstance(c, int):
                         counts[plat] = c
                 except Exception as e:
-                    logger.debug(f"recent_activity: failed to get count for {plat}: {e}")
+                    logger.debug(
+                        f"recent_activity: failed to get count for {plat}: {e}"
+                    )
                     continue
         except Exception as e:
             logger.debug(f"recent_activity failed: {e}")
@@ -115,7 +118,7 @@ class DatabaseHealth:
                 .limit(sample_limit)
                 .execute()
             )
-            for row in (getattr(r, "data", []) or []):
+            for row in getattr(r, "data", []) or []:
                 plat = (row.get("platform") or "").lower()
                 pid = (row.get("post_id") or "").strip()
                 if plat not in report:
@@ -135,5 +138,3 @@ class DatabaseHealth:
         except Exception as e:
             logger.debug(f"id_format_report failed: {e}")
         return report
-
-

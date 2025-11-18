@@ -1,11 +1,14 @@
+import logging
+
+logger = logging.getLogger(__name__)
 """
 Threads Posting Service using Meta Graph API
 Direct implementation without external dependencies
 """
 
+import json
 import os
 import time
-import json
 from datetime import datetime
 from typing import Dict, Optional
 
@@ -54,6 +57,7 @@ class ThreadsPoster:
             self.user_id = data.get("id")
             self.username = data.get("username")
         except Exception as e:
+            logger.error(f"Error: {e}")
             raise ValueError(
                 f"Failed to fetch Threads user ID: {e}\n"
                 "Add THREADS_USER_ID to .env manually"
@@ -150,6 +154,7 @@ class ThreadsPoster:
             }
 
         except requests.exceptions.HTTPError as e:
+            logger.error(f"Error: {e}")
             error_msg = str(e)
             try:
                 error_data = e.response.json()
@@ -160,6 +165,7 @@ class ThreadsPoster:
             return {"success": False, "error": f"HTTP error: {error_msg}"}
 
         except Exception as e:
+            logger.error(f"Error: {e}")
             return {"success": False, "error": str(e)}
 
     def get_thread_insights(self, thread_id: str) -> Optional[Dict]:
@@ -205,7 +211,7 @@ class ThreadsPoster:
             }
 
         except Exception as e:
-            print(f"Error fetching insights: {e}")
+            logger.error(f"Error fetching insights: {e}")
             return None
 
 
@@ -232,6 +238,7 @@ def post_to_threads_direct(content: str, image_url: Optional[str] = None) -> Dic
             return {"success": False, "error": result.get("error", "Unknown error")}
 
     except Exception as e:
+        logger.error(f"Error: {e}")
         return {
             "success": False,
             "error": f"ThreadsPoster initialization failed: {str(e)}",
@@ -239,31 +246,31 @@ def post_to_threads_direct(content: str, image_url: Optional[str] = None) -> Dic
 
 
 if __name__ == "__main__":
-    print("THREADS POSTER (Meta Graph API)")
-    print("=" * 60)
+    logger.info("THREADS POSTER (Meta Graph API)")
+    logger.info("=" * 60)
 
     try:
         poster = ThreadsPoster()
 
-        print(f"\n✅ Threads API credentials loaded")
+        logger.info(f"\n✅ Threads API credentials loaded")
         if hasattr(poster, "username"):
-            print(f"   Username: @{poster.username}")
-        print(f"   User ID: {poster.user_id}")
-        print(f"   Token: {poster.access_token[:20]}...")
+            logger.info(f"   Username: @{poster.username}")
+        logger.info(f"   User ID: {poster.user_id}")
+        logger.info(f"   Token: {poster.access_token[:20]}...")
 
-        print("\n📝 Ready to post to Threads")
-        print("   (Uncomment test code to actually post)")
+        logger.info("\n📝 Ready to post to Threads")
+        logger.info("   (Uncomment test code to actually post)")
 
         # Uncomment to test:
-        # test_content = "Testing Threads API from prismind! 🧵"
+        # test_content = "Testing Threads API from beyondlines! 🧵"
         # result = poster.post_thread(test_content)
         #
         # if result['success']:
-        #     print(f"\n✅ SUCCESS! Posted to Threads")
-        #     print(f"   URL: {result.get('url', 'N/A')}")
-        #     print(f"   Post ID: {result['post_id']}")
+        #     logger.info(f"\n✅ SUCCESS! Posted to Threads")
+        #     logger.info(f"   URL: {result.get('url', 'N/A')}")
+        #     logger.info(f"   Post ID: {result['post_id']}")
         # else:
-        #     print(f"\n❌ Failed: {result['error']}")
+        #     logger.error(f"\n❌ Failed: {result['error']}")
 
     except ValueError as e:
-        print(f"\n❌ {e}")
+        logger.error(f"\n❌ {e}")

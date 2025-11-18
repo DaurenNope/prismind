@@ -5,9 +5,9 @@ Leverages enhanced analyzer metadata for optimal timing and prioritization
 """
 
 import logging
-from typing import Dict, Any, Optional, List
-from datetime import datetime, timedelta
 from dataclasses import dataclass
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class SchedulingDecision:
     """Decision made by the scheduler"""
+
     when: datetime
     priority: int  # 1-100
     reason: str
@@ -46,16 +47,14 @@ class PublishingScheduler:
 
     def __init__(self):
         self.time_windows = {
-            'breaking': (0, 5),      # 0-5 minutes
-            'trending': (10, 60),    # 10-60 minutes
-            'timely': (120, 480),    # 2-8 hours
-            'evergreen': (480, 1440) # 8-24 hours
+            "breaking": (0, 5),  # 0-5 minutes
+            "trending": (10, 60),  # 10-60 minutes
+            "timely": (120, 480),  # 2-8 hours
+            "evergreen": (480, 1440),  # 8-24 hours
         }
 
     def schedule_rewritten_post(
-        self,
-        rewritten_content: Dict[str, Any],
-        platform_override: Optional[str] = None
+        self, rewritten_content: Dict[str, Any], platform_override: Optional[str] = None
     ) -> SchedulingDecision:
         """
         Schedule a post based on enhanced analyzer metadata.
@@ -69,29 +68,31 @@ class PublishingScheduler:
         """
 
         # Extract metadata from rewritten content
-        viral_potential = rewritten_content.get('viral_potential', 0)
-        time_sensitivity = rewritten_content.get('time_sensitivity', 'evergreen')
-        trend_relevance = rewritten_content.get('trend_relevance', 'mainstream')
-        author_authority = rewritten_content.get('author_authority', 'medium')
-        platform = platform_override or rewritten_content.get('platform', 'twitter')
-        content = rewritten_content.get('rewritten_content', '')
+        viral_potential = rewritten_content.get("viral_potential", 0)
+        time_sensitivity = rewritten_content.get("time_sensitivity", "evergreen")
+        trend_relevance = rewritten_content.get("trend_relevance", "mainstream")
+        author_authority = rewritten_content.get("author_authority", "medium")
+        platform = platform_override or rewritten_content.get("platform", "twitter")
+        content = rewritten_content.get("rewritten_content", "")
 
         # Calculate priority (0-100)
         priority = self._calculate_priority(
             viral_potential=viral_potential,
             time_sensitivity=time_sensitivity,
             trend_relevance=trend_relevance,
-            author_authority=author_authority
+            author_authority=author_authority,
         )
 
         # Calculate optimal posting time
         when, reason = self._calculate_posting_time(
             time_sensitivity=time_sensitivity,
             priority=priority,
-            viral_potential=viral_potential
+            viral_potential=viral_potential,
         )
 
-        logger.info(f"📅 Scheduled for {when.strftime('%Y-%m-%d %H:%M')} (priority: {priority})")
+        logger.info(
+            f"📅 Scheduled for {when.strftime('%Y-%m-%d %H:%M')} (priority: {priority})"
+        )
         logger.info(f"   Reason: {reason}")
 
         return SchedulingDecision(
@@ -99,7 +100,7 @@ class PublishingScheduler:
             priority=priority,
             reason=reason,
             platform=platform,
-            content=content
+            content=content,
         )
 
     def _calculate_priority(
@@ -107,7 +108,7 @@ class PublishingScheduler:
         viral_potential: int,
         time_sensitivity: str,
         trend_relevance: str,
-        author_authority: str
+        author_authority: str,
     ) -> int:
         """
         Calculate post priority (0-100) based on multiple signals.
@@ -124,37 +125,26 @@ class PublishingScheduler:
 
         # Time sensitivity boost
         sensitivity_boost = {
-            'breaking': 20,
-            'trending': 15,
-            'timely': 5,
-            'evergreen': 0
+            "breaking": 20,
+            "trending": 15,
+            "timely": 5,
+            "evergreen": 0,
         }
         priority += sensitivity_boost.get(time_sensitivity, 0)
 
         # Trend relevance boost
-        trend_boost = {
-            'emerging': 15,
-            'mainstream': 5,
-            'declining': -10
-        }
+        trend_boost = {"emerging": 15, "mainstream": 5, "declining": -10}
         priority += trend_boost.get(trend_relevance, 0)
 
         # Authority boost
-        authority_boost = {
-            'high': 10,
-            'medium': 5,
-            'low': 0
-        }
+        authority_boost = {"high": 10, "medium": 5, "low": 0}
         priority += authority_boost.get(author_authority, 0)
 
         # Cap at 100
         return min(max(priority, 0), 100)
 
     def _calculate_posting_time(
-        self,
-        time_sensitivity: str,
-        priority: int,
-        viral_potential: int
+        self, time_sensitivity: str, priority: int, viral_potential: int
     ) -> tuple[datetime, str]:
         """
         Calculate optimal posting time based on sensitivity and priority.
@@ -167,8 +157,7 @@ class PublishingScheduler:
 
         # Get time window for this sensitivity level
         min_minutes, max_minutes = self.time_windows.get(
-            time_sensitivity,
-            (480, 1440)  # Default: evergreen
+            time_sensitivity, (480, 1440)  # Default: evergreen
         )
 
         # For high priority/viral content, post at the START of the window
@@ -188,10 +177,10 @@ class PublishingScheduler:
 
         # Add time sensitivity context to reason
         sensitivity_reasons = {
-            'breaking': "URGENT: Breaking news",
-            'trending': "Time-sensitive: Trending topic",
-            'timely': "Timely content",
-            'evergreen': "Evergreen content"
+            "breaking": "URGENT: Breaking news",
+            "trending": "Time-sensitive: Trending topic",
+            "timely": "Timely content",
+            "evergreen": "Evergreen content",
         }
         reason = f"{sensitivity_reasons.get(time_sensitivity, 'Standard')}: {reason}"
 
@@ -200,10 +189,7 @@ class PublishingScheduler:
         return posting_time, reason
 
     def schedule_all_persona_versions(
-        self,
-        analyzed_content: Dict[str, Any],
-        rewriter,
-        personas: List[str] = None
+        self, analyzed_content: Dict[str, Any], rewriter, personas: List[str] = None
     ) -> List[SchedulingDecision]:
         """
         Generate and schedule versions for multiple personas.
@@ -218,7 +204,26 @@ class PublishingScheduler:
         """
 
         if personas is None:
-            personas = ['technical', 'builder', 'learner', 'trendsetter', 'thought_leader']
+            # Use actual persona keys from rewriter (not hardcoded old names)
+            personas = (
+                list(rewriter.personas.keys())
+                if rewriter and hasattr(rewriter, "personas")
+                else []
+            )
+            if not personas:
+                # Fallback: try to load from profile pipeline
+                try:
+                    from src.services.profile_content_pipeline import (
+                        list_available_profiles,
+                    )
+
+                    profiles = list_available_profiles()
+                    personas = [
+                        p.get("profile_key") for p in profiles if p.get("profile_key")
+                    ]
+                except Exception as e:
+                    logger.warning(f"Could not load profile keys: {e}")
+                    personas = []
 
         decisions = []
 
@@ -228,15 +233,16 @@ class PublishingScheduler:
             try:
                 # Rewrite for this persona
                 import asyncio
+
                 rewritten = asyncio.run(
                     rewriter.rewrite_analyzed_post(
                         analyzed_content=analyzed_content,
                         persona=persona,
-                        platform="auto"
+                        platform="auto",
                     )
                 )
 
-                if 'error' in rewritten:
+                if "error" in rewritten:
                     logger.warning(f"⚠️  Skipping {persona}: {rewritten['error']}")
                     continue
 
@@ -244,7 +250,9 @@ class PublishingScheduler:
                 decision = self.schedule_rewritten_post(rewritten)
                 decisions.append(decision)
 
-                logger.info(f"   ✅ {persona}: priority {decision.priority}, post at {decision.when.strftime('%H:%M')}")
+                logger.info(
+                    f"   ✅ {persona}: priority {decision.priority}, post at {decision.when.strftime('%H:%M')}"
+                )
 
             except Exception as e:
                 logger.error(f"❌ Failed to schedule {persona}: {e}")
@@ -258,7 +266,7 @@ class PublishingScheduler:
         self,
         decision: SchedulingDecision,
         db_manager,
-        additional_metadata: Dict[str, Any] = None
+        additional_metadata: Dict[str, Any] = None,
     ) -> bool:
         """
         Insert scheduled post into database for PublisherWorker to pick up.
@@ -275,10 +283,10 @@ class PublishingScheduler:
         try:
             # Prepare metadata
             metadata = {
-                'priority': decision.priority,
-                'scheduling_reason': decision.reason,
-                'scheduled_by': 'PublishingScheduler',
-                'scheduled_at': datetime.now().isoformat()
+                "priority": decision.priority,
+                "scheduling_reason": decision.reason,
+                "scheduled_by": "PublishingScheduler",
+                "scheduled_at": datetime.now().isoformat(),
             }
 
             if additional_metadata:
@@ -290,10 +298,12 @@ class PublishingScheduler:
                 content=decision.content,
                 platform=decision.platform,
                 scheduled_for=decision.when,
-                metadata=metadata
+                metadata=metadata,
             )
 
-            logger.info(f"✅ Inserted to database: {decision.platform} at {decision.when.strftime('%Y-%m-%d %H:%M')}")
+            logger.info(
+                f"✅ Inserted to database: {decision.platform} at {decision.when.strftime('%Y-%m-%d %H:%M')}"
+            )
             return True
 
         except Exception as e:
@@ -316,96 +326,103 @@ def get_scheduler() -> PublishingScheduler:
 def demo_scheduler():
     """Demo the scheduler with sample data"""
 
-    print("🧪 Testing Publishing Scheduler\n")
+    logger.info("🧪 Testing Publishing Scheduler\n")
 
     scheduler = get_scheduler()
 
     # Test cases with different metadata
     test_cases = [
         {
-            'name': 'Viral Breaking News',
-            'rewritten_content': {
-                'rewritten_content': 'GPT-5 just dropped! 🔥 Here\'s what you need to know...',
-                'viral_potential': 95,
-                'time_sensitivity': 'breaking',
-                'trend_relevance': 'emerging',
-                'author_authority': 'high',
-                'platform': 'twitter'
-            }
+            "name": "Viral Breaking News",
+            "rewritten_content": {
+                "rewritten_content": "GPT-5 just dropped! 🔥 Here's what you need to know...",
+                "viral_potential": 95,
+                "time_sensitivity": "breaking",
+                "trend_relevance": "emerging",
+                "author_authority": "high",
+                "platform": "twitter",
+            },
         },
         {
-            'name': 'Trending Tutorial',
-            'rewritten_content': {
-                'rewritten_content': 'How to build with the new AI SDK (step-by-step guide)',
-                'viral_potential': 60,
-                'time_sensitivity': 'trending',
-                'trend_relevance': 'mainstream',
-                'author_authority': 'medium',
-                'platform': 'twitter'
-            }
+            "name": "Trending Tutorial",
+            "rewritten_content": {
+                "rewritten_content": "How to build with the new AI SDK (step-by-step guide)",
+                "viral_potential": 60,
+                "time_sensitivity": "trending",
+                "trend_relevance": "mainstream",
+                "author_authority": "medium",
+                "platform": "twitter",
+            },
         },
         {
-            'name': 'Evergreen Guide',
-            'rewritten_content': {
-                'rewritten_content': 'Python best practices for clean code',
-                'viral_potential': 30,
-                'time_sensitivity': 'evergreen',
-                'trend_relevance': 'mainstream',
-                'author_authority': 'medium',
-                'platform': 'linkedin'
-            }
+            "name": "Evergreen Guide",
+            "rewritten_content": {
+                "rewritten_content": "Python best practices for clean code",
+                "viral_potential": 30,
+                "time_sensitivity": "evergreen",
+                "trend_relevance": "mainstream",
+                "author_authority": "medium",
+                "platform": "linkedin",
+            },
         },
         {
-            'name': 'Declining Topic',
-            'rewritten_content': {
-                'rewritten_content': 'Legacy framework comparison',
-                'viral_potential': 20,
-                'time_sensitivity': 'evergreen',
-                'trend_relevance': 'declining',
-                'author_authority': 'low',
-                'platform': 'twitter'
-            }
-        }
+            "name": "Declining Topic",
+            "rewritten_content": {
+                "rewritten_content": "Legacy framework comparison",
+                "viral_potential": 20,
+                "time_sensitivity": "evergreen",
+                "trend_relevance": "declining",
+                "author_authority": "low",
+                "platform": "twitter",
+            },
+        },
     ]
 
-    print("=" * 80)
-    print("SCHEDULING DECISIONS")
-    print("=" * 80)
-    print()
+    logger.info("=" * 80)
+    logger.info("SCHEDULING DECISIONS")
+    logger.info("=" * 80)
+    logger.info()
 
     decisions = []
     for test_case in test_cases:
-        print(f"📝 {test_case['name']}")
-        print("-" * 80)
+        logger.info(f"📝 {test_case['name']}")
+        logger.info("-" * 80)
 
-        decision = scheduler.schedule_rewritten_post(test_case['rewritten_content'])
-        decisions.append((test_case['name'], decision))
+        decision = scheduler.schedule_rewritten_post(test_case["rewritten_content"])
+        decisions.append((test_case["name"], decision))
 
-        print(f"   Content: {decision.content[:60]}...")
-        print(f"   Platform: {decision.platform}")
-        print(f"   Priority: {decision.priority}/100")
-        print(f"   Scheduled: {decision.when.strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"   Reason: {decision.reason}")
-        print()
+        logger.info(f"   Content: {decision.content[:60]}...")
+        logger.info(f"   Platform: {decision.platform}")
+        logger.info(f"   Priority: {decision.priority}/100")
+        logger.info(f"   Scheduled: {decision.when.strftime('%Y-%m-%d %H:%M:%S')}")
+        logger.info(f"   Reason: {decision.reason}")
+        logger.info()
 
+    logger.info("=" * 80)
+    logger.info("PRIORITY QUEUE (sorted by priority)")
     print("=" * 80)
-    print("PRIORITY QUEUE (sorted by priority)")
-    print("=" * 80)
-    print()
+    logger.info()
 
     # Sort by priority
     sorted_decisions = sorted(decisions, key=lambda x: x[1].priority, reverse=True)
 
     for i, (name, decision) in enumerate(sorted_decisions, 1):
-        priority_label = "🔴 URGENT" if decision.priority >= 80 else "🟡 MEDIUM" if decision.priority >= 50 else "🟢 LOW"
-        print(f"{i}. {priority_label} [{decision.priority}] {name}")
-        print(f"   Post at: {decision.when.strftime('%H:%M:%S')}")
-        print()
+        priority_label = (
+            "🔴 URGENT"
+            if decision.priority >= 80
+            else "🟡 MEDIUM"
+            if decision.priority >= 50
+            else "🟢 LOW"
+        )
+        logger.info(f"{i}. {priority_label} [{decision.priority}] {name}")
+        logger.info(f"   Post at: {decision.when.strftime('%H:%M:%S')}")
+        logger.info()
 
-    print("✅ Scheduler working!")
+    logger.info("✅ Scheduler working!")
 
 
 if __name__ == "__main__":
     import logging
+
     logging.basicConfig(level=logging.INFO)
     demo_scheduler()

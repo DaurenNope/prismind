@@ -2,7 +2,7 @@
 
 ## Current Status
 
-### ✅ Streamlit UI
+### ✅ Svelte UI
 **Status**: Running on http://localhost:8501
 **Process**: Active (PID 49799)
 **Data Access**: Using `NewDatabaseManager` - automatically gets full content
@@ -47,11 +47,11 @@ Or use the shell script:
 ```
 📝 Threads Post by Stas IT'шка
 
-Lingma как Cursor только бесплатный ✅ 
+Lingma как Cursor только бесплатный ✅
 - Работает на Qwen3-Coder👨‍💻
 - Бонусом Qwen3-Max и Qwen3-Thinking🧠
 
-Платного тарифа на AI нет 🤷‍♂️ для обычного 
+Платного тарифа на AI нет 🤷‍♂️ для обычного
 пользователя безлимит как у DeepSeek...
 
 (385 characters - FULL CONTENT!)
@@ -63,7 +63,7 @@ Both UI and Bot use the **same** data layer:
 
 ```
 ┌─────────────────────────────────────┐
-│   Streamlit UI                      │
+│   Svelte UI                      │
 │   (src/web/app.py)                  │
 └──────────────┬──────────────────────┘
                │
@@ -75,7 +75,7 @@ Both UI and Bot use the **same** data layer:
                │
                ▼
 ┌──────────────────────────────────────┐
-│   SQLite DB (prismind.db)            │
+│   SQLite DB (beyondlines.db)            │
 │   26 Threads posts                   │
 │   ALL with full content ✅           │
 └──────────────────────────────────────┘
@@ -111,7 +111,7 @@ Both interfaces automatically get the fixed data because:
 
 ## Quick Test
 
-### Test Streamlit UI
+### Test Svelte UI
 ```bash
 # Already running on http://localhost:8501
 # Just open/refresh the page
@@ -134,7 +134,7 @@ You should see **full content** in both!
 
 ## Files That Display Content
 
-### Streamlit UI Components
+### Svelte UI Components
 - `src/web/app.py` - Main app
 - `src/web/components/posts_tab.py` - Posts display
 - `src/web/components/feed_tab.py` - Feed display
@@ -151,7 +151,7 @@ All use `get_database_manager().get_posts()` which returns full content.
 
 ## Summary
 
-✅ **Streamlit UI**: Running, showing full content
+✅ **Svelte UI**: Running, showing full content
 ✅ **Telegram Bot**: Ready to start, will show full content
 ✅ **Database**: 26 posts with full content
 ✅ **Supabase**: 26 posts with full content

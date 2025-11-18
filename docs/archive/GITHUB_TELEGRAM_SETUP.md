@@ -4,7 +4,7 @@
 
 ### 1. Telegram Tab - Now Useful!
 
-**Before**: Useless sidebar filters  
+**Before**: Useless sidebar filters
 **After**: Full channel management UI
 
 **New Features**:
@@ -34,7 +34,7 @@ python3 collect_github_daily.py
 **Or automate** (add to cron):
 ```bash
 # Run daily at 9 AM
-0 9 * * * cd /path/to/prismind && python3 collect_github_daily.py
+0 9 * * * cd /path/to/beyondlines && python3 collect_github_daily.py
 ```
 
 ### 3. Sidebar - Will Be Cleaned
@@ -54,7 +54,7 @@ The useless sidebar filters will be removed/simplified in next update.
    TELEGRAM_API_HASH=your_hash_here
    TELEGRAM_PHONE=+1234567890
    ```
-5. Restart Streamlit
+5. Restart Svelte
 
 ### Step 2: Add Channels in UI
 
@@ -75,7 +75,7 @@ The useless sidebar filters will be removed/simplified in next update.
 2. Paste channel list (one per line):
    ```
    cryptoforto
-   idoresearch  
+   idoresearch
    CoinMetrika
    don_invest
    ```
@@ -146,23 +146,23 @@ GitHub posts in database: 46
 crontab -e
 
 # Add this line (runs daily at 9 AM)
-0 9 * * * cd /Users/mac/Documents/Development/prismind && /Users/mac/Documents/Development/prismind/.venv311/bin/python collect_github_daily.py >> /tmp/github_collection.log 2>&1
+0 9 * * * cd /Users/mac/Documents/Development/beyondlines && /Users/mac/Documents/Development/beyondlines/.venv311/bin/python collect_github_daily.py >> /tmp/github_collection.log 2>&1
 ```
 
 **Option 2: launchd** (macOS, more reliable)
 
-Create `~/Library/LaunchAgents/com.prismind.github.plist`:
+Create `~/Library/LaunchAgents/com.beyondlines.github.plist`:
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.prismind.github</string>
+    <string>com.beyondlines.github</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/mac/Documents/Development/prismind/.venv311/bin/python</string>
-        <string>/Users/mac/Documents/Development/prismind/collect_github_daily.py</string>
+        <string>/Users/mac/Documents/Development/beyondlines/.venv311/bin/python</string>
+        <string>/Users/mac/Documents/Development/beyondlines/collect_github_daily.py</string>
     </array>
     <key>StartCalendarInterval</key>
     <dict>
@@ -181,10 +181,10 @@ Create `~/Library/LaunchAgents/com.prismind.github.plist`:
 
 Then load it:
 ```bash
-launchctl load ~/Library/LaunchAgents/com.prismind.github.plist
+launchctl load ~/Library/LaunchAgents/com.beyondlines.github.plist
 ```
 
-**Option 3: Add to Streamlit Automation Tab**
+**Option 3: Add to Svelte Automation Tab**
 
 The Automation tab can be configured to run GitHub collection on schedule.
 
@@ -236,12 +236,12 @@ topics = [
 ### Telegram Setup
 - [ ] Get API credentials from https://my.telegram.org/apps
 - [ ] Add to `.env` file
-- [ ] Restart Streamlit
+- [ ] Restart Svelte
 - [ ] Go to Telegram tab
 - [ ] Add/manage channels from UI
 - [ ] Run first collection (will ask for phone verification)
 
-### GitHub Setup  
+### GitHub Setup
 - [ ] Run manual collection: `python3 collect_github_daily.py`
 - [ ] Verify repos saved to database
 - [ ] Set up automated daily collection (cron or launchd)
@@ -273,9 +273,9 @@ for post in github_posts[:5]:
 
 ## Summary
 
-✅ **Telegram**: Channel manager in UI (add/remove channels easily)  
-✅ **GitHub**: Daily trending collector script ready  
-✅ **Automation**: Can be added to cron/launchd for daily runs  
-🔧 **Sidebar**: Will be cleaned up in next update  
+✅ **Telegram**: Channel manager in UI (add/remove channels easily)
+✅ **GitHub**: Daily trending collector script ready
+✅ **Automation**: Can be added to cron/launchd for daily runs
+🔧 **Sidebar**: Will be cleaned up in next update
 
 **All changes are live at http://localhost:8501!** 🎉

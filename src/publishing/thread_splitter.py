@@ -4,9 +4,9 @@ Thread Splitter
 Automatically splits long content into Twitter/X threads with smart sentence boundaries.
 """
 
-import re
 import logging
-from typing import List, Dict, Any
+import re
+from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,9 @@ class ThreadSplitter:
         # Reserve space for numbering (e.g., "1/ " = 3 chars)
         self.numbering_overhead = 3
 
-    def split_into_thread(self, content: str, platform: str = "twitter") -> Dict[str, Any]:
+    def split_into_thread(
+        self, content: str, platform: str = "twitter"
+    ) -> Dict[str, Any]:
         """
         Split content into thread if needed
 
@@ -60,11 +62,11 @@ class ThreadSplitter:
         if len(content) <= self.max_length:
             # No splitting needed
             return {
-                'is_thread': False,
-                'tweets': [content],
-                'tweet_count': 1,
-                'max_tweet_length': len(content),
-                'warnings': []
+                "is_thread": False,
+                "tweets": [content],
+                "tweet_count": 1,
+                "max_tweet_length": len(content),
+                "warnings": [],
             }
 
         # Split into sentences
@@ -84,7 +86,9 @@ class ThreadSplitter:
             # Check if this sentence alone exceeds limit
             if len(sentence) > effective_max:
                 # Sentence too long, need to split it
-                logger.warning(f"⚠️ Sentence exceeds max length ({len(sentence)} chars), will split mid-sentence")
+                logger.warning(
+                    f"⚠️ Sentence exceeds max length ({len(sentence)} chars), will split mid-sentence"
+                )
 
                 # If we have accumulated content, save it
                 if current_tweet:
@@ -129,17 +133,21 @@ class ThreadSplitter:
         max_tweet_length = max(len(t) for t in numbered_tweets)
 
         if max_tweet_length > self.max_length:
-            warnings.append(f"Thread tweet exceeds {self.max_length} chars: {max_tweet_length} chars")
+            warnings.append(
+                f"Thread tweet exceeds {self.max_length} chars: {max_tweet_length} chars"
+            )
 
         result = {
-            'is_thread': True,
-            'tweets': numbered_tweets,
-            'tweet_count': len(numbered_tweets),
-            'max_tweet_length': max_tweet_length,
-            'warnings': warnings
+            "is_thread": True,
+            "tweets": numbered_tweets,
+            "tweet_count": len(numbered_tweets),
+            "max_tweet_length": max_tweet_length,
+            "warnings": warnings,
         }
 
-        logger.info(f"✂️ Split content into {len(numbered_tweets)} tweets (max length: {max_tweet_length} chars)")
+        logger.info(
+            f"✂️ Split content into {len(numbered_tweets)} tweets (max length: {max_tweet_length} chars)"
+        )
 
         return result
 
@@ -155,10 +163,21 @@ class ThreadSplitter:
         """
         # Common abbreviations that shouldn't trigger sentence splits
         abbreviations = {
-            'Mr.', 'Mrs.', 'Ms.', 'Dr.', 'Prof.',
-            'Inc.', 'Ltd.', 'Corp.', 'Co.',
-            'etc.', 'vs.', 'e.g.', 'i.e.',
-            'U.S.', 'U.K.'
+            "Mr.",
+            "Mrs.",
+            "Ms.",
+            "Dr.",
+            "Prof.",
+            "Inc.",
+            "Ltd.",
+            "Corp.",
+            "Co.",
+            "etc.",
+            "vs.",
+            "e.g.",
+            "i.e.",
+            "U.S.",
+            "U.K.",
         }
 
         # Temporarily replace abbreviations with placeholders
@@ -173,7 +192,7 @@ class ThreadSplitter:
 
         # Split on sentence boundaries (. ! ?)
         # Pattern: punctuation followed by space and capital letter, or end of string
-        pattern = r'([.!?]+)(?:\s+(?=[A-ZА-Я])|$)'
+        pattern = r"([.!?]+)(?:\s+(?=[A-ZА-Я])|$)"
 
         parts = re.split(pattern, temp_text)
 
@@ -181,7 +200,7 @@ class ThreadSplitter:
         sentences = []
         i = 0
         while i < len(parts):
-            if i + 1 < len(parts) and parts[i + 1] in '.!?':
+            if i + 1 < len(parts) and parts[i + 1] in ".!?":
                 # Text + punctuation
                 sentence = parts[i] + parts[i + 1]
                 sentences.append(sentence)
@@ -246,19 +265,23 @@ class ThreadSplitter:
         max_length = max(len(t) for t in tweets) if tweets else 0
 
         if max_length > self.max_length:
-            warnings.append(f"Thread tweet exceeds {self.max_length} chars: {max_length} chars")
+            warnings.append(
+                f"Thread tweet exceeds {self.max_length} chars: {max_length} chars"
+            )
 
         # Check numbering consistency
         for i, tweet in enumerate(tweets, 1):
             expected_prefix = f"{i}/ "
             if not tweet.startswith(expected_prefix):
-                warnings.append(f"Tweet {i} missing correct numbering (expected '{expected_prefix}')")
+                warnings.append(
+                    f"Tweet {i} missing correct numbering (expected '{expected_prefix}')"
+                )
 
         return {
-            'valid': len(warnings) == 0,
-            'tweet_count': len(tweets),
-            'max_length': max_length,
-            'warnings': warnings
+            "valid": len(warnings) == 0,
+            "tweet_count": len(tweets),
+            "max_length": max_length,
+            "warnings": warnings,
         }
 
 
@@ -269,22 +292,22 @@ if __name__ == "__main__":
     splitter = ThreadSplitter(max_length=280)
 
     # Test 1: Short content (no split needed)
-    print("=" * 80)
-    print("TEST 1: Short content")
-    print("=" * 80)
+    logger.info("=" * 80)
+    logger.info("TEST 1: Short content")
+    logger.info("=" * 80)
 
     short_content = "This is a short tweet that doesn't need splitting."
     result = splitter.split_into_thread(short_content)
 
-    print(f"Is thread: {result['is_thread']}")
-    print(f"Tweets: {result['tweet_count']}")
-    for tweet in result['tweets']:
-        print(f"  - {tweet}")
+    logger.info(f"Is thread: {result['is_thread']}")
+    logger.info(f"Tweets: {result['tweet_count']}")
+    for tweet in result["tweets"]:
+        logger.info(f"  - {tweet}")
 
     # Test 2: Long content (needs splitting)
-    print("\n" + "=" * 80)
-    print("TEST 2: Long content with multiple sentences")
-    print("=" * 80)
+    logger.info("\n" + "=" * 80)
+    logger.info("TEST 2: Long content with multiple sentences")
+    logger.info("=" * 80)
 
     long_content = """
     OpenAI leaked letter reveals federal guarantee request from October 27.
@@ -296,25 +319,25 @@ if __name__ == "__main__":
 
     result = splitter.split_into_thread(long_content.strip())
 
-    print(f"Is thread: {result['is_thread']}")
-    print(f"Tweets: {result['tweet_count']}")
-    print(f"Max length: {result['max_tweet_length']} chars")
-    print(f"Warnings: {result['warnings']}")
-    print("\nThread:")
-    for tweet in result['tweets']:
-        print(f"  {tweet} ({len(tweet)} chars)")
+    logger.info(f"Is thread: {result['is_thread']}")
+    logger.info(f"Tweets: {result['tweet_count']}")
+    logger.info(f"Max length: {result['max_tweet_length']} chars")
+    logger.warning(f"Warnings: {result['warnings']}")
+    logger.info("\nThread:")
+    for tweet in result["tweets"]:
+        logger.info(f"  {tweet} ({len(tweet)} chars)")
 
     # Test 3: Very long single sentence
-    print("\n" + "=" * 80)
-    print("TEST 3: Very long single sentence")
-    print("=" * 80)
+    logger.info("\n" + "=" * 80)
+    logger.info("TEST 3: Very long single sentence")
+    logger.info("=" * 80)
 
     very_long = "This is an extremely long sentence that goes on and on and on without any natural breaking points and will definitely exceed the maximum tweet length limit so we need to split it intelligently at word boundaries while maintaining readability and coherence throughout the entire thread."
 
     result = splitter.split_into_thread(very_long)
 
-    print(f"Tweets: {result['tweet_count']}")
-    print(f"Warnings: {result['warnings']}")
-    print("\nThread:")
-    for tweet in result['tweets']:
-        print(f"  {tweet} ({len(tweet)} chars)")
+    logger.info(f"Tweets: {result['tweet_count']}")
+    logger.warning(f"Warnings: {result['warnings']}")
+    logger.info("\nThread:")
+    for tweet in result["tweets"]:
+        logger.info(f"  {tweet} ({len(tweet)} chars)")

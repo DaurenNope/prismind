@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
+import logging
+
+logger = logging.getLogger(__name__)
 """
-Database Operations for PrisMind - Modular Implementation
+Database Operations for BEYONDLINES - Modular Implementation
 Handles basic CRUD operations for posts
 """
 
-import sqlite3
 import json
 import os
-from typing import Dict, List, Any, Optional
+import sqlite3
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 from src.database.queries import DatabaseQueries
 from src.utils.logging_config import get_logger
@@ -19,7 +22,7 @@ logger = get_logger(__name__)
 class DatabaseOperations:
     """Handles basic database operations"""
 
-    def __init__(self, db_path: str = "prismind.db"):
+    def __init__(self, db_path: str = "beyondlines.db"):
         self.db_path = db_path
         self.queries = DatabaseQueries(db_path)
         self._init_database()
@@ -27,8 +30,9 @@ class DatabaseOperations:
         # Initialize Supabase for cloud sync (optional)
         self.supabase = None
         try:
-            from src.database.manager import SupabaseManager
             import os
+
+            from src.database.manager import SupabaseManager
 
             # Only initialize if credentials are properly set
             url = os.getenv("SUPABASE_URL")
@@ -63,7 +67,8 @@ class DatabaseOperations:
                 cursor = conn.cursor()
 
                 # Create posts table
-                cursor.execute("""
+                cursor.execute(
+                    """
                     CREATE TABLE IF NOT EXISTS posts (
                         post_id TEXT PRIMARY KEY,
                         platform TEXT NOT NULL,
@@ -99,36 +104,39 @@ class DatabaseOperations:
                            persona_match_scores TEXT,
                            persona_candidacy TEXT
                        )
-                """)
-                
+                """
+                )
+
                 # Add new columns if they don't exist (migration for existing databases)
                 # SQLite doesn't support IF NOT EXISTS for ALTER TABLE, so check first
                 cursor.execute("PRAGMA table_info(posts)")
                 existing_columns = [row[1] for row in cursor.fetchall()]
-                
+
                 columns_to_add = {
-                    'embedding': 'TEXT',
-                    'embedding_model': 'TEXT',
-                    'ai_summary': 'TEXT',
-                    'key_concepts': 'TEXT',
-                    'tags': 'TEXT',
-                    'category': 'TEXT',
-                    'analyzed_at': 'TIMESTAMP',
-                    'recommended_personas': 'TEXT',
-                    'persona_match_scores': 'TEXT',
-                    'persona_candidacy': 'TEXT',
-                    'analysis_model': 'TEXT'
+                    "embedding": "TEXT",
+                    "embedding_model": "TEXT",
+                    "ai_summary": "TEXT",
+                    "key_concepts": "TEXT",
+                    "tags": "TEXT",
+                    "category": "TEXT",
+                    "analyzed_at": "TIMESTAMP",
+                    "recommended_personas": "TEXT",
+                    "persona_match_scores": "TEXT",
+                    "persona_candidacy": "TEXT",
+                    "analysis_model": "TEXT",
                 }
-                
+
                 for col_name, col_type in columns_to_add.items():
                     if col_name not in existing_columns:
                         try:
-                            cursor.execute(f"ALTER TABLE posts ADD COLUMN {col_name} {col_type}")
+                            cursor.execute(
+                                f"ALTER TABLE posts ADD COLUMN {col_name} {col_type}"
+                            )
                         except sqlite3.OperationalError as e:
                             # Column might already exist from concurrent access
                             if "duplicate column" not in str(e).lower():
-                                print(f"⚠️ Failed to add column {col_name}: {e}")
-                
+                                logger.error(f"⚠️ Failed to add column {col_name}: {e}")
+
                 conn.commit()
 
                 # Create indexes
@@ -219,18 +227,22 @@ class DatabaseOperations:
                     added_column = True
 
             # Apply sensible defaults where needed
-            cursor.execute("""
+            cursor.execute(
+                """
                 UPDATE posts
                 SET rewrite_status = COALESCE(rewrite_status, 'none')
-            """)
-            cursor.execute("""
+            """
+            )
+            cursor.execute(
+                """
                 UPDATE posts
                 SET is_rewrite_candidate = COALESCE(is_rewrite_candidate, 0)
-            """)
+            """
+            )
 
             conn.commit()
         except Exception as e:
-            print(f"⚠️ Schema ensure failed: {e}")
+            logger.error(f"⚠️ Schema ensure failed: {e}")
 
     def get_all_posts(self, include_deleted: bool = False) -> List[Dict]:
         """Get all posts from database"""
@@ -263,15 +275,21 @@ class DatabaseOperations:
 
             validation = validate_post(post_data, strict=True)
             if not validation.is_valid:
-                print(f"❌ Post validation failed: {', '.join(validation.errors)}")
-                print(f"   Post ID: {post_data.get('post_id')}")
-                print(f"   Author: {post_data.get('author')}")
-                print(f"   Content preview: {post_data.get('content', '')[:50]}...")
+                logger.error(
+                    f"❌ Post validation failed: {', '.join(validation.errors)}"
+                )
+                logger.info(f"   Post ID: {post_data.get('post_id')}")
+                logger.info(f"   Author: {post_data.get('author')}")
+                logger.info(
+                    f"   Content preview: {post_data.get('content', '')[:50]}..."
+                )
                 return False
 
             # Show warnings if any
             if validation.warnings:
-                print(f"⚠️  Post validation warnings: {', '.join(validation.warnings)}")
+                logger.warning(
+                    f"⚠️  Post validation warnings: {', '.join(validation.warnings)}"
+                )
 
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
@@ -330,7 +348,7 @@ class DatabaseOperations:
                 embedding = post_data.get("embedding")
                 embedding_model = post_data.get("embedding_model")
                 embedding_str = self._serialize_json(embedding) if embedding else None
-                
+
                 columns = [
                     "post_id",
                     "platform",
@@ -428,17 +446,24 @@ class DatabaseOperations:
                 cursor.execute(query, values)
 
                 conn.commit()
-                print(f"✅ Added post to SQLite: {post_id}")
+                logger.info(f"✅ Added post to SQLite: {post_id}")
 
                 # SYNC TO SUPABASE
                 if self.supabase:
                     try:
                         # Generate AI summary if available
-                        summarize_enabled = os.getenv("ANALYZE_DURING_COLLECTION", "false").lower() in ("true", "1", "yes")
-                        if summarize_enabled and self.summarizer and content and not content_summary:
+                        summarize_enabled = os.getenv(
+                            "ANALYZE_DURING_COLLECTION", "false"
+                        ).lower() in ("true", "1", "yes")
+                        if (
+                            summarize_enabled
+                            and self.summarizer
+                            and content
+                            and not content_summary
+                        ):
                             content_summary = self.summarizer.summarize(content, url)
                             if content_summary:
-                                print(f"   🤖 Generated AI summary")
+                                logger.info(f"   🤖 Generated AI summary")
 
                         # Base fields that are required in Supabase schema
                         supabase_data = {
@@ -558,19 +583,19 @@ class DatabaseOperations:
                         # Insert to Supabase
                         result = self.supabase.insert_post(supabase_data)
                         if result:
-                            print(f"   ☁️  Synced to Supabase")
+                            logger.info(f"   ☁️  Synced to Supabase")
                         else:
-                            print(f"   ⚠️  Supabase sync returned no result")
+                            logger.warning(f"   ⚠️  Supabase sync returned no result")
 
                     except Exception as e:
-                        print(f"   ⚠️  Supabase sync failed: {e}")
+                        logger.error(f"   ⚠️  Supabase sync failed: {e}")
                         # Don't fail the entire operation if Supabase sync fails
                         # The data is still safely stored in SQLite
 
                 return True
 
         except Exception as e:
-            print(f"❌ Error adding post: {e}")
+            logger.error(f"❌ Error adding post: {e}")
             return False
 
     def update_post(self, post_id: str, update_data: Dict[str, Any]) -> bool:
@@ -579,7 +604,7 @@ class DatabaseOperations:
             with sqlite3.connect(self.db_path) as conn:
                 # Ensure schema is up to date before updating
                 self._ensure_posts_schema(conn)
-                
+
                 cursor = conn.cursor()
 
                 # Build update query dynamically
@@ -618,25 +643,38 @@ class DatabaseOperations:
                     # Skip fields not present in SQLite schema (e.g., legacy subcategory)
                     if key not in existing_columns:
                         continue
-                    
+
                     # Handle None values - convert to NULL
                     if value is None:
                         set_clauses.append(f"{key} = NULL")
                         continue
-                    
+
                     # Normalize JSON-like fields to TEXT for SQLite
                     if key in json_fields or isinstance(value, (list, dict)):
                         value = self._serialize_json(value)
                     # Ensure numeric fields are actually numeric
-                    elif key in ["value_score", "quality_score", "rewrite_score", "analysis_confidence", "best_persona_score", "urgency_score"]:
+                    elif key in [
+                        "value_score",
+                        "quality_score",
+                        "rewrite_score",
+                        "analysis_confidence",
+                        "best_persona_score",
+                        "urgency_score",
+                    ]:
                         try:
                             value = float(value) if value is not None else None
                         except (ValueError, TypeError):
                             value = None
                     # Ensure boolean fields are 0/1
-                    elif key in ["needs_deep_analysis", "is_saved", "deleted", "is_rewrite_candidate", "time_sensitive"]:
+                    elif key in [
+                        "needs_deep_analysis",
+                        "is_saved",
+                        "deleted",
+                        "is_rewrite_candidate",
+                        "time_sensitive",
+                    ]:
                         value = 1 if value else 0
-                    
+
                     set_clauses.append(f"{key} = ?")
                     values.append(value)
 
@@ -651,11 +689,16 @@ class DatabaseOperations:
                     cursor.execute(query, values)
                 except sqlite3.Error as e:
                     # Fallback: try field-by-field to skip problematic bindings
-                    print(f"⚠️ SQLite update failed ({e}), attempting field-by-field fallback")
+                    logger.error(
+                        f"⚠️ SQLite update failed ({e}), attempting field-by-field fallback"
+                    )
                     safe_set = []
                     safe_vals = []
                     # Build column->value pairs
-                    pairs = [(clause.split('=')[0].strip(), val) for clause, val in zip(set_clauses, values[:-1])]  # exclude post_id
+                    pairs = [
+                        (clause.split("=")[0].strip(), val)
+                        for clause, val in zip(set_clauses, values[:-1])
+                    ]  # exclude post_id
                     for col, val in pairs:
                         try:
                             test_query = f"UPDATE posts SET {col} = ? WHERE post_id = ?"
@@ -663,6 +706,7 @@ class DatabaseOperations:
                             safe_set.append(f"{col} = ?")
                             safe_vals.append(val)
                         except sqlite3.Error:
+                            logger.error(f"Error: {e}")
                             # Skip this bad field
                             continue
                     if safe_set:
@@ -673,19 +717,22 @@ class DatabaseOperations:
 
                 if cursor.rowcount > 0:
                     conn.commit()
-                    print(f"✅ Updated post: {post_id}")
+                    logger.info(f"✅ Updated post: {post_id}")
                     return True
                 else:
-                    print(f"⚠️ Post not found: {post_id}")
+                    logger.warning(f"⚠️ Post not found: {post_id}")
                     return False
 
         except Exception as e:
-            print(f"❌ Error updating post: {e}")
+            logger.error(f"❌ Error updating post: {e}")
             # Log the problematic update_data for debugging
             if update_data:
-                print(f"   Update data keys: {list(update_data.keys())}")
-                print(f"   Update data sample: {dict(list(update_data.items())[:3])}")
+                logger.info(f"   Update data keys: {list(update_data.keys())}")
+                logger.info(
+                    f"   Update data sample: {dict(list(update_data.items())[:3])}"
+                )
             import traceback
+
             traceback.print_exc()
             return False
 
@@ -698,7 +745,7 @@ class DatabaseOperations:
         try:
             return json.dumps(obj) if obj is not None else "null"
         except (TypeError, ValueError) as e:
-            print(f"⚠️ JSON serialization failed: {e}")
+            logger.error(f"⚠️ JSON serialization failed: {e}")
             return "null"
 
     def get_post_count(self) -> int:

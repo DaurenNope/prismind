@@ -15,7 +15,7 @@ After (qwen2.5:1.5b): 5 seconds per post
 
 ## Time to Analyze 211 Posts
 
-**Before**: 27s × 211 = **95 minutes** (1.6 hours)  
+**Before**: 27s × 211 = **95 minutes** (1.6 hours)
 **After**: 5s × 211 = **17.6 minutes** ✅
 
 ## Why qwen2.5:1.5b is Perfect
@@ -27,11 +27,11 @@ After (qwen2.5:1.5b): 5 seconds per post
 - Categorization
 
 ### qwen2.5:1.5b Advantages
-✅ **Fast**: 5 seconds vs 27 seconds  
-✅ **Local**: No API costs  
-✅ **Good enough**: Perfect for summaries/concepts  
-✅ **Small**: 986 MB (vs 4.7 GB for 7b)  
-✅ **Lower memory**: Can run more concurrent analyses  
+✅ **Fast**: 5 seconds vs 27 seconds
+✅ **Local**: No API costs
+✅ **Good enough**: Perfect for summaries/concepts
+✅ **Small**: 986 MB (vs 4.7 GB for 7b)
+✅ **Lower memory**: Can run more concurrent analyses
 
 ### When 7b is Better
 - Long-form content analysis
@@ -57,9 +57,9 @@ OLLAMA_MODEL=qwen2.5:1.5b  # was: qwen2.5:7b
 }
 ```
 
-### 3. Restarted Streamlit
+### 3. Restarted Svelte
 ```bash
-# Streamlit now uses qwen2.5:1.5b
+# Svelte now uses qwen2.5:1.5b
 ```
 
 ## Test Results
@@ -119,7 +119,7 @@ Category: Technology
 # .env
 OLLAMA_MODEL=qwen2.5:7b
 
-# Restart Streamlit
+# Restart Svelte
 ```
 
 ## Recommendation

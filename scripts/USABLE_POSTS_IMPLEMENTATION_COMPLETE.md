@@ -230,7 +230,7 @@ python scripts/test_usable_posts_workflow.py
 ### Check Results
 ```sql
 -- In Supabase SQL Editor
-SELECT 
+SELECT
     inclusion_reason,
     COUNT(*) as count,
     AVG(rewrite_score) as avg_rewrite_score,
@@ -251,6 +251,3 @@ The `usable_posts` table implementation is **complete and tested**. The system s
 5. ✅ Provides detailed statistics and logging
 
 **The system is ready for production use!** 🎉
-
-
-

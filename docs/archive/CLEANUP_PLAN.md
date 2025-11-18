@@ -4,7 +4,7 @@
 
 ### What We Have
 ```
-prismind/
+beyondlines/
 ├── src/              (3.2MB) - Active codebase
 ├── mimesis/          (1.6GB!) - Mostly unused standalone project
 ├── archive/          (1.4MB) - Old files
@@ -112,7 +112,7 @@ Update imports:
 from src.publishing.services.database.bridge import MimesisDB
 from src.services.twitter_poster import TwitterPoster
 
-# NEW  
+# NEW
 from src.publishing.database import PublishingDB
 from src.publishing.posters.twitter import TwitterPoster
 ```
@@ -164,7 +164,7 @@ mv mimesis archive/mimesis-standalone-backup-$(date +%Y%m%d)
 ls *.md:
 CLEANUP_COMPLETE.md
 CLEANUP_PLAN.md
-IMPLEMENTATION_PLAN.md  
+IMPLEMENTATION_PLAN.md
 MIMESIS_INTEGRATION_PLAN.md
 MIMESIS_INTEGRATION_STATUS.md
 POSTING_FIX_SUMMARY.md
@@ -205,7 +205,7 @@ mv old_*.py scripts/archive/
 ## Final Professional Structure
 
 ```
-prismind/
+beyondlines/
 ├── README.md                 # Main documentation
 ├── ARCHITECTURE.md           # System architecture
 ├── .env                      # Environment config
@@ -279,7 +279,7 @@ prismind/
 
 ### Do First (Low Risk)
 1. ✅ Phase 1: Move config file
-2. ✅ Phase 5: Archive mimesis/ folder  
+2. ✅ Phase 5: Archive mimesis/ folder
 3. ✅ Phase 6: Organize documentation
 4. ✅ Phase 7: Clean root directory
 
@@ -291,7 +291,7 @@ prismind/
 ## Testing Checklist
 
 After EACH phase:
-- [ ] App starts: `streamlit run src/web/app.py`
+- [ ] App starts: `svelte run src/web/app.py`
 - [ ] Publishing tab loads
 - [ ] Can view scheduled posts
 - [ ] Can post to Twitter (test)
@@ -312,7 +312,7 @@ git checkout -- path/to/file  # Undo changes
 
 Or create a backup before starting:
 ```bash
-cp -r /Users/mac/Documents/Development/prismind /Users/mac/Documents/Development/prismind-backup
+cp -r /Users/mac/Documents/Development/beyondlines /Users/mac/Documents/Development/beyondlines-backup
 ```
 
 ## Benefits After Cleanup
@@ -328,7 +328,7 @@ cp -r /Users/mac/Documents/Development/prismind /Users/mac/Documents/Development
 
 - **Total time**: 60-90 minutes
 - **Low risk phases**: 20 minutes
-- **Medium risk phases**: 40 minutes  
+- **Medium risk phases**: 40 minutes
 - **Testing**: 30 minutes
 
 ## Ready to Execute?

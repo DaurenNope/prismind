@@ -26,7 +26,7 @@ Updated `src/services/analysis_service.py` to initialize and pass Supabase manag
 # NEW CODE (fixed)
 async def _analyze_posts_async(posts: List[Dict[str, Any]], limit: int):
     db_manager = get_database_manager()
-    
+
     # Get Supabase manager for cloud sync
     try:
         from src.supabase_manager import SupabaseManager
@@ -34,7 +34,7 @@ async def _analyze_posts_async(posts: List[Dict[str, Any]], limit: int):
     except Exception as e:
         log(f"Supabase manager not available: {e}", "warning")
         supabase_manager = None
-    
+
     for post in posts[:limit]:
         await analyze_and_store_post(db_manager, post, supabase_manager=supabase_manager)
 ```
@@ -57,7 +57,7 @@ When you run analysis from the UI:
 
 ### Check Logs
 
-You'll now see these messages in Streamlit logs:
+You'll now see these messages in Svelte logs:
 
 ```
 ✅ Synced to Supabase successfully: twitter_1234567890

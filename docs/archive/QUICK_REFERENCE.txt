@@ -18,8 +18,8 @@ Problem: ModuleNotFoundError
 Solution: ./start_bot.sh (handles PYTHONPATH automatically)
 
 Problem: Still showing "Unknown • Unknown"
-Solution: 
-    rm prismind.db
+Solution:
+    rm beyondlines.db
     ./start_bot.sh
     # Then /collect in Telegram
 
@@ -46,13 +46,13 @@ Solution:
     python verify_fix.py
 
 📊 CHECK DATABASE:
-    sqlite3 prismind.db "SELECT platform, author, content FROM posts LIMIT 3;"
+    sqlite3 beyondlines.db "SELECT platform, author, content FROM posts LIMIT 3;"
 
 🎯 SUCCESS LOOKS LIKE:
     /latest shows:
     ✅ 🐦 Twitter • @username
        Actual tweet text...
-    
+
     NOT:
     ❌ 📄 Unknown • Unknown
        No content...

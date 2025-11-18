@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import List, Dict
+from typing import Dict, List
 
 
 def load_personalities() -> List[Dict[str, str]]:
@@ -14,7 +14,7 @@ def load_personalities() -> List[Dict[str, str]]:
     # Try config path (now in main config directory)
     candidates = [
         Path("config/personalities.json"),
-        Path("/Users/mac/Documents/Development/prismind/config/personalities.json"),
+        Path("/Users/mac/Documents/Development/beyondlines/config/personalities.json"),
     ]
     for p in candidates:
         if p.exists():
@@ -32,7 +32,8 @@ def load_personalities() -> List[Dict[str, str]]:
                             value["key"] = key  # Add key field
                             result.append(value)
                     return result
-            except Exception:
+            except Exception as e:
+                logger.error(f"Error: {e}")
                 return []
     return []
 

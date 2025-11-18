@@ -1,0 +1,126 @@
+INFO - Logging system initialized
+
+====================================================================================================
+🎨 5 REWRITES FROM ACTUAL DATABASE POSTS
+====================================================================================================
+
+📡 Fetching posts from Supabase...
+✅ Found 20 posts in database
+
+INFO - Loaded 15 voice examples for qronoya
+INFO - Loaded 15 voice examples for aspandead
+INFO - Loaded 15 voice examples for claimzilla
+INFO - ❌ No personas matched (all below 50 point threshold)
+INFO -    • claimzilla: 40 points - 1 interest matches, complexity match (Intermediate), crypto chain mentions (1)
+INFO -    • aspandead: 25 points - 1 interest matches, complexity match (Intermediate)
+INFO -    • qronoya: 0 points - excluded: contains 'sol'
+INFO - ❌ No personas matched (all below 50 point threshold)
+INFO -    • claimzilla: 40 points - 1 interest matches, complexity match (Intermediate), crypto chain mentions (1)
+INFO -    • aspandead: 20 points - complexity match (Intermediate)
+INFO -    • qronoya: 0 points - excluded: contains 'eth'
+INFO - ❌ No personas matched (all below 50 point threshold)
+INFO -    • aspandead: 40 points - 1 interest matches, complexity match (Intermediate), dating/relationship focus
+INFO -    • qronoya: 35 points - 1 interest matches, complexity match (Intermediate), practical content
+INFO -    • claimzilla: 0 points - missing required crypto keywords
+INFO - ❌ No personas matched (all below 50 point threshold)
+INFO -    • qronoya: 25 points - 1 interest matches, complexity match (Intermediate)
+INFO -    • aspandead: 20 points - complexity match (Intermediate)
+INFO -    • claimzilla: 0 points - missing required crypto keywords
+INFO - 🎯 Matched 1 persona(s) for this content
+INFO -    • qronoya: 70 points (2 interest matches, complexity match (Intermediate), category match, 1 keyword signals, professional/career focus)
+
+====================================================================================================
+POST #1 FROM DB (Platform: TWITTER)
+====================================================================================================
+
+📝 ORIGINAL:
+----------------------------------------------------------------------------------------------------
+Chinese AI startups: 1/6th of US funding, bad press, sanctions, brain drain, communism, little English proficiency, and no talent influx..
+
+But after using Manus AI, Deepseek, Trae, Kling, Vidu, & Ying, I think the US is in trouble.
+
+At this pace, China will dominate AI.
+
+Demos:
+----------------------------------------------------------------------------------------------------
+
+🎯 MATCHED TO: QRONOYA (score: 70.0)
+   Reason: 2 interest matches, complexity match (Intermediate), category match, 1 keyword signals, professional/career focus
+
+✍️  REWRITING AS QRONOYA...
+INFO - ✍️  Rewriting 839d00a4-30c0-449b-bfef-6a6ca807fc1b as Qronoya for twitter
+INFO -    Using angle: Rewrite in Qronoya voice
+INFO - Using Vikhr model for Russian content
+
+✨ QRONOYA REWRITE:
+----------------------------------------------------------------------------------------------------
+<think>
+Okay, I need to rewrite the original post in Qronoya's style for Russian Twitter. Let's break down the requirements.
+
+First, the original content is about Chinese AI startups facing challenges like limited funding, bad press, sanctions, brain drain, communism, lack of English, and no talent influx. The user provided a list of key concepts, but the main points are the issues and the fact that Manus AI, DeepSeek, Trae, Kling, Vidu, and Yin are used. However, the user says to extract the idea, not copy the text, so I should focus on the core problem.
+
+The target audience is general, and the tone should be natural, like a friend sharing insights. The examples show a practical, action-oriented voice with references to personal experience and tech terms. I need to mimic that style, using vocabulary like "стартап", "разработка", "опыт", "совет", "бизнес", "технологии".
+
+The hook should start with a statement that grabs attention, maybe using a phrase like "Знаете, что..." or "По опыту могу сказать...". The key points need to be concise, each under 280 characters. The CTA at the end should encourage engagement, like asking a question or inviting comments.
+
+I should avoid emojis, hashtags, and marketing language. Also, make sure to use the terms from the key concepts, but they might be misspelled (like "Trae", "Vidu", "Ying")—maybe they are proper nouns or typos. I'll keep them as they are.
+
+Now, structuring the thread: start with the hook, list the challenges, mention the AI tools, and end with a question. Use Russian phrases like "Например", "Как видите", "А что думаете вы?".
+
+Check for natural flow, avoiding corporate jargon. Use examples from the original content but rephrase them in a conversational way. Ensure each tweet is under 280 characters and flows naturally.
+
+Let me draft the first tweet: "Знаете, что... 1/6 от всех инвестиций в AI уходят на китайские стартапы. Но за это — крики о «коммунизме», санкции, а ещё... (слова, которые не знают даже чиновники). Кто-то из вас сталкивался с этим?" That covers the funding issue and the problems, ends with a question to engage.
+
+Next tweets can elaborate on each point: brain drain, English proficiency, lack of talent, and how Manus AI, etc., are used despite these challenges. Conclude with a CTA asking for thoughts.
+</think>
+
+1/6 от всех инвестиций в AI уходят на китайские стартапы. Но за это — крики о «коммунизме», санкции, а ещё... (слова, которые не знают даже чиновники). Кто-то из вас сталкивался с этим?
+#
+
+Кто-то из вас сталкивался с этим?
+#
+
+А вдруг это не так? Видите ли, в Китае миллионы специалистов пишут нейросети. Но почему в США их даже не считают? Может, тут есть что-то важное?
+#
+
+Или, может, дело в том, что китайские стартапы не умеют писать код на английском? Или, может, их «нейросети» вообще не работают? Кто-то из вас пробовал их использовать?
+#
+
+Ага, и ещё: таланты уезжают. Даже те, кто работал в Китае, уходят.
+----------------------------------------------------------------------------------------------------
+
+📊 QUALITY:
+   Emojis: 0 ✅ CLEAN
+   Hashtags: 0 ✅ CLEAN
+INFO - 🎯 Matched 1 persona(s) for this content
+INFO -    • aspandead: 70 points (4 interest matches, complexity match (Intermediate), 4 keyword signals, emotional depth)
+
+====================================================================================================
+POST #2 FROM DB (Platform: REDDIT)
+====================================================================================================
+
+📝 ORIGINAL:
+----------------------------------------------------------------------------------------------------
+Comment on 3 months into meditating for 20 mins a day (just s...
+
+I’ve had so many of the same experiences - being able to ‘shift’ my consciousness into the present and let go of my usual perspective felt so incredible while high. It also felt ‘easy’ - there’s something about weed that seems to relax our perspective and make (at least some) meditation states more accessible. I also think those experiences are a bit empty - very pleasant and enjoyable while they are happening, but in retrospect I...
+----------------------------------------------------------------------------------------------------
+
+🎯 MATCHED TO: ASPANDEAD (score: 70.0)
+   Reason: 4 interest matches, complexity match (Intermediate), 4 keyword signals, emotional depth
+Traceback (most recent call last):
+  File "/Users/mac/Documents/Development/beyondlines/demo_5_real_db_rewrites.py", line 170, in <module>
+    asyncio.run(get_5_real_rewrites())
+  File "/Users/mac/.pyenv/versions/3.11.12/lib/python3.11/asyncio/runners.py", line 190, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/Users/mac/.pyenv/versions/3.11.12/lib/python3.11/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mac/.pyenv/versions/3.11.12/lib/python3.11/asyncio/base_events.py", line 654, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/Users/mac/Documents/Development/beyondlines/demo_5_real_db_rewrites.py", line 114, in get_5_real_rewrites
+    'key_points': analyzed.get('key_concepts', [])[:3],
+                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^
+TypeError: 'NoneType' object is not subscriptable

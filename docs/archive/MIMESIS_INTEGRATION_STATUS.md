@@ -13,7 +13,7 @@ All three platforms (Twitter, Telegram, Threads) now work with **direct API call
 - **Requirements**: Twitter API credentials (consumer key, secret, access token)
 - **Features**: Single tweets + threads support
 
-#### ✅ Telegram Posting  
+#### ✅ Telegram Posting
 - **Method**: Direct Telegram Bot API via requests
 - **Location**: `publisher_worker.py` (inline function)
 - **Integration**: `publisher_worker.py` + `mimesis_scheduler_tab.py`
@@ -47,7 +47,7 @@ User creates content → Scheduler → Database (scheduled_posts)
 ### Active Integration Points
 
 ```
-prismind/
+beyondlines/
 ├── src/
 │   ├── mimesis/               # ⚠️ Partial integration
 │   │   └── services/
@@ -80,7 +80,7 @@ prismind/
 
 ### ✅ Fully Working
 1. **Twitter posting** - Direct API, both manual and automated
-2. **Telegram posting** - Direct API, both manual and automated  
+2. **Telegram posting** - Direct API, both manual and automated
 3. **Threads posting** - Direct API, both manual and automated
 4. **Content transformation** - Uses `src.mimesis.services.transformer`
 5. **Database bridge** - Uses `src.mimesis.services.database.bridge`
@@ -94,7 +94,7 @@ prismind/
 
 ### 📦 Not Integrated (Still in mimesis/)
 1. **Browser automation** - `mimesis/app/automation/` (not needed for API posting)
-2. **Original UI** - `mimesis/app/ui/` (superseded by prismind UI)
+2. **Original UI** - `mimesis/app/ui/` (superseded by beyondlines UI)
 3. **Autoposter service** - `mimesis/scripts/autoposter_service.py` (not needed)
 4. **n8n workflows** - `mimesis/n8n_workflows/` (not needed)
 
@@ -146,7 +146,7 @@ result = post_to_threads_direct("Hello Threads! 🧵")
 ```
 
 ### Use the UI
-1. Start app: `streamlit run src/web/app.py`
+1. Start app: `svelte run src/web/app.py`
 2. Go to **Publishing** tab
 3. See **Scheduler** section:
    - All platforms show ✅ status
@@ -163,7 +163,7 @@ db = MimesisDB()
 # Schedule a tweet
 db.insert_scheduled({
     "platform": "twitter",
-    "content": "Automated tweet from prismind! 🚀",
+    "content": "Automated tweet from beyondlines! 🚀",
     "scheduled_time": datetime.now(timezone.utc).isoformat(),
     "status": "pending",
     "personality_key": "test",
@@ -203,7 +203,7 @@ AUTO_PUBLISHER_ENABLED=true
 - Prismind: Content collection + analysis
 - **Problem**: Two separate projects, posting broken after merge
 
-### After Integration  
+### After Integration
 - **One unified project**: Prismind
 - Collection → Analysis → **Publishing** (fully working!)
 - All posting via direct APIs (no external services)

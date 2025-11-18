@@ -35,7 +35,8 @@ class SimpleTransformer:
             data = resp.json()
             # Ollama returns { response: "..." }
             return (data.get("response") or "").strip() or None
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error: {e}")
             return None
 
     def transform(self, persona_key: str, source: Dict[str, object]) -> str:
@@ -99,10 +100,25 @@ class PersonaGenerator:
                 "scheduled_time": when.isoformat(),  # Mimesis uses scheduled_time
                 "status": "pending",  # Database uses 'pending', not 'scheduled'
             }
-            inserted = (
-                self.sb.client.table("scheduled_posts").insert(row).execute().data[0]
-            )
-            scheduled.append(inserted)
+            # Use DatabaseAgent (delegates to StorageFacade)
+            from src.database.database_agent import DatabaseAgent
+
+            db_agent = DatabaseAgent()
+            if db_agent.save_scheduled_post(row):
+                # Get the inserted record if needed
+                try:
+                    result = (
+                        self.sb.client.table("scheduled_posts")
+                        .select("*")
+                        .eq("content", row.get("content"))
+                        .limit(1)
+                        .execute()
+                    )
+                    if result.data:
+                        scheduled.append(result.data[0])
+                except Exception as e:
+                    logger.error(f"Error: {e}")
+                    scheduled.append(row)  # Fallback to row data
         return scheduled
 
     def generate_transformations(
@@ -121,11 +137,24 @@ class PersonaGenerator:
                 "content": text,
                 "ready_for_posting": False,
             }
-            inserted = (
-                self.sb.client.table("mimesis_transformations")
-                .insert(row)
-                .execute()
-                .data[0]
-            )
-            created.append(inserted)
+            # Use DatabaseAgent (delegates to StorageFacade)
+            from src.database.database_agent import DatabaseAgent
+
+            db_agent = DatabaseAgent()
+            if db_agent.save_transformation(row):
+                # Get the inserted record if needed
+                try:
+                    result = (
+                        self.sb.client.table("mimesis_transformations")
+                        .select("*")
+                        .eq("content", row.get("content"))
+                        .eq("persona_key", persona_key)
+                        .limit(1)
+                        .execute()
+                    )
+                    if result.data:
+                        created.append(result.data[0])
+                except Exception as e:
+                    logger.error(f"Error: {e}")
+                    created.append(row)  # Fallback to row data
         return created

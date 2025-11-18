@@ -2,7 +2,7 @@
 
 ## Overview
 
-Successfully transformed PrisMind from a generic 5-persona system to an authentic 3-profile content system with strict topic routing, voice-authentic rewriting, and language-specific output.
+Successfully transformed BEYONDLINES from a generic 5-persona system to an authentic 3-profile content system with strict topic routing, voice-authentic rewriting, and language-specific output.
 
 ---
 

@@ -40,12 +40,12 @@
   - Truncated content
   - Placeholder/error content
   - Invalid summaries
-  
+
 - **Time-sensitive keywords**: 71 posts (17.6%)
   - Caught false positives (time-sensitive content marked as evergreen)
   - Breaking news language
   - Recent event references
-  
+
 - **Other reasons**: 130 posts (32.2%)
   - Age requirements (too old or too recent)
   - Category issues (DEPRECATED, NEWS)
@@ -92,6 +92,3 @@
 ✅ Content analysis working
 ✅ Curation logic verified
 ✅ Ready to populate `usable_posts` table
-
-
-

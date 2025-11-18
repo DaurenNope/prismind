@@ -1,20 +1,21 @@
 #!/usr/bin/env python3
 """
-Intelligence Automation System for PrisMind
+Intelligence Automation System for BEYONDLINES
 Autonomous scheduling, discovery, and digest delivery
 """
 
 import logging
 from datetime import datetime, time
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
+
+from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_EXECUTED
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
-from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_EXECUTED
 
-from src.core.discovery.profile_manager import ProfileManager
 from src.core.discovery.comprehensive_discovery import ComprehensiveDiscovery
-from src.services.new_database_manager import get_database_manager
+from src.core.discovery.profile_manager import ProfileManager
 from src.services.digest import DigestGenerator
+from src.services.new_database_manager import get_database_manager
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,9 @@ class IntelligenceAutomation:
 
         # Schedule daily digests
         self._schedule_digests()
+
+        # Schedule content maintenance (cleanup + batch rewrite)
+        self._schedule_content_maintenance()
 
         # Start scheduler
         self.scheduler.start()
@@ -120,6 +124,31 @@ class IntelligenceAutomation:
             max_instances=1,
         )
         logger.info("   📬 Scheduled: Evening summary at 18:00")
+
+    def _schedule_content_maintenance(self):
+        """Schedule content maintenance tasks"""
+
+        # Cleanup stale time-sensitive posts (daily at 2 AM)
+        self.scheduler.add_job(
+            func=self._cleanup_stale_posts,
+            trigger=CronTrigger(hour=2, minute=0),
+            id="cleanup_stale_posts",
+            name="Cleanup Stale Posts",
+            replace_existing=True,
+            max_instances=1,
+        )
+        logger.info("   🧹 Scheduled: Cleanup stale posts at 02:00")
+
+        # Batch rewrite usable_posts (every 6 hours)
+        self.scheduler.add_job(
+            func=self._batch_rewrite_usable_posts,
+            trigger=CronTrigger(hour="*/6", minute=0),
+            id="batch_rewrite_usable",
+            name="Batch Rewrite Usable Posts",
+            replace_existing=True,
+            max_instances=1,
+        )
+        logger.info("   ✍️  Scheduled: Batch rewrite usable posts every 6 hours")
 
     def _run_discovery(self, profile_id: str):
         """
@@ -291,10 +320,11 @@ class IntelligenceAutomation:
             text: Message to send
         """
         try:
+            import asyncio
             import os
+
             from telegram import Bot
             from telegram.constants import ParseMode
-            import asyncio
 
             token = os.getenv("TELEGRAM_BOT_TOKEN")
             chat_id = os.getenv("TELEGRAM_CHAT_ID")
@@ -317,6 +347,87 @@ class IntelligenceAutomation:
 
         except Exception as e:
             logger.error(f"❌ Failed to send to Telegram: {e}")
+
+    def _cleanup_stale_posts(self):
+        """Cleanup stale time-sensitive posts from usable_posts"""
+        logger.info("🧹 Starting cleanup of stale time-sensitive posts...")
+
+        try:
+            from scripts.cleanup_stale_usable_posts import cleanup_stale_posts
+
+            result = cleanup_stale_posts(dry_run=False)
+
+            logger.info(
+                f"✅ Cleanup complete: {result['deleted']} stale posts removed "
+                f"({result['valid']} valid remaining)"
+            )
+
+            # Update metrics
+            if "cleanup_stats" not in self.metrics:
+                self.metrics["cleanup_stats"] = []
+            self.metrics["cleanup_stats"].append(
+                {
+                    "time": datetime.now().isoformat(),
+                    "deleted": result["deleted"],
+                    "valid": result["valid"],
+                }
+            )
+
+        except Exception as e:
+            logger.error(f"❌ Cleanup failed: {e}", exc_info=True)
+            self.metrics["errors"].append(
+                {
+                    "type": "cleanup_stale_posts",
+                    "time": datetime.now().isoformat(),
+                    "error": str(e),
+                }
+            )
+
+    def _batch_rewrite_usable_posts(self):
+        """Batch rewrite usable_posts based on persona flags"""
+        logger.info("✍️  Starting batch rewrite of usable_posts...")
+
+        try:
+            import asyncio
+
+            from scripts.batch_rewrite_usable_posts import batch_rewrite_usable_posts
+
+            # Run async function
+            result = asyncio.run(
+                batch_rewrite_usable_posts(
+                    persona_fit_threshold=0.3,
+                    max_posts_per_persona=None,  # Process all
+                    dry_run=False,
+                    schedule_immediately=True,  # Auto-schedule after rewrite
+                )
+            )
+
+            logger.info(
+                f"✅ Batch rewrite complete: {result['rewrites_created']} rewrites created, "
+                f"{result['scheduled']} scheduled"
+            )
+
+            # Update metrics
+            if "rewrite_stats" not in self.metrics:
+                self.metrics["rewrite_stats"] = []
+            self.metrics["rewrite_stats"].append(
+                {
+                    "time": datetime.now().isoformat(),
+                    "rewrites_created": result["rewrites_created"],
+                    "scheduled": result["scheduled"],
+                    "errors": len(result.get("errors", [])),
+                }
+            )
+
+        except Exception as e:
+            logger.error(f"❌ Batch rewrite failed: {e}", exc_info=True)
+            self.metrics["errors"].append(
+                {
+                    "type": "batch_rewrite",
+                    "time": datetime.now().isoformat(),
+                    "error": str(e),
+                }
+            )
 
     def _job_executed_listener(self, event):
         """Listen to job execution events for monitoring"""
@@ -389,7 +500,7 @@ def test_automation():
     """Test the automation system"""
     from datetime import timedelta
 
-    print("\n🧪 Testing Intelligence Automation System\n")
+    logger.info("\n🧪 Testing Intelligence Automation System\n")
 
     # Create automation
     automation = IntelligenceAutomation()
@@ -399,14 +510,14 @@ def test_automation():
 
     # Show status
     status = automation.get_status()
-    print(f"\n📊 Status:")
-    print(f"   Running: {status['running']}")
-    print(f"   Jobs: {status['jobs']}")
-    print(f"   Discoveries run: {status['metrics']['discoveries_run']}")
+    logger.info(f"\n📊 Status:")
+    logger.info(f"   Running: {status['running']}")
+    logger.info(f"   Jobs: {status['jobs']}")
+    logger.info(f"   Discoveries run: {status['metrics']['discoveries_run']}")
 
-    print("\n✅ Automation system ready!")
-    print("\nTo start: automation.start()")
-    print("To stop: automation.stop()")
+    logger.info("\n✅ Automation system ready!")
+    logger.info("\nTo start: automation.start()")
+    logger.info("To stop: automation.stop()")
 
 
 if __name__ == "__main__":

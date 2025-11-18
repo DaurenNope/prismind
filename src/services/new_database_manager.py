@@ -6,19 +6,20 @@ New Database Manager (Simplified)
 Main orchestrator for database operations using modular components.
 """
 
-from typing import Dict, List, Any, Optional
+from typing import Any, Dict, List, Optional
+
 from src.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 
-from src.database.operations import DatabaseOperations
 from src.database.analysis import DatabaseAnalysis
+from src.database.operations import DatabaseOperations
 
 
 class NewDatabaseManager:
     """Main database manager using modular components"""
 
-    def __init__(self, db_path: str = "prismind.db"):
+    def __init__(self, db_path: str = "beyondlines.db"):
         self.db_operations = DatabaseOperations(db_path)
         self.db_analysis = DatabaseAnalysis(db_path)
         self.db_path = db_path
@@ -180,7 +181,7 @@ class NewDatabaseManager:
 _database_manager_instance = None
 
 
-def get_database_manager(db_path: str = "prismind.db") -> NewDatabaseManager:
+def get_database_manager(db_path: str = "beyondlines.db") -> NewDatabaseManager:
     """Get global database manager instance"""
     global _database_manager_instance
     if _database_manager_instance is None:
@@ -192,6 +193,7 @@ def get_database_manager(db_path: str = "prismind.db") -> NewDatabaseManager:
         """Get GitHub trending repositories"""
         try:
             from src.storage.db import get_storage
+
             storage = get_storage()
             return storage.get_github_trending_repos(limit)
         except Exception as e:
@@ -202,6 +204,7 @@ def get_database_manager(db_path: str = "prismind.db") -> NewDatabaseManager:
         """Get Telegram messages"""
         try:
             from src.storage.db import get_storage
+
             storage = get_storage()
             return storage.get_telegram_messages(limit)
         except Exception as e:

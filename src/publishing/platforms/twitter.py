@@ -1,6 +1,8 @@
 """
 Twitter Posting Service using Tweepy (Twitter API v2)
-Simplified version for prismind publishing system
+Simplified version for beyondlines publishing system
+
+Now includes rate limiting inspired by elizaOS's RequestQueue pattern.
 """
 
 import os
@@ -15,10 +17,10 @@ load_dotenv(override=True)
 
 
 class TwitterPoster:
-    """Post tweets and threads to Twitter using API v2."""
+    """Post tweets and threads to Twitter using API v2 with rate limiting."""
 
     def __init__(self):
-        """Initialize Twitter client."""
+        """Initialize Twitter client with rate limiting."""
         self.api_key = os.getenv("TWITTER_API_KEY")
         self.api_secret = os.getenv("TWITTER_API_SECRET")
         self.access_token = os.getenv("TWITTER_ACCESS_TOKEN")
@@ -29,18 +31,21 @@ class TwitterPoster:
         ):
             raise ValueError("Twitter credentials missing in .env")
 
+        # Initialize Tweepy client with auto rate limiting
         self.client = tweepy.Client(
             consumer_key=self.api_key,
             consumer_secret=self.api_secret,
             access_token=self.access_token,
             access_token_secret=self.access_secret,
+            wait_on_rate_limit=True,  # Auto-wait on rate limits
         )
 
         # Get authenticated user
         try:
             self.me = self.client.get_me().data
             self.username = self.me.username
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error: {e}")
             self.me = None
             self.username = "Unknown"
 
@@ -71,6 +76,7 @@ class TwitterPoster:
             }
 
         except Exception as e:
+            logger.error(f"Error: {e}")
             return {"success": False, "error": str(e)}
 
     def post_thread(self, tweets: List[str], delay_seconds: int = 3) -> Dict:
@@ -133,6 +139,7 @@ class TwitterPoster:
             }
 
         except Exception as e:
+            logger.error(f"Error: {e}")
             return {
                 "success": False,
                 "error": str(e),
@@ -164,6 +171,7 @@ def post_to_twitter_direct(content: str) -> Dict:
             return {"success": False, "error": result.get("error", "Unknown error")}
 
     except Exception as e:
+        logger.error(f"Error: {e}")
         return {
             "success": False,
             "error": f"TwitterPoster initialization failed: {str(e)}",

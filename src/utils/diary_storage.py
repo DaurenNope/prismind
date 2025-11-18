@@ -1,10 +1,9 @@
 import json
 import os
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Dict, Any
-
+from typing import Any, Dict, List, Optional
 
 DIARY_DIR = Path("var")
 DIARY_FILE = DIARY_DIR / "diary_entries.json"
@@ -36,7 +35,8 @@ class DiaryStorage:
         try:
             with open(self.file_path, "r", encoding="utf-8") as f:
                 return json.load(f)
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error: {e}")
             return []
 
     def _write(self, data: List[Dict[str, Any]]) -> None:
@@ -83,5 +83,3 @@ class DiaryStorage:
         if limit:
             return data[:limit]
         return data
-
-

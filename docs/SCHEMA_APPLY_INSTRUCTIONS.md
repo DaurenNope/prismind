@@ -44,9 +44,3 @@ Once the migration is applied:
 If you get permission errors:
 - Make sure you're using the SQL Editor (has admin access)
 - If using service role key, ensure it has proper permissions
-
-
-
-
-
-

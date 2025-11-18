@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """
-Supabase Manager for PrisMind
+Supabase Manager for BEYONDLINES
 Handles all Supabase database operations
 """
 
-import os
 import json
-from typing import Dict, List, Any, Optional
+import os
+from typing import Any, Dict, List, Optional
+
 from dotenv import load_dotenv
+
 from src.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -16,11 +18,13 @@ logger = get_logger(__name__)
 load_dotenv()
 
 try:
-    from supabase import create_client, Client
+    from supabase import Client, create_client
 except ImportError:
-    logger.warning("Warning: supabase-py not installed. Install with: pip install supabase")
+    logger.warning(
+        "Warning: supabase-py not installed. Install with: pip install supabase"
+    )
     create_client = None
-    Client = None
+    supabase_client = None
 
 
 class SupabaseManager:
@@ -48,8 +52,43 @@ class SupabaseManager:
             )
 
         try:
-            self.client = create_client(url, key)
+            # Try to create client with options to disable proxy
+            try:
+                from supabase.lib.client_options import ClientOptions
+
+                # Create options without proxy
+                options = ClientOptions()
+                # Try to set proxy to None if the option exists
+                if hasattr(options, "proxy"):
+                    options.proxy = None
+                self.client = create_client(url, key, options=options)
+            except (ImportError, AttributeError, TypeError):
+                # Fallback: try without options, but remove proxy env vars first
+                original_proxy = os.environ.pop("HTTPS_PROXY", None)
+                original_http_proxy = os.environ.pop("HTTP_PROXY", None)
+                original_threads_proxy = os.environ.pop("THREADS_PROXY", None)
+
+                try:
+                    self.client = create_client(url, key)
+                finally:
+                    # Restore proxy env vars if they existed
+                    if original_proxy:
+                        os.environ["HTTPS_PROXY"] = original_proxy
+                    if original_http_proxy:
+                        os.environ["HTTP_PROXY"] = original_http_proxy
+                    if original_threads_proxy:
+                        os.environ["THREADS_PROXY"] = original_threads_proxy
         except Exception as e:
+            error_msg = str(e)
+            # If it's a proxy error, provide helpful message
+            if "proxy" in error_msg.lower():
+                logger.warning(
+                    "⚠️ Supabase proxy error - this is a known issue with supabase-py"
+                )
+                logger.warning(
+                    "   Try unsetting HTTPS_PROXY/HTTP_PROXY environment variables"
+                )
+                logger.warning(f"   Error: {error_msg}")
             raise ConnectionError(f"Failed to connect to Supabase: {e}")
 
     def check_duplicate_by_url(self, url: str) -> bool:
@@ -120,9 +159,7 @@ class SupabaseManager:
                 return False
 
             # Build query to check for duplicates (category dropped from schema)
-            query = self.client.table(self.table_name).select(
-                "id, created_at, url"
-            )
+            query = self.client.table(self.table_name).select("id, created_at, url")
 
             # Check for exact content match and same author
             query = query.eq("content", content).eq("author", author)
@@ -185,12 +222,16 @@ class SupabaseManager:
                 return {}
 
             # Debug: Check if embedding exists in incoming data
-            has_emb_input = 'embedding' in post_data and post_data['embedding'] is not None
+            has_emb_input = (
+                "embedding" in post_data and post_data["embedding"] is not None
+            )
             if has_emb_input:
-                logger.debug(f"🔍 insert_post: Received embedding ({len(post_data['embedding'])} dims)")
+                logger.debug(
+                    f"🔍 insert_post: Received embedding ({len(post_data['embedding'])} dims)"
+                )
             else:
                 logger.debug(f"⚠️  insert_post: NO embedding in post_data")
-            
+
             # Check for duplicates before inserting
             content = post_data.get("content", "")
             author = post_data.get("author", "")
@@ -207,7 +248,9 @@ class SupabaseManager:
             # First check by URL (most reliable)
             if url and self.check_duplicate_by_url(url):
                 if is_enriched_update:
-                    logger.info(f"   🔄 Duplicate URL found, will UPDATE with enriched data: {url}")
+                    logger.info(
+                        f"   🔄 Duplicate URL found, will UPDATE with enriched data: {url}"
+                    )
                     # Don't return, proceed to update
                 else:
                     logger.debug(f"   ⏭️  Duplicate URL detected: {url[:60]}...")
@@ -219,7 +262,9 @@ class SupabaseManager:
                     logger.info(f"   🔄 Duplicate found, will UPDATE with enriched data")
                     # Don't return, proceed to update
                 else:
-                    logger.debug(f"   ⏭️  Duplicate detected: {author} - {content[:50]}...")
+                    logger.debug(
+                        f"   ⏭️  Duplicate detected: {author} - {content[:50]}..."
+                    )
                     return {}  # Return empty dict to indicate duplicate
             else:
                 logger.debug(
@@ -229,30 +274,50 @@ class SupabaseManager:
             # ONLY SEND FIELDS THAT EXIST IN SUPABASE SCHEMA
             # Based on your exact schema definition
             supabase_schema_fields = {
-                'post_id','title','content','url','platform','author','author_handle',
-                'created_at','ai_summary','topic','content_type','post_type','media_urls',
-                'hashtags','mentions','is_saved','analyzed_at','sentiment','key_concepts',
-                'analysis_model','value_score','quality_score','embedding',
-                'embedding_model','language'
+                "post_id",
+                "title",
+                "content",
+                "url",
+                "platform",
+                "author",
+                "author_handle",
+                "created_at",
+                "ai_summary",
+                "topic",
+                "content_type",
+                "post_type",
+                "media_urls",
+                "hashtags",
+                "mentions",
+                "is_saved",
+                "analyzed_at",
+                "sentiment",
+                "key_concepts",
+                "analysis_model",
+                "value_score",
+                "quality_score",
+                "embedding",
+                "embedding_model",
+                "language",
             }
-            
+
             # First apply field mappings (currently identity; schema uses quality_score)
             mapped_data = {}
             field_mappings = {}
-            
+
             for key, value in post_data.items():
                 if value is not None:
                     # Apply field mapping if needed
                     target_key = field_mappings.get(key, key)
                     mapped_data[target_key] = value
-            
+
             # Clean the data - only include fields that exist in Supabase schema
             clean_data = {}
             for key, value in mapped_data.items():
                 # Only include fields that exist in our Supabase schema
                 if key in supabase_schema_fields:
                     # Embedding vector: keep as list of floats for pgvector
-                    if key == 'embedding':
+                    if key == "embedding":
                         clean_data[key] = value  # pgvector handles list of floats
                     # Convert datetime objects to ISO format strings
                     elif hasattr(value, "isoformat"):
@@ -261,49 +326,70 @@ class SupabaseManager:
                     elif isinstance(value, list):
                         clean_data[key] = (
                             json.dumps(value)
-                            if key in ["smart_tags", "media_urls", "hashtags", "mentions"]
+                            if key
+                            in ["smart_tags", "media_urls", "hashtags", "mentions"]
                             else value
                         )
                     else:
                         clean_data[key] = value
 
             # Final guard: strip deprecated/removed columns
-            if 'content_quality_score' in clean_data:
-                clean_data.pop('content_quality_score', None)
+            if "content_quality_score" in clean_data:
+                clean_data.pop("content_quality_score", None)
 
             # Debug logging for schema filtering
             original_count = len(post_data)
             filtered_count = len(clean_data)
             if original_count != filtered_count:
                 filtered_fields = set(post_data.keys()) - set(clean_data.keys())
-                logger.debug(f"🧹 Schema filter: {filtered_count}/{original_count} fields kept")
+                logger.debug(
+                    f"🧹 Schema filter: {filtered_count}/{original_count} fields kept"
+                )
                 logger.debug(f"   Removed fields: {sorted(filtered_fields)}")
 
             # Debug: Check if embedding is present
-            has_embedding = 'embedding' in clean_data and clean_data['embedding'] is not None
-            emb_preview = f" (embedding: {len(clean_data['embedding'])} dims)" if has_embedding else ""
+            has_embedding = (
+                "embedding" in clean_data and clean_data["embedding"] is not None
+            )
+            emb_preview = (
+                f" (embedding: {len(clean_data['embedding'])} dims)"
+                if has_embedding
+                else ""
+            )
 
             action = "Upserting" if is_enriched_update else "Inserting"
-            logger.debug(f"📤 Supabase: {action} with {len(clean_data)} fields{emb_preview}")
+            logger.debug(
+                f"📤 Supabase: {action} with {len(clean_data)} fields{emb_preview}"
+            )
 
             # Use upsert to handle both insert and update
             # This allows enriched data (with embeddings) to update existing posts
             try:
-                response = self.client.table(self.table_name).upsert(
-                    clean_data,
-                    on_conflict='url'  # Use URL as unique key for upsert
-                ).execute()
+                response = (
+                    self.client.table(self.table_name)
+                    .upsert(
+                        clean_data,
+                        on_conflict="url",  # Use URL as unique key for upsert
+                    )
+                    .execute()
+                )
             except Exception as api_error:
                 # Handle schema mismatch errors specifically
                 error_str = str(api_error)
                 if "schema cache" in error_str or "column" in error_str.lower():
-                    logger.error(f"❌ Supabase insert_post ERROR: Schema mismatch - {api_error}")
+                    logger.error(
+                        f"❌ Supabase insert_post ERROR: Schema mismatch - {api_error}"
+                    )
                     logger.error(f"   Post ID: {post_data.get('post_id', 'unknown')}")
                     logger.error(f"   Platform: {post_data.get('platform', 'unknown')}")
                     logger.error(f"   URL: {post_data.get('url', 'unknown')}")
                     logger.error(f"   Post data keys: {list(post_data.keys())}")
-                    logger.error(f"   This indicates the Supabase table schema needs to be updated")
-                    logger.error(f"   Run the schema update script at supabase_schema_update.sql")
+                    logger.error(
+                        f"   This indicates the Supabase table schema needs to be updated"
+                    )
+                    logger.error(
+                        f"   Run the schema update script at supabase_schema_update.sql"
+                    )
                     return {}
                 else:
                     raise api_error

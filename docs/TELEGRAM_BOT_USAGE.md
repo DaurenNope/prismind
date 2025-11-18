@@ -1,4 +1,4 @@
-# PrisMind Telegram Bot Usage Guide
+# BEYONDLINES Telegram Bot Usage Guide
 
 ## Quick Start
 
@@ -125,7 +125,7 @@ REDDIT_CLIENT_ID=your_client_id
 REDDIT_CLIENT_SECRET=your_client_secret
 REDDIT_USERNAME=your_username
 REDDIT_PASSWORD=your_password
-REDDIT_USER_AGENT=PrisMind v1.0
+REDDIT_USER_AGENT=BEYONDLINES v1.0
 ```
 
 ### Threads
@@ -202,18 +202,18 @@ PORT=8443 python -m src.services.telegram_bot
 
 ### Using systemd (Linux)
 
-Create `/etc/systemd/system/prismind-bot.service`:
+Create `/etc/systemd/system/beyondlines-bot.service`:
 
 ```ini
 [Unit]
-Description=PrisMind Telegram Bot
+Description=BEYONDLINES Telegram Bot
 After=network.target
 
 [Service]
 Type=simple
 User=your_user
-WorkingDirectory=/path/to/prismind
-ExecStart=/path/to/prismind/.venv311/bin/python -m src.services.telegram_bot
+WorkingDirectory=/path/to/beyondlines
+ExecStart=/path/to/beyondlines/.venv311/bin/python -m src.services.telegram_bot
 Restart=always
 RestartSec=10
 
@@ -223,9 +223,9 @@ WantedBy=multi-user.target
 
 Enable and start:
 ```bash
-sudo systemctl enable prismind-bot
-sudo systemctl start prismind-bot
-sudo systemctl status prismind-bot
+sudo systemctl enable beyondlines-bot
+sudo systemctl start beyondlines-bot
+sudo systemctl status beyondlines-bot
 ```
 
 ### Using Docker
@@ -245,19 +245,19 @@ CMD ["python", "-m", "src.services.telegram_bot"]
 
 Build and run:
 ```bash
-docker build -t prismind-bot .
-docker run -d --name prismind-bot --env-file .env prismind-bot
+docker build -t beyondlines-bot .
+docker run -d --name beyondlines-bot --env-file .env beyondlines-bot
 ```
 
 ### Using screen (Simple)
 
 ```bash
-screen -S prismind-bot
+screen -S beyondlines-bot
 ./run_telegram_bot.sh
 # Press Ctrl+A then D to detach
 
 # To reattach:
-screen -r prismind-bot
+screen -r beyondlines-bot
 ```
 
 ## Security Best Practices

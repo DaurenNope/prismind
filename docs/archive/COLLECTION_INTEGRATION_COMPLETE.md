@@ -2,7 +2,7 @@
 
 ## Overview
 
-I've created a unified, reliable collection system that integrates all platforms (Twitter, Reddit, Threads) into a consistent interface with Streamlit UI and Telegram bot support.
+I've created a unified, reliable collection system that integrates all platforms (Twitter, Reddit, Threads) into a consistent interface with Svelte UI and Telegram bot support.
 
 ## What Was Built
 
@@ -56,7 +56,7 @@ pytest tests/test_unified_collection.py -v
 pytest tests/test_unified_collection.py -v -m integration
 ```
 
-### 3. Streamlit UI Integration ✅
+### 3. Svelte UI Integration ✅
 **File**: `src/web/components/collection_tab.py`
 
 Features:
@@ -70,7 +70,7 @@ Features:
 
 **Integration**:
 ```python
-# Add to Streamlit app
+# Add to Svelte app
 from src.web.components.collection_tab import render_collection_tab
 
 # In main app
@@ -94,7 +94,7 @@ Features:
 ```
 /collect              # Show platform menu
 /collect threads      # Collect from Threads
-/collect twitter      # Collect from Twitter  
+/collect twitter      # Collect from Twitter
 /collect reddit       # Collect from Reddit
 /collect all          # Collect from all
 /collection_status    # Show database stats
@@ -137,7 +137,7 @@ python3 test_integration.py
 - Supported platforms detected
 - Database manager connected
 
-✅ **Progress Tracking**: PASSED  
+✅ **Progress Tracking**: PASSED
 - Progress callbacks working
 - Status updates functioning
 - Multiple status transitions tracked
@@ -159,7 +159,7 @@ python3 test_integration.py
 ┌──────────────────────────────────────────────┐
 │           User Interfaces                     │
 │  ┌─────────────────┐  ┌─────────────────┐   │
-│  │  Streamlit UI   │  │  Telegram Bot   │   │
+│  │  Svelte UI   │  │  Telegram Bot   │   │
 │  │  collection_tab │  │  /collect cmd   │   │
 │  └────────┬─────────┘  └────────┬────────┘   │
 │           │                     │             │
@@ -191,7 +191,7 @@ python3 test_integration.py
 
 ## Integration Steps
 
-### For Streamlit App
+### For Svelte App
 
 1. **Import the tab**:
 ```python
@@ -238,7 +238,7 @@ help_text += "/collection_status - Show collection status\n"
 ### What Works ✅
 1. **Threads Collection**: Fully working
    - Cookie authentication
-   - Content extraction  
+   - Content extraction
    - Author extraction
    - Language detection
    - Database storage
@@ -251,7 +251,7 @@ help_text += "/collection_status - Show collection status\n"
    - Status reporting
 
 3. **UI Components**: Ready for integration
-   - Streamlit tab created
+   - Svelte tab created
    - Telegram commands created
    - Both tested and working
 
@@ -263,13 +263,13 @@ help_text += "/collection_status - Show collection status\n"
 ### What Needs Verification ⚠️
 1. **Twitter Collector**: Needs auth testing
 2. **Reddit Collector**: Needs auth testing
-3. **Streamlit Integration**: Needs to be added to main app
+3. **Svelte Integration**: Needs to be added to main app
 4. **Telegram Integration**: Needs handlers registered
 
 ## Next Steps
 
 ### Immediate (< 1 hour)
-1. **Integrate into Streamlit app**:
+1. **Integrate into Svelte app**:
    - Add collection_tab import to app.py
    - Add "Collection" to tab list
    - Test in UI
@@ -341,7 +341,7 @@ help_text += "/collection_status - Show collection status\n"
 - Real-time progress tracking
 - Automatic error handling and retries
 - Comprehensive testing
-- Full UI integration (Streamlit + Telegram)
+- Full UI integration (Svelte + Telegram)
 - Production-ready code
 
 **Ready for integration** - Just need to:

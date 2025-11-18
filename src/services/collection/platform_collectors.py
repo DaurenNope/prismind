@@ -8,8 +8,8 @@ import importlib
 import json
 import os
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Set
 from pathlib import Path
+from typing import Dict, List, Optional, Set
 
 
 def load_dotenv() -> bool:
@@ -20,15 +20,23 @@ def load_dotenv() -> bool:
     except (ImportError, AttributeError):  # pragma: no cover
         return False
 
+
+from src.core.extraction.reddit_extractor import RedditExtractor
+
 # Core imports
 from src.core.extraction.social_extractor_base import SocialPost
-from src.core.extraction.reddit_extractor import RedditExtractor
-from src.core.extraction.twitter_extractor_playwright import TwitterExtractorPlaywright
 from src.core.extraction.threads_extractor import ThreadsExtractor
+from src.core.extraction.twitter import TwitterExtractorPlaywright
 from src.scrape_state_manager import ScrapeStateManager
 
 # Analysis import
 from src.services.analysis.post_analyzer import analyze_and_store_post, log
+
+# Logger import
+from src.utils.logging_config import get_logger
+
+logger = get_logger(__name__)
+
 
 async def collect_twitter_bookmarks(
     db_manager, existing_ids: set, existing_urls=None, supabase_manager=None
@@ -50,13 +58,62 @@ async def collect_twitter_bookmarks(
         # Load collection state and auto-sync if needed
         state_manager = ScrapeStateManager()
         state_manager.sync_state_from_main_db(force=False)  # Auto-recover state
-        
-        last_collected_id = state_manager.get_last_collected_post_id("twitter")
 
-        if last_collected_id:
-            log(f"🔄 Incremental: stopping at {last_collected_id}")
+        force_full_collection = os.getenv("TWITTER_FORCE_FULL", "").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+
+        # Get last collected ID from Supabase (source of truth) instead of scrape state
+        last_collected_id = None
+        if supabase_manager:
+            try:
+                # Get the most recent Twitter post from Supabase
+                result = (
+                    supabase_manager.client.table("posts")
+                    .select("post_id")
+                    .eq("platform", "twitter")
+                    .order("collected_at", desc=True)
+                    .limit(1)
+                    .execute()
+                )
+                if result.data and len(result.data) > 0:
+                    last_collected_id = result.data[0].get("post_id")
+                    log(
+                        f"🔄 Incremental: stopping at {last_collected_id} (from Supabase)"
+                    )
+                else:
+                    log("🆕 Full collection mode (no posts in Supabase)")
+            except Exception as e:
+                logger.error(f"Error: {e}")
+                log(
+                    f"⚠️ Could not get last post ID from Supabase: {e}, falling back to scrape state"
+                )
+                last_collected_id = state_manager.get_last_collected_post_id("twitter")
+                if last_collected_id:
+                    log(
+                        f"🔄 Incremental: stopping at {last_collected_id} (from scrape state)"
+                    )
+                else:
+                    log("🆕 Full collection mode")
         else:
-            log("🆕 Full collection mode")
+            # Fallback to scrape state if Supabase not available
+            last_collected_id = state_manager.get_last_collected_post_id("twitter")
+            if last_collected_id:
+                log(
+                    f"🔄 Incremental: stopping at {last_collected_id} (from scrape state)"
+                )
+            else:
+                log("🆕 Full collection mode")
+
+        if force_full_collection:
+            log(
+                "⚠️ Force full Twitter collection enabled - ignoring existing IDs and stop_at_post_id",
+                "warning",
+            )
+            existing_ids.clear()
+            last_collected_id = None
 
         twitter_username = os.getenv("TWITTER_USERNAME")
         twitter_password = os.getenv("TWITTER_PASSWORD")
@@ -96,15 +153,19 @@ async def collect_twitter_bookmarks(
 
         # Check for headless mode configuration (default: False for development, True for production)
         # Default headless true for server/VPS deployments; override locally by setting HEADLESS_MODE=false
-        headless_mode = os.getenv('HEADLESS_MODE', 'true').lower() in ('true', '1', 'yes')
-        
+        headless_mode = os.getenv("HEADLESS_MODE", "true").lower() in (
+            "true",
+            "1",
+            "yes",
+        )
+
         extractor = TwitterExtractorPlaywright(
             username=twitter_username,
             password=twitter_password,
             headless=headless_mode,
             cookie_file=str(cookie_path) if cookie_path else None,
         )
-        
+
         log(f"🚀 Starting Twitter collection (headless: {headless_mode})")
 
         if twitter_password:
@@ -123,45 +184,84 @@ async def collect_twitter_bookmarks(
         # Collect bookmarks - pass existing IDs to extractor to skip during collection
         log("Fetching Twitter bookmarks...")
         bookmarks = await extractor.get_saved_posts(
-            limit=50, 
-            skip_cached_ids=existing_ids,
-            stop_at_post_id=last_collected_id
+            limit=50, skip_cached_ids=existing_ids, stop_at_post_id=last_collected_id
         )
 
         if not bookmarks:
-            log("No Twitter bookmarks found after authentication", "warning")
+            # This is normal if all tweets are already saved (early-stop worked)
+            log(
+                "✅ Twitter collection complete - no new bookmarks to collect (all already saved)",
+                "info",
+            )
             state_manager.update_scrape_state(
                 platform="twitter", posts_scraped=0, success=True
             )
             return 0
 
-        log(f"Found {len(bookmarks)} Twitter bookmarks")
+        log(f"Found {len(bookmarks)} Twitter bookmarks from extractor")
 
         # Filter out existing posts (double-check)
         new_posts = []
+        duplicates_skipped = 0
         reached_last_collected = False
 
         for bookmark in bookmarks:
             post_id = str(bookmark.post_id or "")
             url = bookmark.url or ""
 
+            # Normalize post ID for comparison (remove twitter_ prefix if present)
+            normalized_post_id = (
+                post_id.replace("twitter_", "").replace("Twitter_", "").strip()
+            )
+            normalized_last_id = (
+                str(last_collected_id)
+                .replace("twitter_", "")
+                .replace("Twitter_", "")
+                .strip()
+                if last_collected_id
+                else None
+            )
+
             # Stop if we reached the last collected post (incremental collection)
-            if last_collected_id and post_id == last_collected_id:
-                log(f"✓ Reached last collected post: {last_collected_id}")
+            # Check both raw and normalized IDs
+            if last_collected_id and (
+                post_id == last_collected_id or normalized_post_id == normalized_last_id
+            ):
+                log(
+                    f"✓ Reached last collected post: {last_collected_id} (matched: {post_id})"
+                )
                 reached_last_collected = True
                 break
 
             # Double-check: Check if post already exists
             if post_id in existing_ids:
+                # CRITICAL: Check if this duplicate is the stop post
+                # If so, we should stop collection (even though it's a duplicate)
+                if last_collected_id and (
+                    post_id == last_collected_id
+                    or normalized_post_id == normalized_last_id
+                ):
+                    log(
+                        f"✓ Reached last collected post (duplicate): {last_collected_id} (matched: {post_id})"
+                    )
+                    reached_last_collected = True
+                    break
+
+                duplicates_skipped += 1
                 log(f"Skipping duplicate post ID: {post_id}")
                 continue
 
             if existing_urls and url in existing_urls:
+                duplicates_skipped += 1
                 log(f"Skipping duplicate post URL: {url}")
                 continue
 
             new_posts.append(bookmark)
 
+        if duplicates_skipped > 0:
+            log(
+                f"📊 Filtered {duplicates_skipped} duplicates, {len(new_posts)} new posts to process"
+            )
         log(f"Processing {len(new_posts)} new Twitter posts")
 
         successful_count = 0
@@ -173,50 +273,67 @@ async def collect_twitter_bookmarks(
         for post_data in new_posts:
             try:
                 post_id = str(post_data.post_id or "")
-                
+
                 # Normalize post ID for comparison
                 normalized_id = state_manager.normalize_post_id(post_id, "twitter")
 
                 # Double-check: stop if we encounter the last collected ID
                 if last_collected_id and normalized_id == last_collected_id:
-                    log(f"🛑 Stopped at previously collected post: {post_id} (normalized: {normalized_id})")
+                    log(
+                        f"🛑 Stopped at previously collected post: {post_id} (normalized: {normalized_id})"
+                    )
                     break
 
                 # Convert to dictionary format
                 # Build safe content with fallbacks to avoid empty payloads
                 raw_content = (post_data.content or "").strip()
-                title = (getattr(post_data, 'title', '') or '').strip()
+                title = (getattr(post_data, "title", "") or "").strip()
                 url = post_data.url or ""
                 # Minimal, readable fallback if text was not captured but we have metadata
                 if not raw_content:
                     parts = []
                     if title:
                         parts.append(title)
-                    if getattr(post_data, 'author', None):
-                        parts.append(f"by @{str(getattr(post_data, 'author_handle', '') or '').lstrip('@') or post_data.author}")
+                    if getattr(post_data, "author", None):
+                        parts.append(
+                            f"by @{str(getattr(post_data, 'author_handle', '') or '').lstrip('@') or post_data.author}"
+                        )
                     if url:
                         parts.append(url)
                     # Include up to 6 hashtags as text if present
-                    ht = list(post_data.hashtags or []) if getattr(post_data, 'hashtags', None) is not None else []
+                    ht = (
+                        list(post_data.hashtags or [])
+                        if getattr(post_data, "hashtags", None) is not None
+                        else []
+                    )
                     if ht:
-                        parts.append('#' + ' #'.join([str(h).strip('#') for h in ht[:6]]))
-                    fallback_text = ' \n'.join([p for p in parts if p])
+                        parts.append(
+                            "#" + " #".join([str(h).strip("#") for h in ht[:6]])
+                        )
+                    fallback_text = " \n".join([p for p in parts if p])
                     raw_content = fallback_text.strip()
                 # If still no content, skip to avoid DB validation errors
                 if not raw_content:
-                    log(f"🚫 Skipping Twitter post with no text content (id={post_id or 'unknown'})", "warning")
+                    log(
+                        f"🚫 Skipping Twitter post with no text content (id={post_id or 'unknown'})",
+                        "warning",
+                    )
                     continue
 
                 MAX_CONTENT_LENGTH = 10000
                 post_dict = {
                     "post_id": post_data.post_id,
                     "title": title,  # Some posts might not have title
-                    "content": raw_content if len(raw_content) <= MAX_CONTENT_LENGTH else raw_content[:MAX_CONTENT_LENGTH],
+                    "content": raw_content
+                    if len(raw_content) <= MAX_CONTENT_LENGTH
+                    else raw_content[:MAX_CONTENT_LENGTH],
                     "url": url,
                     "platform": "twitter",
                     "author": post_data.author,
                     "username": post_data.author_handle,
-                    "created_at": post_data.created_at.isoformat() if isinstance(post_data.created_at, datetime) else (post_data.created_at or datetime.now().isoformat()),
+                    "created_at": post_data.created_at.isoformat()
+                    if isinstance(post_data.created_at, datetime)
+                    else (post_data.created_at or datetime.now().isoformat()),
                     "collected_at": datetime.now().isoformat(),
                     "hashtags": list(post_data.hashtags or []),
                     "engagement": dict(post_data.engagement or {}),
@@ -229,32 +346,33 @@ async def collect_twitter_bookmarks(
                 if local_stored:
                     collected_posts.append(post_dict)
                     successful_count += 1
-                    
+
                     # Update last post tracking
                     if post_dict.get("post_id"):
                         last_post_id = normalized_id
                     last_post_url = post_dict.get("url")
-                    
+
                     # Mark post as scraped in state database
                     state_manager.mark_post_scraped(
                         post_id=normalized_id,
                         platform="twitter",
                         url=post_dict.get("url"),
                         title=post_dict.get("title"),
-                        author=post_dict.get("author")
+                        author=post_dict.get("author"),
                     )
-                    
+
                     # Add to existing IDs sets
                     if post_dict.get("post_id"):
                         existing_ids.add(str(post_dict["post_id"]))
                     if existing_urls is not None and post_dict.get("url"):
                         existing_urls.add(str(post_dict["url"]))
-                    
+
                     log(f"✅ Collected and tracked post: {post_id}")
                 else:
                     log(f"❌ Failed to collect post: {post_id}")
 
             except Exception as e:
+                logger.error(f"Error: {e}")
                 log(f"Error collecting Twitter post: {e}", "error")
                 continue
 
@@ -273,14 +391,18 @@ async def collect_twitter_bookmarks(
             )
 
         log(f"Twitter collection completed: {successful_count} new posts", "success")
-        
+
         return successful_count
 
     except Exception as e:
         import traceback
+
         log(f"Twitter collection failed: {e}", "error")
         import logging
-        logging.getLogger(__name__).error(f"Twitter collection error traceback:\n{traceback.format_exc()}")
+
+        logging.getLogger(__name__).error(
+            f"Twitter collection error traceback:\n{traceback.format_exc()}"
+        )
         state_manager.update_scrape_state(
             platform="twitter", posts_scraped=0, success=False
         )
@@ -289,17 +411,19 @@ async def collect_twitter_bookmarks(
         if extractor is not None:
             try:
                 await extractor.close()
-            except Exception:
+            except Exception as e:
+                logger.error(f"Error: {e}")
                 pass
+
 
 async def analyze_twitter_posts(db_manager, supabase_manager=None):
     """
     Run AI analysis on collected Twitter posts
-    
+
     Args:
         db_manager: Database manager instance
         supabase_manager: Optional SupabaseManager instance for cloud sync
-    
+
     Returns:
         int: Number of posts successfully analyzed
     """
@@ -308,16 +432,16 @@ async def analyze_twitter_posts(db_manager, supabase_manager=None):
         if os.environ.get("SKIP_AI_ANALYSIS", "").lower() in ("true", "1", "yes"):
             log("AI analysis skipped as SKIP_AI_ANALYSIS is set", "info")
             return 0
-            
+
         # Get unanalyzed posts
         unanalyzed_posts = db_manager.get_unanalyzed_posts("twitter")
         if not unanalyzed_posts:
             log("No unanalyzed Twitter posts found", "info")
             return 0
-            
+
         log(f"Starting AI analysis on {len(unanalyzed_posts)} Twitter posts...")
         analyzed_count = 0
-        
+
         # Process each unanalyzed post
         for post_dict in unanalyzed_posts:
             try:
@@ -329,21 +453,30 @@ async def analyze_twitter_posts(db_manager, supabase_manager=None):
                 else:
                     log(f"❌ Failed to analyze post: {post_dict.get('post_id')}")
             except Exception as e:
-                post_id = post_dict.get('post_id', 'unknown')
+                post_id = post_dict.get("post_id", "unknown")
                 log(f"Error analyzing Twitter post {post_id}: {e}", "error")
-                import traceback
                 import logging
-                logging.getLogger(__name__).debug(f"Twitter analysis error for {post_id}:\n{traceback.format_exc()}")
+                import traceback
+
+                logging.getLogger(__name__).debug(
+                    f"Twitter analysis error for {post_id}:\n{traceback.format_exc()}"
+                )
                 continue
-                
-        log(f"AI analysis completed: {analyzed_count}/{len(unanalyzed_posts)} posts analyzed", "success")
+
+        log(
+            f"AI analysis completed: {analyzed_count}/{len(unanalyzed_posts)} posts analyzed",
+            "success",
+        )
         return analyzed_count
-        
+
     except Exception as e:
         log(f"Twitter analysis failed: {e}", "error")
-        import traceback
         import logging
-        logging.getLogger(__name__).error(f"Twitter analysis error traceback:\n{traceback.format_exc()}")
+        import traceback
+
+        logging.getLogger(__name__).error(
+            f"Twitter analysis error traceback:\n{traceback.format_exc()}"
+        )
         return 0
 
 
@@ -367,42 +500,54 @@ async def collect_reddit_bookmarks(
         log("USING SUPABASE-FIRST REDDIT COLLECTOR v2")
         try:
             import os
+
             log(f"collector_path: {__file__}")
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error: {e}")
             pass
-        
+
         # Load collection state and auto-sync if needed
         state_manager = ScrapeStateManager()
         state_manager.sync_state_from_main_db(force=False)  # Auto-recover state
-        
+
         # Prefer Supabase for last_collected_id
         last_collected_id = None
         last_collected_from_supabase = False
         if supabase_manager:
             try:
-                r = supabase_manager.client.table("posts").select("post_id").eq("platform", "reddit").order("created_at", desc=True).limit(1).execute()
+                r = (
+                    supabase_manager.client.table("posts")
+                    .select("post_id")
+                    .eq("platform", "reddit")
+                    .order("created_at", desc=True)
+                    .limit(1)
+                    .execute()
+                )
                 if r.data:
                     last_collected_id = (r.data[0].get("post_id") or "").strip()
                     if last_collected_id and not last_collected_id.startswith("t3_"):
                         last_collected_id = f"t3_{last_collected_id}"
                     last_collected_from_supabase = True
             except Exception as e:
+                logger.error(f"Error: {e}")
                 log(f"Supabase last_collected lookup failed: {e}", "warning")
         if not last_collected_id:
             last_collected_id = state_manager.get_last_collected_post_id("reddit")
 
         if last_collected_id:
-            log(f"🔄 Incremental: stopping at {last_collected_id} (source={'Supabase' if last_collected_from_supabase else 'local'})")
+            log(
+                f"🔄 Incremental: stopping at {last_collected_id} (source={'Supabase' if last_collected_from_supabase else 'local'})"
+            )
         else:
             log("🆕 Full collection mode")
-        
+
         # Ensure env is loaded
         load_dotenv()
 
         # Get Reddit credentials from environment
         reddit_client_id = os.getenv("REDDIT_CLIENT_ID")
         reddit_client_secret = os.getenv("REDDIT_CLIENT_SECRET")
-        reddit_user_agent = os.getenv("REDDIT_USER_AGENT", "PrisMind:1.0.0")
+        reddit_user_agent = os.getenv("REDDIT_USER_AGENT", "BEYONDLINES:1.0.0")
         reddit_username = os.getenv("REDDIT_USERNAME")
         reddit_password = os.getenv("REDDIT_PASSWORD")
         reddit_access_token = os.getenv("REDDIT_ACCESS_TOKEN")
@@ -425,10 +570,11 @@ async def collect_reddit_bookmarks(
         )
 
         # Collect saved posts with existing IDs to stop early
-        log(f"Fetching Reddit saved posts (will stop at: {last_collected_id or 'none'})...")
+        log(
+            f"Fetching Reddit saved posts (will stop at: {last_collected_id or 'none'})..."
+        )
         saved_posts_result = extractor.get_saved_posts(
-            existing_ids=existing_ids,
-            limit=100
+            existing_ids=existing_ids, limit=100
         )
         if isinstance(saved_posts_result, tuple):
             saved_posts, _ = saved_posts_result
@@ -459,7 +605,8 @@ async def collect_reddit_bookmarks(
                 # Treat SocialPost types "post" and "post_with_comments" as "submission"
                 "post_type": (
                     "submission"
-                    if getattr(post, "post_type", None) in ("post", "post_with_comments")
+                    if getattr(post, "post_type", None)
+                    in ("post", "post_with_comments")
                     else getattr(post, "post_type", "submission")
                 ),
                 "created_at": getattr(post, "created_at", None),
@@ -475,7 +622,11 @@ async def collect_reddit_bookmarks(
             "on",
         }
         # After normalization above, submissions have post_type == "submission"
-        submission_posts = [p for p in saved_posts if (p.get("post_type") or "submission") == "submission"]
+        submission_posts = [
+            p
+            for p in saved_posts
+            if (p.get("post_type") or "submission") == "submission"
+        ]
 
         if include_comments:
             # Only fetch comments for posts we are about to save and limit to last 20
@@ -493,8 +644,14 @@ async def collect_reddit_bookmarks(
         supabase_existing_ids = set()
         if supabase_manager:
             try:
-                r_all = supabase_manager.client.table("posts").select("post_id").eq("platform", "reddit").limit(10000).execute()
-                for row in (r_all.data or []):
+                r_all = (
+                    supabase_manager.client.table("posts")
+                    .select("post_id")
+                    .eq("platform", "reddit")
+                    .limit(10000)
+                    .execute()
+                )
+                for row in r_all.data or []:
                     pid = (row.get("post_id") or "").strip()
                     if not pid:
                         continue
@@ -504,8 +661,11 @@ async def collect_reddit_bookmarks(
                     else:
                         supabase_existing_ids.add(f"t3_{pid}")
             except Exception as e:
+                logger.error(f"Error: {e}")
                 log(f"Supabase existing_ids lookup failed: {e}", "warning")
-        log(f"supabase_existing_ids={len(supabase_existing_ids)} local_existing_ids={len(existing_ids)}")
+        log(
+            f"supabase_existing_ids={len(supabase_existing_ids)} local_existing_ids={len(existing_ids)}"
+        )
 
         def normalize_reddit_id(pid: str):
             pid = (pid or "").strip()
@@ -533,9 +693,13 @@ async def collect_reddit_bookmarks(
                 break
 
             # Supabase-first duplicate check
-            if full_id in supabase_existing_ids or raw_id in supabase_existing_ids or \
-               raw_id in existing_ids or full_id in existing_ids or \
-               (existing_urls and url in existing_urls):
+            if (
+                full_id in supabase_existing_ids
+                or raw_id in supabase_existing_ids
+                or raw_id in existing_ids
+                or full_id in existing_ids
+                or (existing_urls and url in existing_urls)
+            ):
                 skipped += 1
                 continue
 
@@ -552,25 +716,40 @@ async def collect_reddit_bookmarks(
                 comment_posts: List[Dict] = []
                 for p in comment_targets:
                     try:
-                        comments = await extractor.get_post_comments(p.get("url") or "", limit=comments_limit)
+                        comments = await extractor.get_post_comments(
+                            p.get("url") or "", limit=comments_limit
+                        )
                         for c in comments:
-                            comment_posts.append({
-                                "post_id": getattr(c, "post_id", None),
-                                "title": getattr(c, "title", ""),
-                                "content": getattr(c, "content", ""),
-                                "url": getattr(c, "url", None),
-                                "platform": "reddit",
-                                "author": getattr(c, "author", None),
-                                "subreddit": getattr(getattr(c, "metadata", {}), "get", lambda k, d=None: None)("subreddit"),
-                                "post_type": "comment",
-                                "created_at": getattr(c, "created_at", None),
-                            })
+                            comment_posts.append(
+                                {
+                                    "post_id": getattr(c, "post_id", None),
+                                    "title": getattr(c, "title", ""),
+                                    "content": getattr(c, "content", ""),
+                                    "url": getattr(c, "url", None),
+                                    "platform": "reddit",
+                                    "author": getattr(c, "author", None),
+                                    "subreddit": getattr(
+                                        getattr(c, "metadata", {}),
+                                        "get",
+                                        lambda k, d=None: None,
+                                    )("subreddit"),
+                                    "post_type": "comment",
+                                    "created_at": getattr(c, "created_at", None),
+                                }
+                            )
                     except Exception as e:
-                        log(f"Error fetching comments for {p.get('url')}: {e}", "warning")
+                        logger.error(f"Error: {e}")
+                        log(
+                            f"Error fetching comments for {p.get('url')}: {e}",
+                            "warning",
+                        )
                 if comment_posts:
                     new_posts.extend(comment_posts)
-                    log(f"🗨️ Included {len(comment_posts)} comments from {min(len(comment_targets), max_comment_targets)} recent posts")
+                    log(
+                        f"🗨️ Included {len(comment_posts)} comments from {min(len(comment_targets), max_comment_targets)} recent posts"
+                    )
             except Exception as e:
+                logger.error(f"Error: {e}")
                 log(f"Comment enrichment failed: {e}", "warning")
 
         # Process and store new posts (collection-only; no AI analysis here)
@@ -583,7 +762,7 @@ async def collect_reddit_bookmarks(
             try:
                 post_id = str(post_data.get("post_id") or post_data.get("name") or "")
                 raw_id, full_id = normalize_reddit_id(post_id)
-                
+
                 # Convert to dictionary format
                 post_dict = {
                     "post_id": post_data.get("post_id"),
@@ -604,30 +783,34 @@ async def collect_reddit_bookmarks(
                 if supabase_manager:
                     try:
                         supabase_ok = bool(supabase_manager.insert_post(post_dict))
-                    except Exception:
+                    except Exception as e:
+                        logger.error(f"Error: {e}")
                         supabase_ok = False
 
                 # Attempt local cache regardless of Supabase status, but do not count as success if Supabase failed
                 try:
                     db_manager.add_post(post_dict)
-                except Exception:
+                except Exception as e:
+                    logger.error(f"Error: {e}")
                     pass
 
                 if not supabase_ok:
                     failed_sync += 1
-                    log("⚠️ Supabase insert failed; cached locally and will retry on next run")
+                    log(
+                        "⚠️ Supabase insert failed; cached locally and will retry on next run"
+                    )
                     continue
 
                 # Success path: Supabase accepted the post
                 saved_to_supabase += 1
                 successful_count += 1
-                
+
                 # Update last post tracking
                 if post_dict.get("post_id"):
                     last_post_id = full_id
                     existing_ids.add(raw_id)
                     existing_ids.add(full_id)
-                    
+
                     # Mark post as scraped in state database
                     state_manager.mark_post_scraped(
                         post_id=last_post_id,
@@ -636,19 +819,26 @@ async def collect_reddit_bookmarks(
                         title=post_dict.get("title"),
                         author=post_dict.get("author"),
                     )
-                        
+
                     last_post_url = post_dict.get("url") or last_post_url
                     if existing_urls is not None and post_dict.get("url"):
                         existing_urls.add(str(post_dict["url"]))
-                    
+
                     log(f"✅ Saved to Supabase: {last_post_id}")
 
             except Exception as e:
-                post_id = post_dict.get('post_id', 'unknown') if 'post_dict' in locals() else 'unknown'
+                post_id = (
+                    post_dict.get("post_id", "unknown")
+                    if "post_dict" in locals()
+                    else "unknown"
+                )
                 log(f"❌ Error processing Reddit post {post_id}: {e}", "error")
-                import traceback
                 import logging
-                logging.getLogger(__name__).debug(f"Reddit post processing error for {post_id}:\n{traceback.format_exc()}")
+                import traceback
+
+                logging.getLogger(__name__).debug(
+                    f"Reddit post processing error for {post_id}:\n{traceback.format_exc()}"
+                )
                 failed_sync += 1
                 continue
 
@@ -665,14 +855,21 @@ async def collect_reddit_bookmarks(
                 platform="reddit", posts_scraped=0, success=True
             )
 
-        log(f"Reddit collection completed: {successful_count} new posts (saved_to_supabase={saved_to_supabase}, failed_sync={failed_sync}, skipped={skipped})", "success")
+        log(
+            f"Reddit collection completed: {successful_count} new posts (saved_to_supabase={saved_to_supabase}, failed_sync={failed_sync}, skipped={skipped})",
+            "success",
+        )
         return successful_count
 
     except Exception as e:
         import traceback
+
         log(f"Reddit collection failed: {e}", "error")
         import logging
-        logging.getLogger(__name__).error(f"Reddit collection error traceback:\n{traceback.format_exc()}")
+
+        logging.getLogger(__name__).error(
+            f"Reddit collection error traceback:\n{traceback.format_exc()}"
+        )
         state_manager.update_scrape_state(
             platform="reddit", posts_scraped=0, success=False
         )
@@ -699,12 +896,26 @@ async def collect_threads_bookmarks(
         # Load collection state and auto-sync if needed
         state_manager = ScrapeStateManager()
         state_manager.sync_state_from_main_db(force=False)  # Auto-recover state
-        
+
+        threads_force_full = os.getenv("THREADS_FORCE_FULL", "").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+
         last_collected_id = state_manager.get_last_collected_post_id("threads")
         if last_collected_id:
             log(f"🔄 Incremental: stopping at {last_collected_id}")
         else:
             log("🆕 Full collection mode")
+
+        if threads_force_full:
+            log(
+                "⚠️ Force full Threads collection enabled - ignoring existing IDs and stop_at_post_id",
+                "warning",
+            )
+            existing_ids.clear()
+            last_collected_id = None
 
         # Get Threads credentials from environment
         threads_username = os.getenv("THREADS_USERNAME")
@@ -727,7 +938,7 @@ async def collect_threads_bookmarks(
             cookies_file = threads_cookies_file or "config/threads_cookies.json"
             if not Path(cookies_file).exists():
                 cookies_file = "cookies/threads_cookies.json"
-            
+
             auth_success = await extractor.authenticate(
                 username=threads_username,
                 password=threads_password,
@@ -762,35 +973,45 @@ async def collect_threads_bookmarks(
         new_posts = []
         reached_last_collected = False
         consecutive_seen = 0
-        
+
         for post in saved_posts:
             post_id = str(post.post_id or "")
             url = post.url or ""
 
             # Skip attachments or malformed entries that use placeholder IDs
             if not post_id or post_id.lower() == "media" or url.endswith("/media"):
-                log(f"🚫 Skipping placeholder attachment post (id={post_id or 'none'}, url={url})")
+                log(
+                    f"🚫 Skipping placeholder attachment post (id={post_id or 'none'}, url={url})"
+                )
                 continue
-            
+
             # Normalize post ID for comparison
             normalized_id = state_manager.normalize_post_id(post_id, "threads")
-            
+
             # Check if post already exists BEFORE processing
-            if post_id in existing_ids or normalized_id in existing_ids or (existing_urls and url in existing_urls):
+            if (
+                post_id in existing_ids
+                or normalized_id in existing_ids
+                or (existing_urls and url in existing_urls)
+            ):
                 consecutive_seen += 1
                 log(f"⏭️ Skipping duplicate (seen in DB): id={post_id} url={url}")
                 # If we see duplicates back-to-back, assume we've reached the previously scraped range
                 if consecutive_seen >= 2 and len(new_posts) > 0:
-                    log("🛑 Encountered consecutive duplicates after new items → stopping scroll (incremental)")
+                    log(
+                        "🛑 Encountered consecutive duplicates after new items → stopping scroll (incremental)"
+                    )
                     break
                 continue
-            
+
             # Stop if we reached the last collected post (incremental collection)
             if last_collected_id and normalized_id == last_collected_id:
-                log(f"🛑 Reached last collected post: {post_id} (normalized: {normalized_id})")
+                log(
+                    f"🛑 Reached last collected post: {post_id} (normalized: {normalized_id})"
+                )
                 reached_last_collected = True
                 break
-            
+
             # New post found → reset duplicate streak
             consecutive_seen = 0
             new_posts.append(post)
@@ -801,62 +1022,62 @@ async def collect_threads_bookmarks(
         successful_count = 0
         last_post_id = None
         last_post_url = None
-        
+
         # Helper function to detect language
         def detect_language(text: str) -> str:
             """Detect if content is primarily Russian or English"""
             if not text:
-                return 'en'
-            
+                return "en"
+
             # Count Cyrillic characters (Russian)
-            russian_chars = sum(1 for c in text if '\u0400' <= c <= '\u04FF')
+            russian_chars = sum(1 for c in text if "\u0400" <= c <= "\u04FF")
             # Count Latin characters (English)
             latin_chars = sum(1 for c in text if c.isalpha() and ord(c) < 128)
-            
+
             total_letters = russian_chars + latin_chars
-            
+
             if total_letters == 0:
-                return 'en'  # Default to English if no letters
-            
+                return "en"  # Default to English if no letters
+
             russian_ratio = russian_chars / total_letters
-            
+
             # If more than 30% of letters are Cyrillic, it's Russian
             if russian_ratio > 0.3:
-                return 'ru'
+                return "ru"
             else:
-                return 'en'
-        
+                return "en"
+
         for post_data in new_posts:
             try:
                 post_id = str(post_data.post_id or "")
                 content = post_data.content or ""
-                
+
                 # Normalize post ID
                 normalized_id = state_manager.normalize_post_id(post_id, "threads")
-                
+
                 # Convert to dictionary format
                 post_dict = {
                     "post_id": post_data.post_id,
-                    "title": getattr(post_data, 'title', ''),
+                    "title": getattr(post_data, "title", ""),
                     "content": content,
                     "url": post_data.url,
                     "platform": "threads",
                     "author": post_data.author,
-                    "author_handle": getattr(post_data, 'author_handle', None),
+                    "author_handle": getattr(post_data, "author_handle", None),
                     "language": detect_language(content),
-                    "created_at": post_data.created_at.isoformat() if post_data.created_at else datetime.now().isoformat(),
+                    "created_at": post_data.created_at.isoformat()
+                    if post_data.created_at
+                    else datetime.now().isoformat(),
                     # Optional enrichments when available (ensure JSON-serializable)
-                    "hashtags": list(getattr(post_data, 'hashtags', []) or []),
-                    "media_urls": list(getattr(post_data, 'media_urls', []) or []),
-                    "post_type": getattr(post_data, 'post_type', 'post'),
+                    "hashtags": list(getattr(post_data, "hashtags", []) or []),
+                    "media_urls": list(getattr(post_data, "media_urls", []) or []),
+                    "post_type": getattr(post_data, "post_type", "post"),
                     "is_saved": True,
                 }
 
                 # Remove any keys with None or empty dict values to keep payload clean
                 post_dict = {
-                    k: v
-                    for k, v in post_dict.items()
-                    if v is not None and v != {}
+                    k: v for k, v in post_dict.items() if v is not None and v != {}
                 }
 
                 # REMOVED: DOM refresh logic to prevent double-scraping
@@ -869,14 +1090,21 @@ async def collect_threads_bookmarks(
                         supabase_result = supabase_manager.insert_post(post_dict)
                         if supabase_result:
                             supabase_ok = True
-                        elif post_dict.get("url") and supabase_manager.check_duplicate_by_url(post_dict["url"]):
+                        elif post_dict.get(
+                            "url"
+                        ) and supabase_manager.check_duplicate_by_url(post_dict["url"]):
                             supabase_ok = True
-                            log("ℹ️ Duplicate already exists in Supabase; skipping insert")
+                            log(
+                                "ℹ️ Duplicate already exists in Supabase; skipping insert"
+                            )
                         else:
                             supabase_ok = False
                     except Exception as supabase_error:
+                        logger.error(f"Error: {supabase_error}")
                         log(f"⚠️ Supabase insert exception: {supabase_error}")
-                        if post_dict.get("url") and supabase_manager.check_duplicate_by_url(post_dict["url"]):
+                        if post_dict.get(
+                            "url"
+                        ) and supabase_manager.check_duplicate_by_url(post_dict["url"]):
                             supabase_ok = True
                             log("ℹ️ Duplicate already in Supabase; marking as handled")
                         else:
@@ -884,11 +1112,14 @@ async def collect_threads_bookmarks(
 
                 try:
                     db_manager.add_post(post_dict)
-                except Exception:
+                except Exception as e:
+                    logger.error(f"Error: {e}")
                     pass
 
                 if not supabase_ok:
-                    log("⚠️ Supabase insert failed; cached locally and will retry on next run")
+                    log(
+                        "⚠️ Supabase insert failed; cached locally and will retry on next run"
+                    )
                     continue
 
                 successful_count += 1
@@ -914,11 +1145,18 @@ async def collect_threads_bookmarks(
                 log(f"✅ Collected and tracked Threads post: {post_id}")
 
             except Exception as e:
-                post_id = post_dict.get('post_id', 'unknown') if 'post_dict' in locals() else 'unknown'
+                post_id = (
+                    post_dict.get("post_id", "unknown")
+                    if "post_dict" in locals()
+                    else "unknown"
+                )
                 log(f"❌ Error processing Threads post {post_id}: {e}", "error")
-                import traceback
                 import logging
-                logging.getLogger(__name__).debug(f"Threads post processing error for {post_id}:\n{traceback.format_exc()}")
+                import traceback
+
+                logging.getLogger(__name__).debug(
+                    f"Threads post processing error for {post_id}:\n{traceback.format_exc()}"
+                )
                 continue
 
         if successful_count:
@@ -939,9 +1177,13 @@ async def collect_threads_bookmarks(
 
     except Exception as e:
         import traceback
+
         log(f"Threads collection failed: {e}", "error")
         import logging
-        logging.getLogger(__name__).error(f"Threads collection error traceback:\n{traceback.format_exc()}")
+
+        logging.getLogger(__name__).error(
+            f"Threads collection error traceback:\n{traceback.format_exc()}"
+        )
         state_manager.update_scrape_state(
             platform="threads", posts_scraped=0, success=False
         )
@@ -950,7 +1192,8 @@ async def collect_threads_bookmarks(
         if extractor is not None:
             try:
                 await extractor.close()
-            except Exception:
+            except Exception as e:
+                logger.error(f"Error: {e}")
                 pass
 
 
@@ -968,23 +1211,35 @@ async def analyze_threads_posts(db_manager, supabase_manager=None):
         unanalyzed_posts = []
         try:
             # Preferred signature: limit, platforms
-            if hasattr(db_manager, 'get_unanalyzed_posts'):
+            if hasattr(db_manager, "get_unanalyzed_posts"):
                 try:
-                    unanalyzed_posts = db_manager.get_unanalyzed_posts(limit=1000, platforms=['threads'])
-                except TypeError:
+                    unanalyzed_posts = db_manager.get_unanalyzed_posts(
+                        limit=1000, platforms=["threads"]
+                    )
+                except TypeError as type_error:
+                    logger.error(f"Error: {type_error}")
                     # Fallback older signature
                     unanalyzed_posts = db_manager.get_unanalyzed_posts("threads")
         except Exception as e:
             import logging
-            logging.getLogger(__name__).debug(f"Failed to get unanalyzed Threads posts from db_manager: {e}")
+
+            logging.getLogger(__name__).debug(
+                f"Failed to get unanalyzed Threads posts from db_manager: {e}"
+            )
             pass
         if not unanalyzed_posts:
             try:
                 from src.services.new_database_manager import NewDatabaseManager
-                unanalyzed_posts = NewDatabaseManager().get_unanalyzed_posts(limit=1000, platforms=['threads'])
+
+                unanalyzed_posts = NewDatabaseManager().get_unanalyzed_posts(
+                    limit=1000, platforms=["threads"]
+                )
             except Exception as e:
                 import logging
-                logging.getLogger(__name__).debug(f"Failed to get unanalyzed Threads posts from NewDatabaseManager: {e}")
+
+                logging.getLogger(__name__).debug(
+                    f"Failed to get unanalyzed Threads posts from NewDatabaseManager: {e}"
+                )
                 unanalyzed_posts = []
         if not unanalyzed_posts:
             log("No unanalyzed Threads posts found", "info")
@@ -995,24 +1250,35 @@ async def analyze_threads_posts(db_manager, supabase_manager=None):
 
         for post_dict in unanalyzed_posts:
             try:
-                if await analyze_and_store_post(db_manager, post_dict, supabase_manager):
+                if await analyze_and_store_post(
+                    db_manager, post_dict, supabase_manager
+                ):
                     analyzed_count += 1
                     log(f"✅ Analyzed post: {post_dict.get('post_id')}")
                 else:
                     log(f"❌ Failed to analyze post: {post_dict.get('post_id')}")
             except Exception as e:
-                post_id = post_dict.get('post_id', 'unknown')
+                post_id = post_dict.get("post_id", "unknown")
                 log(f"Error analyzing Threads post {post_id}: {e}", "error")
-                import traceback
                 import logging
-                logging.getLogger(__name__).debug(f"Threads analysis error for {post_id}:\n{traceback.format_exc()}")
+                import traceback
+
+                logging.getLogger(__name__).debug(
+                    f"Threads analysis error for {post_id}:\n{traceback.format_exc()}"
+                )
                 continue
 
-        log(f"AI analysis completed: {analyzed_count}/{len(unanalyzed_posts)} posts analyzed", "success")
+        log(
+            f"AI analysis completed: {analyzed_count}/{len(unanalyzed_posts)} posts analyzed",
+            "success",
+        )
         return analyzed_count
     except Exception as e:
         log(f"Threads analysis failed: {e}", "error")
-        import traceback
         import logging
-        logging.getLogger(__name__).error(f"Threads analysis error traceback:\n{traceback.format_exc()}")
+        import traceback
+
+        logging.getLogger(__name__).error(
+            f"Threads analysis error traceback:\n{traceback.format_exc()}"
+        )
         return 0

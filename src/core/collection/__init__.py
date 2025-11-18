@@ -1,22 +1,22 @@
 """
-PrisMind Content Collection Module
+BEYONDLINES Content Collection Module
 
 This module provides universal content collection capabilities for scraping
 any website, social media platform, or web application.
 """
 
 from .universal_collector import (
-    UniversalCollector,
+    CollectionResult,
     CollectionStrategy,
     ContentType,
     ScrapingConfig,
-    CollectionResult
+    UniversalCollector,
 )
 
 __all__ = [
-    'UniversalCollector',
-    'CollectionStrategy', 
-    'ContentType',
-    'ScrapingConfig',
-    'CollectionResult'
+    "UniversalCollector",
+    "CollectionStrategy",
+    "ContentType",
+    "ScrapingConfig",
+    "CollectionResult",
 ]

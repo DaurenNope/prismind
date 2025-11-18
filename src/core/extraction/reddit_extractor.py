@@ -1,27 +1,32 @@
-import time
-import requests
-import dns.resolver
-import urllib3
-from datetime import datetime
-import json
-import random
-from typing import Dict, List, Optional, Tuple, Any, Union
-import os
 import asyncio
+import json
+import logging
+import os
+import random
+import time
+from datetime import datetime
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union
 
+import dns.resolver
 import praw
 import prawcore
+import requests
+import urllib3
+from playwright.async_api import Browser, Page, async_playwright
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-from playwright.async_api import async_playwright, Browser, Page
 
 from .social_extractor_base import SocialExtractorBase, SocialPost
+
+logger = logging.getLogger(__name__)
 try:
     # Optional universal fallback
     from src.core.collection import UniversalCollector  # type: ignore
+
+    universal_collector = UniversalCollector  # type: ignore
 except Exception:
-    UniversalCollector = None  # type: ignore
+    universal_collector = None  # type: ignore
 
 # Disable SSL warnings for self-signed certificates
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -54,7 +59,9 @@ class RedditExtractor(SocialExtractorBase):
         self.enable_screenshots = enable_screenshots
 
         # Initialize universal collector for fallback (optional)
-        self.universal_collector = UniversalCollector() if UniversalCollector else None
+        self.universal_collector = (
+            universal_collector() if universal_collector else None
+        )
 
         # Screenshot configuration
         self.screenshot_dir = Path("screenshots/reddit")
@@ -81,7 +88,9 @@ class RedditExtractor(SocialExtractorBase):
                 self._jitter_low, self._jitter_high = int(jitter[0]), int(jitter[1])
             else:
                 self._jitter_low, self._jitter_high = 300, 1200
-            self._requests_per_hour_cap = int(self.reddit_cfg.get("requests_per_hour_cap", 60))
+            self._requests_per_hour_cap = int(
+                self.reddit_cfg.get("requests_per_hour_cap", 60)
+            )
             self._processed_counter = 0
         except Exception:
             self._jitter_low, self._jitter_high = 300, 1200
@@ -94,7 +103,6 @@ class RedditExtractor(SocialExtractorBase):
             time.sleep((delay_ms + max(0, extra_ms)) / 1000)
         except Exception:
             time.sleep(0.3)
-
 
     def _create_retry_session(self, retries=5, backoff_factor=1.0) -> requests.Session:
         """Create a requests session with retry logic and improved timeouts."""
@@ -153,10 +161,10 @@ class RedditExtractor(SocialExtractorBase):
                 answers = resolver.resolve(domain, "A")
                 ips = [str(ip) for ip in answers]
                 resolved[domain] = ips[0]  # Use first IP
-                print(f"✅ Resolved {domain} to {ips[0]}")
+                logger.info(f"✅ Resolved {domain} to {ips[0]}")
 
             except Exception as e:
-                print(f"❌ Failed to resolve {domain}: {e}")
+                logger.error(f"❌ Failed to resolve {domain}: {e}")
 
         return resolved
 
@@ -189,7 +197,7 @@ class RedditExtractor(SocialExtractorBase):
         seen = set()
         endpoints = [url for url in endpoints if not (url in seen or seen.add(url))]
 
-        print("🔍 Testing Reddit endpoints:", ", ".join(endpoints))
+        logger.debug("🔍 Testing Reddit endpoints:", ", ".join(endpoints))
 
         for url in endpoints:
             try:
@@ -208,10 +216,10 @@ class RedditExtractor(SocialExtractorBase):
                 if response.status_code == 200:
                     return True, f"Successfully connected to {url}"
             except requests.exceptions.SSLError as e:
-                print(f"⚠️ SSL Error with {url}: {e}")
+                logger.error(f"⚠️ SSL Error with {url}: {e}")
                 continue
             except requests.exceptions.RequestException as e:
-                print(f"⚠️ Connection error with {url}: {e}")
+                logger.error(f"⚠️ Connection error with {url}: {e}")
                 continue
 
         return False, "Failed to connect to any Reddit endpoint"
@@ -242,12 +250,12 @@ class RedditExtractor(SocialExtractorBase):
                         )
                         # Test the connection with a simple API call
                         self.reddit.user.me()
-                        print("✅ OAuth2 authentication successful")
+                        logger.info("✅ OAuth2 authentication successful")
                         return True
                     except Exception as e:
-                        print(f"⚠️ OAuth2 attempt {attempt + 1} failed: {e}")
+                        logger.error(f"⚠️ OAuth2 attempt {attempt + 1} failed: {e}")
                         if "invalid_grant" in str(e).lower():
-                            print("⚠️ Refresh token may be invalid or expired")
+                            logger.warning("⚠️ Refresh token may be invalid or expired")
                             break  # No point in retrying with invalid token
 
                 # Fall back to password auth if username/password are provided
@@ -270,7 +278,7 @@ class RedditExtractor(SocialExtractorBase):
                         self.read_only_mode = (
                             False  # Set read_only_mode to False after successful auth
                         )
-                        print("✅ Password authentication successful")
+                        logger.info("✅ Password authentication successful")
                         return True
                     except Exception as e:
                         print(
@@ -279,7 +287,7 @@ class RedditExtractor(SocialExtractorBase):
 
                 # If we get here, all auth methods have been tried and failed
                 if attempt < max_retries - 1:
-                    print(f"🔄 Waiting {retry_delay} seconds before retry...")
+                    logger.warning(f"🔄 Waiting {retry_delay} seconds before retry...")
                     time.sleep(retry_delay)
                     retry_delay *= 2  # Exponential backoff
 
@@ -288,16 +296,16 @@ class RedditExtractor(SocialExtractorBase):
                     f"⚠️ Unexpected error during authentication attempt {attempt + 1}: {e}"
                 )
                 if attempt == max_retries - 1:
-                    print("❌ All authentication attempts failed")
+                    logger.error("❌ All authentication attempts failed")
 
         # If all else fails, try read-only mode
-        print("⚠️ Falling back to read-only mode...")
+        logger.warning("⚠️ Falling back to read-only mode...")
         return self._fallback_to_readonly()
 
     def _fallback_to_readonly(self) -> bool:
         """Fallback to read-only mode when OAuth fails"""
         try:
-            print("🔄 Falling back to read-only mode...")
+            logger.info("🔄 Falling back to read-only mode...")
             try:
                 # First try with standard endpoint
                 self.reddit = praw.Reddit(
@@ -317,7 +325,9 @@ class RedditExtractor(SocialExtractorBase):
                 # Test with a simple API call
                 subreddit = self.reddit.subreddit("test")
                 subreddit.display_name  # This will fail if auth is bad
-                print("✅ Reddit read-only authentication successful with direct IP")
+                logger.info(
+                    "✅ Reddit read-only authentication successful with direct IP"
+                )
                 return True
             except Exception as direct_ip_error:
                 print(
@@ -337,7 +347,7 @@ class RedditExtractor(SocialExtractorBase):
                 )
                 return True
         except Exception as e:
-            print(f"❌ Reddit read-only auth failed: {e}")
+            logger.error(f"❌ Reddit read-only auth failed: {e}")
             return False
 
     def get_saved_posts(
@@ -358,21 +368,25 @@ class RedditExtractor(SocialExtractorBase):
         Returns:
             Tuple of (List[SocialPost], str): List of new posts and the 'after' token for pagination
         """
-        print(f"🔍 Starting get_saved_posts with limit={limit}, after={after}")
+        logger.info(f"🔍 Starting get_saved_posts with limit={limit}, after={after}")
 
         if not self.reddit:
-            print("⚠️ Reddit client not initialized, attempting to authenticate...")
+            logger.warning(
+                "⚠️ Reddit client not initialized, attempting to authenticate..."
+            )
             if not self.authenticate():
-                print("❌ Authentication failed and no read-only access available")
+                logger.error(
+                    "❌ Authentication failed and no read-only access available"
+                )
                 return [], None
 
         try:
             # Test authentication by getting current user info
             me = self.reddit.user.me()
-            print(f"✅ Authenticated as: {me.name}")
-            print(f"🔒 Read-only mode: {self.read_only_mode}")
+            logger.info(f"✅ Authenticated as: {me.name}")
+            logger.info(f"🔒 Read-only mode: {self.read_only_mode}")
         except Exception as e:
-            print(f"❌ Error getting current user: {e}")
+            logger.error(f"❌ Error getting current user: {e}")
             return [], None
 
         posts = []
@@ -380,7 +394,7 @@ class RedditExtractor(SocialExtractorBase):
             "limit": min(limit, 100)
         }  # Ensure we don't exceed Reddit's limit of 100
         if after and isinstance(after, str):
-            print(f"🔗 Resuming from after: {after}")
+            logger.info(f"🔗 Resuming from after: {after}")
             params["after"] = after
 
         for attempt in range(max_retries):
@@ -396,18 +410,18 @@ class RedditExtractor(SocialExtractorBase):
                     )
                     saved = self.reddit.subreddit("all").hot(limit=limit, params=params)
                     saved_items = list(saved)
-                    print(f"ℹ️ Fetched {len(saved_items)} popular posts")
+                    logger.info(f"ℹ️ Fetched {len(saved_items)} popular posts")
                 else:
-                    print("🔍 Fetching saved posts...")
+                    logger.info("🔍 Fetching saved posts...")
                     try:
                         saved = self.reddit.user.me().saved(limit=limit, params=params)
                         saved_items = list(saved)
-                        print(f"✅ Fetched {len(saved_items)} saved items")
+                        logger.info(f"✅ Fetched {len(saved_items)} saved items")
                         if hasattr(saved, "after"):
                             next_after = saved.after
-                            print(f"➡️ Next page token: {next_after}")
+                            logger.info(f"➡️ Next page token: {next_after}")
                     except Exception as e:
-                        print(f"❌ Error fetching saved posts: {e}")
+                        logger.error(f"❌ Error fetching saved posts: {e}")
                         saved_items = []
 
                 # Log details about the first few items
@@ -426,12 +440,10 @@ class RedditExtractor(SocialExtractorBase):
                             f"📝 Item {i + 1}: ID={item_id}, Name={item_name}, Title={item_title}"
                         )
                     except Exception as e:
-                        print(f"⚠️ Error logging item {i}: {e}")
+                        logger.error(f"⚠️ Error logging item {i}: {e}")
 
                 # Convert items to SocialPost objects with early-stop on seen IDs
-                print(
-                    f"🔄 Converting {len(saved_items)} items to SocialPost objects..."
-                )
+                print(f"🔄 Converting {len(saved_items)} items to SocialPost objects...")
                 for idx, item in enumerate(saved_items, 1):
                     try:
                         item_id = getattr(item, "id", "unknown")
@@ -445,9 +457,11 @@ class RedditExtractor(SocialExtractorBase):
                         if existing_ids:
                             # support raw and fullname (t3_*) variants
                             raw_id = str(item_id or "").strip()
-                            full_id = raw_id if raw_id.startswith("t3_") else f"t3_{raw_id}"
+                            full_id = (
+                                raw_id if raw_id.startswith("t3_") else f"t3_{raw_id}"
+                            )
                             if raw_id in existing_ids or full_id in existing_ids:
-                                print(f"🛑 Early stop at known ID: {full_id}")
+                                logger.info(f"🛑 Early stop at known ID: {full_id}")
                                 break
 
                         post = self._convert_reddit_item(
@@ -465,7 +479,9 @@ class RedditExtractor(SocialExtractorBase):
                             )
 
                     except Exception as e:
-                        print(f"⚠️ Error converting item {idx} (ID: {item_id}): {e}")
+                        logger.error(
+                            f"⚠️ Error converting item {idx} (ID: {item_id}): {e}"
+                        )
                         import traceback
 
                         traceback.print_exc()
@@ -483,16 +499,16 @@ class RedditExtractor(SocialExtractorBase):
                 )
                 if attempt < max_retries - 1:
                     wait_time = 2 ** (attempt + 1)  # Exponential backoff
-                    print(f"🔄 Waiting {wait_time} seconds before retry...")
+                    logger.warning(f"🔄 Waiting {wait_time} seconds before retry...")
                     time.sleep(wait_time)
 
-        print("❌ All retry attempts failed")
+        logger.error("❌ All retry attempts failed")
 
         # Try universal fallback if Reddit API completely fails
-        print("🔄 Attempting universal fallback for Reddit content...")
+        logger.warning("🔄 Attempting universal fallback for Reddit content...")
         try:
             if not self.universal_collector:
-                print("⚠️ UniversalCollector not available; skipping fallback")
+                logger.warning("⚠️ UniversalCollector not available; skipping fallback")
                 return [], None
             fallback_posts = []
             # Try to scrape some popular Reddit URLs as fallback
@@ -505,7 +521,7 @@ class RedditExtractor(SocialExtractorBase):
 
             for url in reddit_urls[:2]:  # Limit to 2 URLs to avoid overwhelming
                 try:
-                    print(f"🌐 Trying universal scraping for: {url}")
+                    logger.info(f"🌐 Trying universal scraping for: {url}")
                     result = self.universal_collector.collect_content(
                         url, validate_content=True
                     )
@@ -529,7 +545,9 @@ class RedditExtractor(SocialExtractorBase):
                             },
                         )
                         fallback_posts.append(post)
-                        print(f"✅ Successfully scraped fallback content from {url}")
+                        logger.info(
+                            f"✅ Successfully scraped fallback content from {url}"
+                        )
 
                         if len(fallback_posts) >= min(
                             limit, 10
@@ -537,17 +555,21 @@ class RedditExtractor(SocialExtractorBase):
                             break
 
                 except Exception as fallback_error:
-                    print(f"⚠️ Universal fallback failed for {url}: {fallback_error}")
+                    logger.error(
+                        f"⚠️ Universal fallback failed for {url}: {fallback_error}"
+                    )
                     continue
 
             if fallback_posts:
-                print(f"✅ Universal fallback retrieved {len(fallback_posts)} posts")
+                logger.info(
+                    f"✅ Universal fallback retrieved {len(fallback_posts)} posts"
+                )
                 return fallback_posts, None
             else:
-                print("❌ Universal fallback also failed")
+                logger.error("❌ Universal fallback also failed")
 
         except Exception as e:
-            print(f"❌ Error during universal fallback: {e}")
+            logger.error(f"❌ Error during universal fallback: {e}")
 
         return [], None  # Return empty list and None for next_after on failure
 
@@ -573,16 +595,16 @@ class RedditExtractor(SocialExtractorBase):
                     post = self._convert_reddit_item(item, is_saved=False)
                     if post:
                         posts.append(post)
-                print(f"✅ Retrieved {len(posts)} upvoted items from Reddit")
+                logger.info(f"✅ Retrieved {len(posts)} upvoted items from Reddit")
                 return posts  # Success
             except prawcore.exceptions.PrawcoreException as e:
-                print(f"❌ Reddit API error on attempt {attempt + 1}: {e}")
+                logger.error(f"❌ Reddit API error on attempt {attempt + 1}: {e}")
                 if attempt >= max_retries - 1:
-                    print("❌ All retries failed for getting upvoted posts.")
+                    logger.error("❌ All retries failed for getting upvoted posts.")
                     break
                 time.sleep(2 * (attempt + 1))
             except Exception as e:
-                print(f"❌ An unexpected error occurred: {e}")
+                logger.error(f"❌ An unexpected error occurred: {e}")
                 break  # Don't retry on unexpected errors
         return posts
 
@@ -657,7 +679,7 @@ class RedditExtractor(SocialExtractorBase):
             return top_comments[:limit]
 
         except Exception as e:
-            print(f"❌ Error extracting comments for {submission_id}: {e}")
+            logger.error(f"❌ Error extracting comments for {submission_id}: {e}")
             return []
 
     def _convert_reddit_item(self, item, is_saved: bool = True) -> SocialPost:
@@ -667,12 +689,13 @@ class RedditExtractor(SocialExtractorBase):
             if isinstance(item, praw.models.Submission):  # It's a submission
                 # Optional: fetch top comments (disabled by default for speed)
                 import os
-                fetch_comments = os.getenv("REDDIT_FETCH_TOP_COMMENTS", "false").lower() in ("1", "true", "yes", "on")
+
+                fetch_comments = os.getenv(
+                    "REDDIT_FETCH_TOP_COMMENTS", "false"
+                ).lower() in ("1", "true", "yes", "on")
                 top_comments = []
                 if fetch_comments:
-                    top_comments = self.get_top_comments(
-                        item.id, limit=10
-                    )
+                    top_comments = self.get_top_comments(item.id, limit=10)
 
                 # Build enhanced content with valuable comments
                 enhanced_content = (
@@ -768,7 +791,7 @@ class RedditExtractor(SocialExtractorBase):
                 )
 
         except Exception as e:
-            print(f"❌ Error converting Reddit item: {e}")
+            logger.error(f"❌ Error converting Reddit item: {e}")
             return None
 
     def _extract_media_urls(self, submission: praw.models.Submission) -> List[str]:
@@ -803,7 +826,9 @@ class RedditExtractor(SocialExtractorBase):
                 and submission.preview
                 and "images" in submission.preview
             ):
-                for image in submission.preview["images"][:2]:  # Limit to first 2 images
+                for image in submission.preview["images"][
+                    :2
+                ]:  # Limit to first 2 images
                     if not isinstance(image, dict):
                         continue
                     source = image.get("source", {})
@@ -814,9 +839,9 @@ class RedditExtractor(SocialExtractorBase):
                         media_urls.add(source_url.replace("&amp;", "&"))
 
             # Skip gallery and video checks that trigger fetches
-                    
+
         except Exception as e:
-            print(f"⚠️ Error extracting media URLs: {e}")
+            logger.error(f"⚠️ Error extracting media URLs: {e}")
 
         return list(media_urls)
 
@@ -833,7 +858,7 @@ class RedditExtractor(SocialExtractorBase):
                     if "s" in item and "u" in item["s"]:
                         media_urls.add(item["s"]["u"].replace("&amp;", "&"))
         except Exception as e:
-            print(f"⚠️ Error extracting comment media: {e}")
+            logger.error(f"⚠️ Error extracting comment media: {e}")
 
         return list(media_urls)
 
@@ -883,15 +908,15 @@ class RedditExtractor(SocialExtractorBase):
                     # Take screenshot of just the post content
                     screenshot_path = self.screenshot_dir / f"{post_id}.png"
                     await post_element.screenshot(path=str(screenshot_path))
-                    print(f"📸 Screenshot saved: {screenshot_path}")
+                    logger.info(f"📸 Screenshot saved: {screenshot_path}")
                     return str(screenshot_path)
                 else:
                     # Take full page screenshot as fallback
                     screenshot_path = self.screenshot_dir / f"{post_id}_full.png"
                     await page.screenshot(path=str(screenshot_path), full_page=True)
-                    print(f"📸 Full page screenshot saved: {screenshot_path}")
+                    logger.info(f"📸 Full page screenshot saved: {screenshot_path}")
                     return str(screenshot_path)
 
         except Exception as e:
-            print(f"⚠️ Error capturing screenshot for {post_id}: {e}")
+            logger.error(f"⚠️ Error capturing screenshot for {post_id}: {e}")
             return None

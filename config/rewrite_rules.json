@@ -27,7 +27,8 @@
       "use_voice_patterns": "Match the natural writing style from voice patterns and real examples provided",
       "inject_opinions": "Inject relevant persona opinions when appropriate and natural to the topic",
       "structure": "Start with hook that fits persona style, cover key points naturally, end with appropriate CTA for persona",
-      "naturalness": "Make it sound like the persona actually wrote it - not a translation or imitation"
+      "naturalness": "Make it sound like the persona actually wrote it - not a translation or imitation",
+      "personalization": "Write from FIRST-PERSON experience - use 'I tried', 'I noticed', 'I tested'. Include specific details (tool names, numbers). Add emotional reactions (what surprised you, what you liked/hated). Make it feel like YOU actually did this, not like summarizing an article. NO generic analysis language."
     },
     "content_transformation": {
       "idea_extraction": "Identify the core concepts, insights, and takeaways - not the exact wording",

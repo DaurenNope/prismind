@@ -1,5 +1,5 @@
 """
-Indexing package for PrisMind.
+Indexing package for BEYONDLINES.
 
 This package handles content indexing and semantic search capabilities
 using vector embeddings and pgvector in Supabase.

@@ -1,6 +1,6 @@
 # Root Directory Cleanup Complete ✅
 
-**Date**: November 1, 2025  
+**Date**: November 1, 2025
 **Status**: SUCCESS
 
 ## Summary
@@ -12,7 +12,7 @@ Cleaned up the root directory from **19 markdown files + 3 Python scripts** down
 ## What Was Cleaned Up
 
 ### Documentation Consolidation
-**Before**: 19 markdown files scattered in root  
+**Before**: 19 markdown files scattered in root
 **After**: 6 essential docs in root, rest organized in `docs/`
 
 **Moved to `docs/archive/`**:
@@ -33,14 +33,14 @@ Cleaned up the root directory from **19 markdown files + 3 Python scripts** down
 - RESTRUCTURING_COMPLETE.md
 
 ### Scripts Consolidation
-**Before**: Python scripts and shell scripts in root  
+**Before**: Python scripts and shell scripts in root
 **After**: All scripts organized in `scripts/`
 
 **Moved to `scripts/`**:
 - find_used_files.py
 - run_full_collection.py
 - run_telegram_bot.sh
-- start_streamlit.sh
+- start_svelte.sh
 - start_web.sh
 
 ---
@@ -48,7 +48,7 @@ Cleaned up the root directory from **19 markdown files + 3 Python scripts** down
 ## Clean Root Structure (After)
 
 ```
-prismind/
+beyondlines/
 ├── README.md                    # ✅ Main project README
 ├── CHANGELOG.md                 # ✅ Version history
 ├── FUNCTIONALITY.md             # ✅ Feature documentation
@@ -75,7 +75,7 @@ prismind/
 ├── logs/                      # ✅ Log files
 ├── migrations/                # ✅ Database migrations
 ├── archive/                   # ✅ Archived code
-└── prismind.db               # ✅ SQLite database
+└── beyondlines.db               # ✅ SQLite database
 ```
 
 ---
@@ -196,13 +196,13 @@ python main.py web
 
 ## Success Criteria
 
-✅ Root directory has < 15 files  
-✅ Only active, essential documentation in root  
-✅ Historical docs archived in docs/  
-✅ Scripts organized in scripts/  
-✅ Clear entry point (main.py)  
-✅ Professional appearance  
-✅ Easy for new developers to navigate  
+✅ Root directory has < 15 files
+✅ Only active, essential documentation in root
+✅ Historical docs archived in docs/
+✅ Scripts organized in scripts/
+✅ Clear entry point (main.py)
+✅ Professional appearance
+✅ Easy for new developers to navigate
 
 **All criteria met!** 🎉
 
@@ -210,10 +210,10 @@ python main.py web
 
 ## Credits
 
-**Cleaned by**: Claude (Anthropic)  
-**Related**: RESTRUCTURING_COMPLETE.md (in docs/plans/)  
-**Total cleanup time**: ~10 minutes  
-**Files moved**: 18  
-**Directories created**: 3  
+**Cleaned by**: Claude (Anthropic)
+**Related**: RESTRUCTURING_COMPLETE.md (in docs/plans/)
+**Total cleanup time**: ~10 minutes
+**Files moved**: 18
+**Directories created**: 3
 
 🎉 **Clean, professional root directory achieved!**

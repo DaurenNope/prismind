@@ -1,11 +1,11 @@
 """Utility functions for running AI analysis workflows from the UI or CLI."""
 
 import asyncio
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
 
-from src.services.new_database_manager import get_database_manager
 from src.services.analysis.post_analyzer import analyze_and_store_post, log
 from src.services.analysis_lock import analysis_lock_guard
+from src.services.new_database_manager import get_database_manager
 
 
 async def _analyze_posts_async(
@@ -20,6 +20,7 @@ async def _analyze_posts_async(
 
         supabase_manager = SupabaseManager()
     except Exception as e:
+        logger.error(f"Error: {e}")
         log(f"Supabase manager not available: {e}", "warning")
         supabase_manager = None
 
@@ -33,6 +34,7 @@ async def _analyze_posts_async(
             )
             processed += 1
         except Exception as exc:  # pylint: disable=broad-except
+            logger.error(f"Error: {e}")
             log(f"Analysis failed for post {post.get('post_id')}: {exc}", "error")
             errors.append(str(exc))
 
@@ -65,6 +67,7 @@ def analyze_recent_posts(
         try:
             posts = db_manager.get_unanalyzed_posts(limit=limit, platforms=platforms)
         except Exception as exc:  # pylint: disable=broad-except
+            logger.error(f"Error: {e}")
             log(f"Unable to fetch unanalyzed posts: {exc}", "warning")
 
     if not posts:

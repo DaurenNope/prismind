@@ -1,280 +1,272 @@
 #!/usr/bin/env python3
 """
 Intelligent Persona Matcher
-Selects which personas (2-3) would actually care about specific content
-Instead of blindly rewriting for all 5 personas
+Dynamically loads profiles from config/personas/*.json and matches content
+using AI analysis results (category, key_concepts, topics) instead of keyword matching.
 """
 
+import json
 import logging
-from typing import Dict, Any, List, Tuple
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
 
 class PersonaMatcher:
     """
-    Intelligently matches content to personas based on:
-    - Content category and topics
+    Intelligently matches content to personas based on AI analysis results:
+    - Content category (from AI)
+    - Key concepts (from AI - semantic)
+    - Topics (from AI - semantic)
     - Complexity level
-    - Use cases and applications
-    - Target audience signals
+    - Uses AI summary (semantic, language-agnostic) instead of raw content
     """
 
     def __init__(self):
-        # Define persona preferences and signals
-        # ONLY 3 PROFILES: Qronoya (tech pro), Aspandead (deep writer), Claimzilla (crypto)
-        self.persona_profiles = {
-            "qronoya": {
-                "interests": [
-                    "technology", "tech", "startup", "startups", "career", "professional",
-                    "software", "development", "coding", "programming", "developer",
-                    "entrepreneurship", "entrepreneur", "business", "life lessons",
-                    "productivity", "growth", "learning", "advice", "services",
-                    "building", "product", "tools", "work", "job"
-                ],
-                "complexity_preference": ["Beginner", "Intermediate", "Advanced"],
-                "categories": [
-                    "Technology", "Startups", "Career", "Professional Development",
-                    "Software Development", "Business", "Life Lessons", "Productivity"
-                ],
-                "keywords": [
-                    "tech", "career", "professional", "startup", "advice",
-                    "how to", "tips", "guide", "practical", "experience"
-                ],
-                "strict_exclusions": [
-                    # Exclude strictly crypto content (that's Claimzilla's domain)
-                    "crypto", "defi", "blockchain", "airdrop", "web3", "nft",
-                    "eth", "btc", "sol", "token", "chain", "l2", "layer2"
-                ],
-                "platforms": ["twitter", "threads", "telegram"]
-            },
-            "aspandead": {
-                "interests": [
-                    "dating", "relationship", "love", "personal", "story", "experience",
-                    "emotion", "feeling", "soul", "heart", "deep", "vulnerable",
-                    "real", "raw", "honest", "reflection", "thought", "observation",
-                    "human", "connection", "intimacy", "life", "meaning", "philosophy"
-                ],
-                "complexity_preference": ["Intermediate", "Advanced", "Expert"],
-                "categories": [
-                    "Personal Stories", "Dating", "Relationships", "Deep Thoughts",
-                    "Creative Writing", "Life Observations", "Emotional", "Vulnerable"
-                ],
-                "keywords": [
-                    "dating", "relationship", "personal", "story", "felt", "soul",
-                    "raw", "real", "vulnerable", "deep", "thought", "reflection"
-                ],
-                "strict_exclusions": [
-                    # Exclude strictly crypto and pure tech/career content
-                    "crypto", "defi", "blockchain", "airdrop", "web3", "nft",
-                    "startup funding", "product launch", "tech stack"
-                ],
-                "platforms": ["twitter", "threads", "telegram", "medium"]
-            },
-            "claimzilla": {
-                "interests": [
-                    "crypto", "cryptocurrency", "defi", "blockchain", "web3",
-                    "airdrop", "airdrops", "token", "eth", "ethereum", "btc", "bitcoin",
-                    "sol", "solana", "base", "l2", "layer2", "chain", "nft", "dex",
-                    "yield", "farming", "staking", "protocol", "smart contract",
-                    "market", "trading", "price", "alpha", "gems", "portfolio"
-                ],
-                "complexity_preference": ["Beginner", "Intermediate", "Advanced", "Expert"],
-                "categories": [
-                    "Crypto", "DeFi", "Blockchain", "Airdrops", "Web3",
-                    "Market Analysis", "Trading", "Technology", "Protocols"
-                ],
-                "keywords": [
-                    "crypto", "defi", "airdrop", "blockchain", "web3", "alpha",
-                    "market", "token", "chain", "protocol", "trading", "yield"
-                ],
-                "strict_exclusions": [
-                    # STRICTLY crypto only - NO AI, NO general tech, NO personal stories
-                    "dating", "relationship", "personal story", "feelings", "soul",
-                    "career advice", "life lessons", "startup advice",
-                    # Allow AI ONLY if combined with crypto/blockchain context
-                ],
-                "strict_requirements": [
-                    # MUST have at least ONE of these to match Claimzilla
-                    "crypto", "defi", "blockchain", "airdrop", "web3", "nft",
-                    "eth", "btc", "sol", "token", "chain", "l2", "layer2",
-                    "protocol", "dex", "yield", "staking"
-                ],
-                "platforms": ["twitter", "threads"]
-            }
-        }
+        # Dynamically load persona profiles from config/personas/*.json
+        self.persona_profiles = self._load_personas()
+
+        # Category to persona mapping (based on profile expertise)
+        self._category_to_persona = self._build_category_mapping()
+
+    def _load_personas(self) -> Dict[str, Dict[str, Any]]:
+        """Dynamically load all personas from config/personas/*.json"""
+        profiles = {}
+        personas_dir = Path("config/personas")
+
+        if not personas_dir.exists():
+            logger.warning(f"Personas directory not found: {personas_dir}")
+            return profiles
+
+        for persona_file in personas_dir.glob("*.json"):
+            # Skip example files
+            if "example" in persona_file.name.lower():
+                continue
+
+            try:
+                with open(persona_file, "r", encoding="utf-8") as f:
+                    persona = json.load(f)
+                    persona_key = persona.get("key") or persona_file.stem
+                    profiles[persona_key] = persona
+                    logger.debug(f"Loaded persona: {persona_key}")
+            except Exception as e:
+                logger.error(f"Failed to load persona {persona_file}: {e}")
+
+        logger.info(f"Loaded {len(profiles)} personas: {list(profiles.keys())}")
+        return profiles
+
+    def _build_category_mapping(self) -> Dict[str, str]:
+        """Build category to persona mapping from profile expertise"""
+        category_map = {}
+
+        for persona_key, profile in self.persona_profiles.items():
+            expertise = profile.get("expertise", [])
+
+            # Map expertise to categories
+            for exp in expertise:
+                exp_lower = exp.lower()
+                if (
+                    "crypto" in exp_lower
+                    or "blockchain" in exp_lower
+                    or "defi" in exp_lower
+                ):
+                    category_map["CRYPTO"] = persona_key
+                elif (
+                    "tech" in exp_lower
+                    or "software" in exp_lower
+                    or "startup" in exp_lower
+                    or "business" in exp_lower
+                ):
+                    if "CRYPTO" not in category_map:  # Don't override crypto
+                        category_map.setdefault("TECH", persona_key)
+                        category_map.setdefault("BUSINESS", persona_key)
+                        category_map.setdefault("LEARNING", persona_key)
+                elif (
+                    "dating" in exp_lower
+                    or "relationship" in exp_lower
+                    or "personal" in exp_lower
+                ):
+                    category_map["PERSONAL"] = persona_key
+                    category_map["DATING"] = persona_key
+
+        logger.debug(f"Category mapping: {category_map}")
+        return category_map
 
     def match_personas(
         self,
         analyzed_content: Dict[str, Any],
         min_personas: int = 1,
-        max_personas: int = 2
+        max_personas: int = 3,
     ) -> List[Tuple[str, float, str]]:
         """
-        Match content to personas and return ranked list.
-        STRICT ROUTING: Crypto → Claimzilla ONLY, Tech → Qronoya ONLY, Dating/Personal → Aspandead ONLY
+        Match content to personas using AI analysis results (not keyword matching).
 
         Args:
-            analyzed_content: Full analysis from IntelligentContentAnalyzer
+            analyzed_content: Full analysis from IntelligentContentAnalyzer with:
+                - category: Primary category from AI
+                - fit_categories: Multiple categories content fits
+                - key_concepts: Semantic concepts extracted by AI
+                - topics: Topics extracted by AI
+                - ai_summary: Semantic summary (always in English)
+                - complexity: Complexity level
             min_personas: Minimum personas to return (default: 1)
-            max_personas: Maximum personas to return (default: 2)
+            max_personas: Maximum personas to return (default: 3)
 
         Returns:
             List of (persona_id, match_score, reason) tuples, sorted by score
+            Scores are in 0-100 format for profile_matches JSONB storage
         """
 
-        # Extract content features
-        category = analyzed_content.get('category', '')
-        topics = analyzed_content.get('topics', [])
-        key_concepts = analyzed_content.get('key_concepts', [])
-        complexity = analyzed_content.get('complexity', 'Intermediate')
-        content = analyzed_content.get('content', '') + ' ' + analyzed_content.get('summary', '')
-        content_lower = content.lower()
+        # Extract AI analysis results (semantic, language-agnostic)
+        category = analyzed_content.get("category", "").upper().strip()
+        fit_categories = [
+            c.upper().strip()
+            for c in (analyzed_content.get("fit_categories", []) or [])
+        ]
+        key_concepts = [
+            str(c).lower() for c in (analyzed_content.get("key_concepts", []) or [])
+        ]
+        topics = [str(t).lower() for t in (analyzed_content.get("topics", []) or [])]
+        complexity = analyzed_content.get("complexity", "Intermediate")
 
-        # Get discovery signals for additional context
-        discovery_signals = analyzed_content.get('discovery_signals', {})
-        trend_relevance = discovery_signals.get('trend_relevance', 'mainstream')
-        viral_potential = discovery_signals.get('viral_potential', 0)
+        # Use AI summary (semantic, always in English) instead of raw content
+        ai_summary = (
+            analyzed_content.get("ai_summary", "")
+            or analyzed_content.get("summary", "")
+        ).lower()
 
-        # Calculate match score for each persona
+        # Calculate match score for each dynamically loaded persona
         persona_scores = {}
 
-        for persona_id, profile in self.persona_profiles.items():
+        for persona_key, profile in self.persona_profiles.items():
             score = 0.0
             reasons = []
-            rejected = False
-            rejection_reason = ""
 
-            # STEP 1: Check strict exclusions (IMMEDIATE DISQUALIFICATION)
-            if 'strict_exclusions' in profile:
-                for exclusion in profile['strict_exclusions']:
-                    if exclusion in content_lower:
-                        rejected = True
-                        rejection_reason = f"excluded: contains '{exclusion}'"
+            # METHOD 1: Category-based matching (most reliable, from AI)
+            # Check fit_categories first (more comprehensive than primary category)
+            category_match = False
+            matched_categories = []
+
+            for fit_cat in fit_categories:
+                if fit_cat in self._category_to_persona:
+                    if self._category_to_persona[fit_cat] == persona_key:
+                        category_match = True
+                        matched_categories.append(fit_cat)
+
+            # Also check primary category
+            if category and category in self._category_to_persona:
+                if self._category_to_persona[category] == persona_key:
+                    category_match = True
+                    if category not in matched_categories:
+                        matched_categories.append(category)
+
+            if category_match:
+                score += 40
+                reasons.append(f"Category match: {', '.join(matched_categories)}")
+
+            # METHOD 2: Concept-based matching (semantic, from AI key_concepts)
+            # Use expertise from profile to match concepts
+            expertise = [str(e).lower() for e in (profile.get("expertise", []) or [])]
+
+            concept_matches = 0
+            for concept in key_concepts:
+                # Check if concept matches any expertise area
+                for exp in expertise:
+                    if exp in concept or concept in exp:
+                        concept_matches += 1
                         break
 
-            # STEP 2: Check strict requirements (for Claimzilla)
-            if not rejected and 'strict_requirements' in profile:
-                # MUST have at least ONE requirement keyword
-                has_requirement = any(
-                    req in content_lower
-                    for req in profile['strict_requirements']
-                )
-                if not has_requirement:
-                    rejected = True
-                    rejection_reason = "missing required crypto keywords"
+            if concept_matches > 0:
+                score += min(concept_matches * 8, 30)
+                reasons.append(f"Concept match: {concept_matches} concepts")
 
-            # If rejected, store 0 score and continue
-            if rejected:
-                persona_scores[persona_id] = (0, rejection_reason)
-                continue
+            # METHOD 3: Topic-based matching (semantic, from AI topics)
+            topic_matches = 0
+            for topic in topics:
+                for exp in expertise:
+                    if exp in topic or topic in exp:
+                        topic_matches += 1
+                        break
 
-            # STEP 3: Calculate positive match score
+            if topic_matches > 0:
+                score += min(topic_matches * 5, 20)
+                reasons.append(f"Topic match: {topic_matches} topics")
 
-            # 1. Interest keyword matching (0-40 points)
-            interest_matches = sum(
-                1 for interest in profile['interests']
-                if interest in content_lower or interest in ' '.join(topics).lower()
-            )
-            if interest_matches > 0:
-                interest_score = min(interest_matches * 5, 40)
-                score += interest_score
-                reasons.append(f"{interest_matches} interest matches")
-
-            # 2. Complexity match (0-20 points)
-            if complexity in profile['complexity_preference']:
-                score += 20
-                reasons.append(f"complexity match ({complexity})")
-            elif complexity == "Intermediate":
-                # Intermediate is acceptable for most
+            # METHOD 4: Complexity match
+            complexity_pref = profile.get("complexity_preference", [])
+            if complexity in complexity_pref:
                 score += 10
-                reasons.append("intermediate complexity")
+                reasons.append(f"Complexity match: {complexity}")
 
-            # 3. Category match (0-20 points)
-            if category and any(cat.lower() in category.lower() for cat in profile['categories']):
-                score += 20
-                reasons.append(f"category match")
+            # KEYWORDS ONLY AS FALLBACK (when AI analysis is weak)
+            # Use ai_summary (semantic, language-agnostic) instead of raw content
+            if score < 30 and ai_summary:
+                # Get keywords from profile config if available
+                keywords = profile.get("filters", {}).get("keywords", []) or []
+                keyword_matches = sum(1 for kw in keywords if kw.lower() in ai_summary)
 
-            # 4. Keyword signals in content (0-20 points)
-            keyword_matches = sum(
-                1 for keyword in profile['keywords']
-                if keyword in content_lower
-            )
-            if keyword_matches > 0:
-                keyword_score = min(keyword_matches * 10, 20)
-                score += keyword_score
-                reasons.append(f"{keyword_matches} keyword signals")
+                if keyword_matches > 0:
+                    score += min(
+                        keyword_matches * 3, 15
+                    )  # Lower weight - less reliable
+                    reasons.append(f"Keyword fallback: {keyword_matches}")
 
-            # 5. Special bonuses based on persona type
-            if persona_id == "claimzilla":
-                # Crypto-specific bonuses
-                crypto_chains = ["eth", "btc", "sol", "base", "l2", "layer2"]
-                chain_mentions = sum(1 for chain in crypto_chains if chain in content_lower)
-                if chain_mentions > 0:
+            # Special handling for crypto content
+            # Qronoya can handle crypto business/trading, but claimzilla gets priority for technical crypto
+            if persona_key == "qronoya" and category == "CRYPTO":
+                # Check if it's business/trading crypto (qronoya is knowledgeable about this!)
+                crypto_business = any(
+                    cb in " ".join(key_concepts).lower()
+                    for cb in ["trading", "markets", "investing", "business"]
+                )
+                if crypto_business:
                     score += 15
-                    reasons.append(f"crypto chain mentions ({chain_mentions})")
+                    reasons.append("Crypto business/trading content")
 
-                # Market/trading signals
-                if any(kw in content_lower for kw in ["market", "trading", "price", "alpha"]):
-                    score += 10
-                    reasons.append("market/trading signals")
+            elif persona_key == "claimzilla" and category == "CRYPTO":
+                # Deep crypto technical gets priority
+                crypto_technical = any(
+                    ct in " ".join(key_concepts).lower()
+                    for ct in [
+                        "defi",
+                        "protocol",
+                        "smart contract",
+                        "blockchain tech",
+                        "airdrop",
+                        "tokenomics",
+                        "staking",
+                    ]
+                )
+                if crypto_technical:
+                    score += 20
+                    reasons.append("Crypto technical content")
 
-            if persona_id == "qronoya":
-                # Tech professional bonuses
-                if any(kw in content_lower for kw in ["startup", "career", "professional", "advice"]):
-                    score += 10
-                    reasons.append("professional/career focus")
-
-                # Practical tech content
-                if any(kw in content_lower for kw in ["how to", "guide", "tips", "building"]):
-                    score += 10
-                    reasons.append("practical content")
-
-            if persona_id == "aspandead":
-                # Deep writer bonuses
-                if any(kw in content_lower for kw in ["dating", "relationship", "love", "personal"]):
-                    score += 15
-                    reasons.append("dating/relationship focus")
-
-                # Emotional depth signals
-                if any(kw in content_lower for kw in ["soul", "vulnerable", "raw", "real", "deep"]):
-                    score += 10
-                    reasons.append("emotional depth")
-
-            # Store score and reasons
+            # Store score (0-100 format for JSONB storage)
             reason_text = ", ".join(reasons) if reasons else "low match"
-            persona_scores[persona_id] = (score, reason_text)
+            persona_scores[persona_key] = (score, reason_text)
 
         # Sort by score (descending)
         sorted_personas = sorted(
-            persona_scores.items(),
-            key=lambda x: x[1][0],
-            reverse=True
+            persona_scores.items(), key=lambda x: x[1][0], reverse=True
         )
 
-        # STRICT MATCHING: Higher threshold (50 points minimum)
-        # Only return personas that actually match well
-        MIN_SCORE_THRESHOLD = 50
-
+        # Return all personas with scores (not just above threshold)
+        # Let the caller decide thresholds based on use case
         results = []
-        for persona_id, (score, reason) in sorted_personas:
-            if score >= MIN_SCORE_THRESHOLD:
-                results.append((persona_id, score, reason))
+        for persona_key, (score, reason) in sorted_personas:
+            # Return score in 0-100 format (for profile_matches JSONB)
+            results.append((persona_key, round(score, 2), reason))
 
-        # DO NOT force min_personas if nothing matches well
-        # Better to return 0-1 matches than force bad matches
-        # But cap at max_personas
+        # Cap at max_personas
         results = results[:max_personas]
 
         if len(results) > 0:
-            logger.info(f"🎯 Matched {len(results)} persona(s) for this content")
+            logger.debug(f"🎯 Matched {len(results)} persona(s) for this content")
             for persona_id, score, reason in results:
-                logger.info(f"   • {persona_id}: {score:.0f} points ({reason})")
+                logger.debug(f"   • {persona_id}: {score:.1f}/100 ({reason})")
         else:
-            logger.info(f"❌ No personas matched (all below {MIN_SCORE_THRESHOLD} point threshold)")
-            # Show why they were rejected
-            for persona_id, (score, reason) in sorted_personas[:3]:
-                logger.info(f"   • {persona_id}: {score:.0f} points - {reason}")
+            logger.debug(f"❌ No personas matched for this content")
 
         return results
 
@@ -294,7 +286,7 @@ def get_persona_matcher() -> PersonaMatcher:
 def demo_matcher():
     """Demo persona matching with different content types"""
 
-    print("🧪 Testing Persona Matcher\n")
+    logger.info("🧪 Testing Persona Matcher\n")
 
     matcher = get_persona_matcher()
 
@@ -303,111 +295,75 @@ def demo_matcher():
         {
             "name": "Deep Technical: Redis Architecture",
             "content": {
-                "category": "Technical Deep Dive",
+                "category": "TECH",
                 "topics": ["redis", "architecture", "performance", "memory"],
                 "key_concepts": ["data structures", "persistence", "replication"],
                 "complexity": "Expert",
-                "content": "Deep dive into Redis architecture: How Redis achieves microsecond latency with in-memory data structures. Implementation details of the event loop, persistence mechanisms, and replication protocol.",
-                "discovery_signals": {
-                    "trend_relevance": "mainstream",
-                    "viral_potential": 40
-                }
-            }
+                "ai_summary": "Deep dive into Redis architecture: How Redis achieves microsecond latency with in-memory data structures. Implementation details of the event loop, persistence mechanisms, and replication protocol.",
+                "fit_categories": ["TECH"],
+            },
         },
         {
-            "name": "Trending: New AI Model Launch",
+            "name": "Crypto Trading Content",
             "content": {
-                "category": "Product Launch",
-                "topics": ["AI", "GPT", "launch", "announcement"],
-                "key_concepts": ["machine learning", "breakthrough", "release"],
+                "category": "CRYPTO",
+                "topics": ["bitcoin", "trading", "markets"],
+                "key_concepts": ["trading", "markets", "investing", "bitcoin"],
                 "complexity": "Intermediate",
-                "content": "BREAKING: OpenAI just launched GPT-5! Everyone's talking about it. This is trending everywhere. Major AI breakthrough announced today.",
-                "discovery_signals": {
-                    "trend_relevance": "emerging",
-                    "viral_potential": 95
-                }
-            }
+                "ai_summary": "Bitcoin trading analysis: Market trends and investment strategies for crypto trading.",
+                "fit_categories": ["CRYPTO", "BUSINESS"],
+            },
         },
         {
-            "name": "Tutorial: React for Beginners",
+            "name": "Personal Growth Content",
             "content": {
-                "category": "Educational Tutorial",
-                "topics": ["react", "javascript", "tutorial", "beginners"],
-                "key_concepts": ["components", "state", "props", "hooks"],
-                "complexity": "Beginner",
-                "content": "Learn React from scratch: A beginner's guide to building your first React app. Step-by-step tutorial for beginners. Introduction to React fundamentals explained.",
-                "discovery_signals": {
-                    "trend_relevance": "mainstream",
-                    "viral_potential": 30
-                }
-            }
-        },
-        {
-            "name": "Builder: Startup Tool Launch",
-            "content": {
-                "category": "Product Launch",
-                "topics": ["startup", "tool", "product", "launch", "SaaS"],
-                "key_concepts": ["MVP", "users", "market", "growth"],
+                "category": "PERSONAL",
+                "topics": ["mindfulness", "personal growth", "self-awareness"],
+                "key_concepts": ["mindfulness", "present moment", "self-awareness"],
                 "complexity": "Intermediate",
-                "content": "We just shipped our MVP! Tool for startup builders to launch faster. Practical use cases for product teams. How to build and ship in 2 weeks.",
-                "discovery_signals": {
-                    "trend_relevance": "mainstream",
-                    "viral_potential": 55
-                }
-            }
+                "ai_summary": "Deep reflection on mindfulness and being present in the moment, exploring personal growth and self-awareness.",
+                "fit_categories": ["PERSONAL"],
+            },
         },
-        {
-            "name": "Strategy: Future of AI Industry",
-            "content": {
-                "category": "Industry Analysis",
-                "topics": ["AI", "future", "industry", "strategy", "market"],
-                "key_concepts": ["prediction", "impact", "leadership", "vision"],
-                "complexity": "Advanced",
-                "content": "The future of AI: Strategic analysis of industry trends. Why this matters for executives and decision makers. Big picture implications for the next decade. Market predictions and strategic insights.",
-                "discovery_signals": {
-                    "trend_relevance": "mainstream",
-                    "viral_potential": 60
-                }
-            }
-        }
     ]
 
-    print("=" * 80)
-    print("PERSONA MATCHING RESULTS")
-    print("=" * 80)
-    print()
+    logger.info("=" * 80)
+    logger.info("PERSONA MATCHING RESULTS")
+    logger.info("=" * 80)
+    logger.info()
 
     for test_case in test_cases:
-        print(f"📄 {test_case['name']}")
-        print("-" * 80)
+        logger.info(f"📄 {test_case['name']}")
+        logger.info("-" * 80)
 
-        matches = matcher.match_personas(test_case['content'], min_personas=2, max_personas=3)
+        matches = matcher.match_personas(
+            test_case["content"], min_personas=1, max_personas=3
+        )
 
-        print(f"   Matched {len(matches)} personas:\n")
+        logger.info(f"   Matched {len(matches)} personas:\n")
 
         for i, (persona_id, score, reason) in enumerate(matches, 1):
-            emoji = {
-                'technical': '🔧',
-                'builder': '🚀',
-                'learner': '📚',
-                'trendsetter': '🔥',
-                'thought_leader': '💡'
-            }.get(persona_id, '❓')
+            emoji = {"qronoya": "💡", "aspandead": "🖤", "claimzilla": "💎"}.get(
+                persona_id, "❓"
+            )
 
-            print(f"   {i}. {emoji} {persona_id.upper()}")
-            print(f"      Score: {score:.0f}/100")
-            print(f"      Reason: {reason}")
-            print()
+            logger.info(f"   {i}. {emoji} {persona_id.upper()}")
+            logger.info(f"      Score: {score:.1f}/100")
+            logger.info(f"      Reason: {reason}")
+            logger.info()
 
-        print()
+        logger.info()
 
-    print("=" * 80)
-    print("✅ Persona matching working!")
-    print()
-    print("Key Insight: Each content type matches 2-3 relevant personas, not all 5")
+    logger.info("=" * 80)
+    logger.info("✅ Persona matching working!")
+    logger.info()
+    logger.info(
+        "Key Insight: Uses AI analysis results (category, key_concepts, topics) instead of keyword matching"
+    )
 
 
 if __name__ == "__main__":
     import logging
+
     logging.basicConfig(level=logging.INFO)
     demo_matcher()

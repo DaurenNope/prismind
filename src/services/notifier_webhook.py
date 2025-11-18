@@ -24,9 +24,10 @@ class WebhookNotifier:
                 headers={"Content-Type": "application/json"},
                 method="POST",
             )
-            with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310 - simple webhook
+            with urllib.request.urlopen(
+                req, timeout=10
+            ) as resp:  # noqa: S310 - simple webhook
                 return 200 <= resp.status < 300
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error: {e}")
             return False
-
-

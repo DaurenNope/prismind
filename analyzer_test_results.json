@@ -4,504 +4,74 @@
     "platform": "twitter",
     "author": "AI Builder",
     "content_preview": "Just shipped a new AI agent framework using LangChain. It has persistent memory using vector databases + structured storage. Game changer for building autonomous systems. Check out the architecture di",
-    "category": "General",
-    "subcategory": "Twitter",
-    "summary": "Just shipped a new AI agent framework using LangChain. It has persistent memory using vector databases + structured storage. Game changer for building autonomous systems. Check out the architecture di...",
+    "category": "TECH",
+    "subcategory": null,
+    "summary": null,
     "value_score": 4.0,
     "quality_score": 5.9,
     "is_rewrite_candidate": false,
-    "rewrite_angles": [
-      {
-        "persona": "technical",
-        "angle": "Technical breakdown of this content",
-        "hook": "Here's what you need to know from a technical perspective",
-        "key_points": [
-          "Main technical concept",
-          "Implementation details",
-          "Best practices"
-        ],
-        "target_audience": "Developers and engineers",
-        "estimated_engagement": "medium",
-        "tone": "technical",
-        "call_to_action": "Try implementing this in your next project",
-        "platform_fit": "twitter_thread"
-      },
-      {
-        "persona": "builder",
-        "angle": "How to apply this in your projects",
-        "hook": "Build something with this knowledge",
-        "key_points": [
-          "Practical application",
-          "Quick implementation",
-          "Real-world use case"
-        ],
-        "target_audience": "Makers and builders",
-        "estimated_engagement": "medium",
-        "tone": "action-oriented",
-        "call_to_action": "Ship this today",
-        "platform_fit": "short_tweet"
-      },
-      {
-        "persona": "learner",
-        "angle": "Understanding the fundamentals",
-        "hook": "Learn the basics step by step",
-        "key_points": [
-          "Core concept explained",
-          "Why it matters",
-          "How to get started"
-        ],
-        "target_audience": "Beginners",
-        "estimated_engagement": "medium",
-        "tone": "educational",
-        "call_to_action": "Practice this concept",
-        "platform_fit": "linkedin_post"
-      },
-      {
-        "persona": "trendsetter",
-        "angle": "Why this is relevant now",
-        "hook": "This is trending and here's why",
-        "key_points": [
-          "Current trend",
-          "Market momentum",
-          "Early adoption opportunity"
-        ],
-        "target_audience": "Innovators",
-        "estimated_engagement": "medium",
-        "tone": "excited",
-        "call_to_action": "Get ahead of this trend",
-        "platform_fit": "short_tweet"
-      },
-      {
-        "persona": "thought_leader",
-        "angle": "Strategic implications",
-        "hook": "What this means for the future",
-        "key_points": [
-          "Industry impact",
-          "Future trends",
-          "Strategic considerations"
-        ],
-        "target_audience": "Leaders and strategists",
-        "estimated_engagement": "medium",
-        "tone": "authoritative",
-        "call_to_action": "Prepare your strategy for this shift",
-        "platform_fit": "linkedin_post"
-      }
-    ],
-    "discovery_signals": {
-      "author_authority": "medium",
-      "trend_relevance": "mainstream",
-      "viral_potential": 21,
-      "discussion_quality": "medium",
-      "unique_perspective": "no"
-    },
-    "content_freshness": {
-      "publication_age": "0 hours",
-      "still_relevant": "yes",
-      "time_sensitivity": "evergreen"
-    }
+    "rewrite_angles": null,
+    "discovery_signals": null,
+    "content_freshness": null
   },
   {
     "post_id": "test_2",
     "platform": "reddit",
     "author": "PythonDev",
     "content_preview": "I built a tool that automatically generates Python docstrings using GPT-4. Just point it at your code and it creates comprehensive documentation. Here's how it works...\n\n1. Parses your Python AST\n2. S",
-    "category": "General",
-    "subcategory": "Reddit",
-    "summary": "I built a tool that automatically generates Python docstrings using GPT-4. Just point it at your code and it creates comprehensive documentation. Here's how it works...\n\n1. Parses your Python AST\n2. S...",
+    "category": "TECH",
+    "subcategory": null,
+    "summary": null,
     "value_score": 5.5,
     "quality_score": 6.4,
     "is_rewrite_candidate": true,
-    "rewrite_angles": [
-      {
-        "persona": "technical",
-        "angle": "Technical breakdown of this content",
-        "hook": "Here's what you need to know from a technical perspective",
-        "key_points": [
-          "Main technical concept",
-          "Implementation details",
-          "Best practices"
-        ],
-        "target_audience": "Developers and engineers",
-        "estimated_engagement": "medium",
-        "tone": "technical",
-        "call_to_action": "Try implementing this in your next project",
-        "platform_fit": "twitter_thread"
-      },
-      {
-        "persona": "builder",
-        "angle": "How to apply this in your projects",
-        "hook": "Build something with this knowledge",
-        "key_points": [
-          "Practical application",
-          "Quick implementation",
-          "Real-world use case"
-        ],
-        "target_audience": "Makers and builders",
-        "estimated_engagement": "medium",
-        "tone": "action-oriented",
-        "call_to_action": "Ship this today",
-        "platform_fit": "short_tweet"
-      },
-      {
-        "persona": "learner",
-        "angle": "Understanding the fundamentals",
-        "hook": "Learn the basics step by step",
-        "key_points": [
-          "Core concept explained",
-          "Why it matters",
-          "How to get started"
-        ],
-        "target_audience": "Beginners",
-        "estimated_engagement": "medium",
-        "tone": "educational",
-        "call_to_action": "Practice this concept",
-        "platform_fit": "linkedin_post"
-      },
-      {
-        "persona": "trendsetter",
-        "angle": "Why this is relevant now",
-        "hook": "This is trending and here's why",
-        "key_points": [
-          "Current trend",
-          "Market momentum",
-          "Early adoption opportunity"
-        ],
-        "target_audience": "Innovators",
-        "estimated_engagement": "medium",
-        "tone": "excited",
-        "call_to_action": "Get ahead of this trend",
-        "platform_fit": "short_tweet"
-      },
-      {
-        "persona": "thought_leader",
-        "angle": "Strategic implications",
-        "hook": "What this means for the future",
-        "key_points": [
-          "Industry impact",
-          "Future trends",
-          "Strategic considerations"
-        ],
-        "target_audience": "Leaders and strategists",
-        "estimated_engagement": "medium",
-        "tone": "authoritative",
-        "call_to_action": "Prepare your strategy for this shift",
-        "platform_fit": "linkedin_post"
-      }
-    ],
-    "discovery_signals": {
-      "author_authority": "high",
-      "trend_relevance": "mainstream",
-      "viral_potential": 82,
-      "discussion_quality": "high",
-      "unique_perspective": "yes"
-    },
-    "content_freshness": {
-      "publication_age": "0 hours",
-      "still_relevant": "yes",
-      "time_sensitivity": "evergreen"
-    }
+    "rewrite_angles": null,
+    "discovery_signals": null,
+    "content_freshness": null
   },
   {
     "post_id": "test_3",
     "platform": "twitter",
     "author": "Tech Trends",
     "content_preview": "The future of web development is happening now:\n\n\ud83d\ude80 Vercel v0 - AI-generated UI\n\ud83d\udca1 Cursor - AI pair programming\n\u26a1 Windsurf - AI code editor\n\ud83d\udd25 Replit Agent - autonomous coding\n\nWe're entering the \"natura",
-    "category": "General",
-    "subcategory": "Twitter",
-    "summary": "The future of web development is happening now:\n\n\ud83d\ude80 Vercel v0 - AI-generated UI\n\ud83d\udca1 Cursor - AI pair programming\n\u26a1 Windsurf - AI code editor\n\ud83d\udd25 Replit Agent - autonomous coding\n\nWe're entering the \"natura...",
+    "category": "TECH",
+    "subcategory": null,
+    "summary": null,
     "value_score": 6.0,
     "quality_score": 6.9,
     "is_rewrite_candidate": true,
-    "rewrite_angles": [
-      {
-        "persona": "technical",
-        "angle": "Technical breakdown of this content",
-        "hook": "Here's what you need to know from a technical perspective",
-        "key_points": [
-          "Main technical concept",
-          "Implementation details",
-          "Best practices"
-        ],
-        "target_audience": "Developers and engineers",
-        "estimated_engagement": "medium",
-        "tone": "technical",
-        "call_to_action": "Try implementing this in your next project",
-        "platform_fit": "twitter_thread"
-      },
-      {
-        "persona": "builder",
-        "angle": "How to apply this in your projects",
-        "hook": "Build something with this knowledge",
-        "key_points": [
-          "Practical application",
-          "Quick implementation",
-          "Real-world use case"
-        ],
-        "target_audience": "Makers and builders",
-        "estimated_engagement": "medium",
-        "tone": "action-oriented",
-        "call_to_action": "Ship this today",
-        "platform_fit": "short_tweet"
-      },
-      {
-        "persona": "learner",
-        "angle": "Understanding the fundamentals",
-        "hook": "Learn the basics step by step",
-        "key_points": [
-          "Core concept explained",
-          "Why it matters",
-          "How to get started"
-        ],
-        "target_audience": "Beginners",
-        "estimated_engagement": "medium",
-        "tone": "educational",
-        "call_to_action": "Practice this concept",
-        "platform_fit": "linkedin_post"
-      },
-      {
-        "persona": "trendsetter",
-        "angle": "Why this is relevant now",
-        "hook": "This is trending and here's why",
-        "key_points": [
-          "Current trend",
-          "Market momentum",
-          "Early adoption opportunity"
-        ],
-        "target_audience": "Innovators",
-        "estimated_engagement": "medium",
-        "tone": "excited",
-        "call_to_action": "Get ahead of this trend",
-        "platform_fit": "short_tweet"
-      },
-      {
-        "persona": "thought_leader",
-        "angle": "Strategic implications",
-        "hook": "What this means for the future",
-        "key_points": [
-          "Industry impact",
-          "Future trends",
-          "Strategic considerations"
-        ],
-        "target_audience": "Leaders and strategists",
-        "estimated_engagement": "medium",
-        "tone": "authoritative",
-        "call_to_action": "Prepare your strategy for this shift",
-        "platform_fit": "linkedin_post"
-      }
-    ],
-    "discovery_signals": {
-      "author_authority": "high",
-      "trend_relevance": "mainstream",
-      "viral_potential": 71,
-      "discussion_quality": "high",
-      "unique_perspective": "no"
-    },
-    "content_freshness": {
-      "publication_age": "0 hours",
-      "still_relevant": "yes",
-      "time_sensitivity": "evergreen"
-    }
+    "rewrite_angles": null,
+    "discovery_signals": null,
+    "content_freshness": null
   },
   {
     "post_id": "test_4",
     "platform": "threads",
     "author": "Code Teacher",
     "content_preview": "Quick tutorial: How to build a REST API in 10 minutes using FastAPI\n\n1. pip install fastapi uvicorn\n2. Create main.py\n3. Add @app.get(\"/\") decorator\n4. Run: uvicorn main:app\n\nThat's it! You have a pro",
-    "category": "General",
-    "subcategory": "Threads",
-    "summary": "Quick tutorial: How to build a REST API in 10 minutes using FastAPI\n\n1. pip install fastapi uvicorn\n2. Create main.py\n3. Add @app.get(\"/\") decorator\n4. Run: uvicorn main:app\n\nThat's it! You have a pro...",
+    "category": "TECH",
+    "subcategory": null,
+    "summary": null,
     "value_score": 4.0,
     "quality_score": 7.1,
     "is_rewrite_candidate": true,
-    "rewrite_angles": [
-      {
-        "persona": "technical",
-        "angle": "Technical breakdown of this content",
-        "hook": "Here's what you need to know from a technical perspective",
-        "key_points": [
-          "Main technical concept",
-          "Implementation details",
-          "Best practices"
-        ],
-        "target_audience": "Developers and engineers",
-        "estimated_engagement": "medium",
-        "tone": "technical",
-        "call_to_action": "Try implementing this in your next project",
-        "platform_fit": "twitter_thread"
-      },
-      {
-        "persona": "builder",
-        "angle": "How to apply this in your projects",
-        "hook": "Build something with this knowledge",
-        "key_points": [
-          "Practical application",
-          "Quick implementation",
-          "Real-world use case"
-        ],
-        "target_audience": "Makers and builders",
-        "estimated_engagement": "medium",
-        "tone": "action-oriented",
-        "call_to_action": "Ship this today",
-        "platform_fit": "short_tweet"
-      },
-      {
-        "persona": "learner",
-        "angle": "Understanding the fundamentals",
-        "hook": "Learn the basics step by step",
-        "key_points": [
-          "Core concept explained",
-          "Why it matters",
-          "How to get started"
-        ],
-        "target_audience": "Beginners",
-        "estimated_engagement": "medium",
-        "tone": "educational",
-        "call_to_action": "Practice this concept",
-        "platform_fit": "linkedin_post"
-      },
-      {
-        "persona": "trendsetter",
-        "angle": "Why this is relevant now",
-        "hook": "This is trending and here's why",
-        "key_points": [
-          "Current trend",
-          "Market momentum",
-          "Early adoption opportunity"
-        ],
-        "target_audience": "Innovators",
-        "estimated_engagement": "medium",
-        "tone": "excited",
-        "call_to_action": "Get ahead of this trend",
-        "platform_fit": "short_tweet"
-      },
-      {
-        "persona": "thought_leader",
-        "angle": "Strategic implications",
-        "hook": "What this means for the future",
-        "key_points": [
-          "Industry impact",
-          "Future trends",
-          "Strategic considerations"
-        ],
-        "target_audience": "Leaders and strategists",
-        "estimated_engagement": "medium",
-        "tone": "authoritative",
-        "call_to_action": "Prepare your strategy for this shift",
-        "platform_fit": "linkedin_post"
-      }
-    ],
-    "discovery_signals": {
-      "author_authority": "medium",
-      "trend_relevance": "mainstream",
-      "viral_potential": 12,
-      "discussion_quality": "medium",
-      "unique_perspective": "no"
-    },
-    "content_freshness": {
-      "publication_age": "0 hours",
-      "still_relevant": "yes",
-      "time_sensitivity": "evergreen"
-    }
+    "rewrite_angles": null,
+    "discovery_signals": null,
+    "content_freshness": null
   },
   {
     "post_id": "test_5",
     "platform": "twitter",
     "author": "AI News",
     "content_preview": "Breaking: OpenAI just announced GPT-5. Key improvements:\n\n- 10x larger context window (1M tokens)\n- Native multimodal (text, image, video, audio)\n- Built-in memory across conversations\n- 99.9% accurac",
-    "category": "General",
-    "subcategory": "Twitter",
-    "summary": "Breaking: OpenAI just announced GPT-5. Key improvements:\n\n- 10x larger context window (1M tokens)\n- Native multimodal (text, image, video, audio)\n- Built-in memory across conversations\n- 99.9% accurac...",
+    "category": "TECH",
+    "subcategory": null,
+    "summary": null,
     "value_score": 5.0,
     "quality_score": 5.8,
     "is_rewrite_candidate": true,
-    "rewrite_angles": [
-      {
-        "persona": "technical",
-        "angle": "Technical breakdown of this content",
-        "hook": "Here's what you need to know from a technical perspective",
-        "key_points": [
-          "Main technical concept",
-          "Implementation details",
-          "Best practices"
-        ],
-        "target_audience": "Developers and engineers",
-        "estimated_engagement": "medium",
-        "tone": "technical",
-        "call_to_action": "Try implementing this in your next project",
-        "platform_fit": "twitter_thread"
-      },
-      {
-        "persona": "builder",
-        "angle": "How to apply this in your projects",
-        "hook": "Build something with this knowledge",
-        "key_points": [
-          "Practical application",
-          "Quick implementation",
-          "Real-world use case"
-        ],
-        "target_audience": "Makers and builders",
-        "estimated_engagement": "medium",
-        "tone": "action-oriented",
-        "call_to_action": "Ship this today",
-        "platform_fit": "short_tweet"
-      },
-      {
-        "persona": "learner",
-        "angle": "Understanding the fundamentals",
-        "hook": "Learn the basics step by step",
-        "key_points": [
-          "Core concept explained",
-          "Why it matters",
-          "How to get started"
-        ],
-        "target_audience": "Beginners",
-        "estimated_engagement": "medium",
-        "tone": "educational",
-        "call_to_action": "Practice this concept",
-        "platform_fit": "linkedin_post"
-      },
-      {
-        "persona": "trendsetter",
-        "angle": "Why this is relevant now",
-        "hook": "This is trending and here's why",
-        "key_points": [
-          "Current trend",
-          "Market momentum",
-          "Early adoption opportunity"
-        ],
-        "target_audience": "Innovators",
-        "estimated_engagement": "medium",
-        "tone": "excited",
-        "call_to_action": "Get ahead of this trend",
-        "platform_fit": "short_tweet"
-      },
-      {
-        "persona": "thought_leader",
-        "angle": "Strategic implications",
-        "hook": "What this means for the future",
-        "key_points": [
-          "Industry impact",
-          "Future trends",
-          "Strategic considerations"
-        ],
-        "target_audience": "Leaders and strategists",
-        "estimated_engagement": "medium",
-        "tone": "authoritative",
-        "call_to_action": "Prepare your strategy for this shift",
-        "platform_fit": "linkedin_post"
-      }
-    ],
-    "discovery_signals": {
-      "author_authority": "high",
-      "trend_relevance": "emerging",
-      "viral_potential": 100,
-      "discussion_quality": "high",
-      "unique_perspective": "yes"
-    },
-    "content_freshness": {
-      "publication_age": "0 hours",
-      "still_relevant": "yes",
-      "time_sensitivity": "evergreen"
-    }
+    "rewrite_angles": null,
+    "discovery_signals": null,
+    "content_freshness": null
   }
 ]

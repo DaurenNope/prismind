@@ -1,52 +1,71 @@
-# Core dependencies
-streamlit==1.38.0
-python-dotenv==1.0.1
-requests==2.32.3
-praw==7.7.1
-playwright==1.46.0
-playwright-stealth==1.0.6
-pandas==2.2.2
-numpy==2.1.1
+aiohttp==3.11.2
+anthropic==0.35.0
 
-# Database
-supabase==2.9.0
+# Scheduling
+APScheduler==3.10.4
+
+# Async utilities
+asyncio-mqtt==0.16.1
 
 # Web scraping
 beautifulsoup4==4.12.3
-parsel==1.10.0
+
+# Development
+black==24.8.0
+dnspython==2.8.0
+
+# API
+fastapi==0.115.0
 feedparser==6.0.12
+# markitdown==0.1.3  # REMOVED - not needed
+
+# RSS Feed Collection
+feedparser==6.0.12
+flake8==7.1.1
+google-generativeai==0.8.0
+
+# Additional utilities
+httpx==0.27.0
+jmespath==1.0.1
+mypy==1.11.2
+numpy==2.1.1
 # selenium==4.24.0  # REMOVED - unused, using Playwright instead
 
 # AI and analysis
 openai==1.44.0
-anthropic==0.35.0
-google-generativeai==0.8.0
-
-# Utilities
-python-dateutil==2.9.0
-tqdm==4.66.5
+pandas==2.2.2
+parsel==1.10.0
+playwright==1.46.0
+playwright-stealth==1.0.6
+praw==7.7.1
+psutil==5.9.8
 pydantic==2.9.1
-python-telegram-bot==21.6
-vaderSentiment==3.3.2
-jmespath==1.0.1
-dnspython==2.8.0
 
 # Testing
 pytest==8.3.3
 pytest-asyncio==0.24.0
 
-# Development
-black==24.8.0
-flake8==7.1.1
-mypy==1.11.2
-# markitdown==0.1.3  # REMOVED - not needed
+# Utilities
+python-dateutil==2.9.0
+# Core dependencies
+python-dotenv==1.0.1
+python-telegram-bot==21.6
 
-# RSS Feed Collection
-feedparser==6.0.12
+# High-level architecture dependencies
+redis==5.2.0
+requests==2.32.3
 
-# Scheduling
-APScheduler==3.10.4
+# Semantic search
+sentence-transformers==2.2.2
 
-# Additional utilities
-httpx==0.27.0
-psutil==5.9.8
+# Rate limiting
+slowapi==0.1.9
+
+# Database
+supabase==2.9.0
+tqdm==4.66.5
+
+# Twitter API
+tweepy==4.14.0
+uvicorn[standard]==0.30.0
+vaderSentiment==3.3.2

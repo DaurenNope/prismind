@@ -6,15 +6,17 @@ This helps users understand what content works best for their voice/audience.
 """
 
 import os
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
+
 import google.generativeai as genai
 from dotenv import load_dotenv
+
 from src.services.new_database_manager import get_database_manager
 
 load_dotenv()
 
 # Configure Gemini
-gemini_key = os.getenv('GEMINI_API_KEY')
+gemini_key = os.getenv("GEMINI_API_KEY")
 if gemini_key:
     genai.configure(api_key=gemini_key)
 
@@ -23,7 +25,7 @@ class RewriteAngleSuggester:
     """Analyzes posts and suggests rewrite angles for profiles"""
 
     def __init__(self):
-        model_name = os.getenv('ANALYZER_GEMINI_MODEL', 'gemini-2.0-flash-exp')
+        model_name = os.getenv("ANALYZER_GEMINI_MODEL", "gemini-2.0-flash-exp")
         self.model = genai.GenerativeModel(model_name)
         self.db = get_database_manager()
 
@@ -32,7 +34,7 @@ class RewriteAngleSuggester:
         profile_description: str,
         target_audience: str,
         tone_tags: List[str],
-        sample_size: int = 20
+        sample_size: int = 20,
     ) -> Dict[str, Any]:
         """
         Analyze recent posts and suggest rewrite angles for a profile.
@@ -58,17 +60,12 @@ class RewriteAngleSuggester:
         if not posts:
             # No posts yet - generate generic best practice angles
             return await self._generate_generic_angles(
-                profile_description,
-                target_audience,
-                tone_tags
+                profile_description, target_audience, tone_tags
             )
 
         # Analyze posts and suggest angles
         analysis = await self._analyze_posts_for_angles(
-            posts,
-            profile_description,
-            target_audience,
-            tone_tags
+            posts, profile_description, target_audience, tone_tags
         )
 
         return analysis
@@ -86,32 +83,33 @@ class RewriteAngleSuggester:
         quality_posts = []
         for post in posts:
             # Skip low quality
-            if not post.get('content'):
+            if not post.get("content"):
                 continue
 
             # Prefer posts with engagement
-            engagement = post.get('engagement_score', 0)
+            engagement = post.get("engagement_score", 0)
 
             # Prefer analyzed posts
-            has_analysis = bool(post.get('ai_summary') or post.get('analysis_summary'))
+            has_analysis = bool(post.get("ai_summary") or post.get("analysis_summary"))
 
-            quality_posts.append({
-                'id': post.get('id'),
-                'content': post.get('content', '')[:500],  # Truncate long posts
-                'platform': post.get('platform'),
-                'author': post.get('author'),
-                'ai_summary': post.get('ai_summary', ''),
-                'category': post.get('category', ''),
-                'topics': post.get('topics', []),
-                'engagement': engagement,
-                'has_analysis': has_analysis,
-                'url': post.get('url', '')
-            })
+            quality_posts.append(
+                {
+                    "id": post.get("id"),
+                    "content": post.get("content", "")[:500],  # Truncate long posts
+                    "platform": post.get("platform"),
+                    "author": post.get("author"),
+                    "ai_summary": post.get("ai_summary", ""),
+                    "category": post.get("category", ""),
+                    "topics": post.get("topics", []),
+                    "engagement": engagement,
+                    "has_analysis": has_analysis,
+                    "url": post.get("url", ""),
+                }
+            )
 
         # Sort by quality indicators
         quality_posts.sort(
-            key=lambda p: (p['has_analysis'], p['engagement']),
-            reverse=True
+            key=lambda p: (p["has_analysis"], p["engagement"]), reverse=True
         )
 
         return quality_posts[:limit]
@@ -124,44 +122,50 @@ class RewriteAngleSuggester:
         from collections import Counter
 
         # Analyze categories
-        categories = [p.get('category', 'uncategorized') for p in posts if p.get('category')]
+        categories = [
+            p.get("category", "uncategorized") for p in posts if p.get("category")
+        ]
         category_counts = Counter(categories)
 
         # Analyze topics
         all_topics = []
         for p in posts:
-            topics = p.get('topics', [])
+            topics = p.get("topics", [])
             if isinstance(topics, list):
                 all_topics.extend(topics)
         topic_counts = Counter(all_topics)
 
         # Analyze platforms
-        platforms = [p.get('platform', 'unknown') for p in posts]
+        platforms = [p.get("platform", "unknown") for p in posts]
         platform_counts = Counter(platforms)
 
         # Analyze engagement patterns
-        posts_with_engagement = [p for p in posts if p.get('engagement', 0) > 0]
-        avg_engagement = sum(p.get('engagement', 0) for p in posts_with_engagement) / max(len(posts_with_engagement), 1)
+        posts_with_engagement = [p for p in posts if p.get("engagement", 0) > 0]
+        avg_engagement = sum(
+            p.get("engagement", 0) for p in posts_with_engagement
+        ) / max(len(posts_with_engagement), 1)
 
         # Find high performers
         high_performers = sorted(
-            [p for p in posts if p.get('engagement', 0) > avg_engagement],
-            key=lambda x: x.get('engagement', 0),
-            reverse=True
+            [p for p in posts if p.get("engagement", 0) > avg_engagement],
+            key=lambda x: x.get("engagement", 0),
+            reverse=True,
         )[:5]
 
-        high_performer_categories = [p.get('category', '') for p in high_performers]
+        high_performer_categories = [p.get("category", "") for p in high_performers]
         high_performer_topics = []
         for p in high_performers:
-            topics = p.get('topics', [])
+            topics = p.get("topics", [])
             if isinstance(topics, list):
                 high_performer_topics.extend(topics)
 
         # Analyze content characteristics
-        avg_length = sum(len(p.get('content', '')) for p in posts) / max(len(posts), 1)
-        has_questions = sum(1 for p in posts if '?' in p.get('content', ''))
-        has_data = sum(1 for p in posts if any(char.isdigit() for char in p.get('content', '')))
-        has_links = sum(1 for p in posts if 'http' in p.get('content', ''))
+        avg_length = sum(len(p.get("content", "")) for p in posts) / max(len(posts), 1)
+        has_questions = sum(1 for p in posts if "?" in p.get("content", ""))
+        has_data = sum(
+            1 for p in posts if any(char.isdigit() for char in p.get("content", ""))
+        )
+        has_links = sum(1 for p in posts if "http" in p.get("content", ""))
 
         # Build summary
         summary = f"""Analyzed {len(posts)} posts:
@@ -178,19 +182,21 @@ class RewriteAngleSuggester:
             engagement_insight = f"High engagement on: {', '.join([t[0] for t in top_performing_topics])}"
 
         return {
-            'summary': summary,
-            'top_categories': [cat for cat, _ in category_counts.most_common(5)],
-            'top_topics': [topic for topic, _ in topic_counts.most_common(10)],
-            'platform_breakdown': ', '.join([f"{plat}: {count}" for plat, count in platform_counts.most_common()]),
-            'engagement_insight': engagement_insight,
-            'avg_engagement': avg_engagement,
-            'high_performers': high_performers,
-            'content_characteristics': {
-                'avg_length': avg_length,
-                'question_rate': has_questions/max(len(posts),1),
-                'data_rate': has_data/max(len(posts),1),
-                'link_rate': has_links/max(len(posts),1)
-            }
+            "summary": summary,
+            "top_categories": [cat for cat, _ in category_counts.most_common(5)],
+            "top_topics": [topic for topic, _ in topic_counts.most_common(10)],
+            "platform_breakdown": ", ".join(
+                [f"{plat}: {count}" for plat, count in platform_counts.most_common()]
+            ),
+            "engagement_insight": engagement_insight,
+            "avg_engagement": avg_engagement,
+            "high_performers": high_performers,
+            "content_characteristics": {
+                "avg_length": avg_length,
+                "question_rate": has_questions / max(len(posts), 1),
+                "data_rate": has_data / max(len(posts), 1),
+                "link_rate": has_links / max(len(posts), 1),
+            },
         }
 
     async def _analyze_posts_for_angles(
@@ -198,7 +204,7 @@ class RewriteAngleSuggester:
         posts: List[Dict],
         profile_description: str,
         target_audience: str,
-        tone_tags: List[str]
+        tone_tags: List[str],
     ) -> Dict[str, Any]:
         """Use AI to analyze posts and suggest rewrite angles"""
 
@@ -206,10 +212,12 @@ class RewriteAngleSuggester:
         stats = self._analyze_post_statistics(posts)
 
         # Build detailed analysis prompt with real data patterns
-        posts_summary = "\n\n".join([
-            f"Post {i+1} ({p['platform']}):\n{p['content'][:300]}\nEngagement: {p.get('engagement', 'N/A')}\nCategory: {p.get('category', 'N/A')}\nTopics: {', '.join(p.get('topics', [])[:5])}"
-            for i, p in enumerate(posts[:15])  # Limit to avoid token overflow
-        ])
+        posts_summary = "\n\n".join(
+            [
+                f"Post {i+1} ({p['platform']}):\n{p['content'][:300]}\nEngagement: {p.get('engagement', 'N/A')}\nCategory: {p.get('category', 'N/A')}\nTopics: {', '.join(p.get('topics', [])[:5])}"
+                for i, p in enumerate(posts[:15])  # Limit to avoid token overflow
+            ]
+        )
 
         prompt = f"""Analyze these REAL social media posts and suggest SPECIFIC rewrite angles based on actual patterns.
 
@@ -285,15 +293,16 @@ Return ONLY a JSON object:
                 json_str = response_text
 
             import json
+
             result = json.loads(json_str)
 
             # Add post references
-            result['analyzed_posts_count'] = len(posts)
-            result['sample_posts'] = [
+            result["analyzed_posts_count"] = len(posts)
+            result["sample_posts"] = [
                 {
-                    'platform': p['platform'],
-                    'content_preview': p['content'][:100],
-                    'url': p.get('url', '')
+                    "platform": p["platform"],
+                    "content_preview": p["content"][:100],
+                    "url": p.get("url", ""),
                 }
                 for p in posts[:5]
             ]
@@ -301,18 +310,16 @@ Return ONLY a JSON object:
             return result
 
         except Exception as e:
+            logger.error(f"Error: {e}")
             return {
-                'error': f'Analysis failed: {str(e)}',
-                'recommended_angles': [],
-                'content_gaps': [],
-                'voice_suggestions': []
+                "error": f"Analysis failed: {str(e)}",
+                "recommended_angles": [],
+                "content_gaps": [],
+                "voice_suggestions": [],
             }
 
     async def suggest_angle_for_post(
-        self,
-        post: Dict,
-        profile_voice: str,
-        profile_topics: List[str]
+        self, post: Dict, profile_voice: str, profile_topics: List[str]
     ) -> Dict[str, Any]:
         """
         Suggest the best rewrite angle for a specific post.
@@ -366,21 +373,20 @@ Return ONLY a JSON object:
                 json_str = response_text
 
             import json
+
             return json.loads(json_str)
 
         except Exception as e:
+            logger.error(f"Error: {e}")
             return {
-                'suggested_angle': 'General Commentary',
-                'reasoning': f'Analysis failed: {str(e)}',
-                'approach': 'Provide your perspective on this topic',
-                'confidence': 0.5
+                "suggested_angle": "General Commentary",
+                "reasoning": f"Analysis failed: {str(e)}",
+                "approach": "Provide your perspective on this topic",
+                "confidence": 0.5,
             }
 
     async def compare_rewrite_angles(
-        self,
-        post: Dict,
-        angles: List[str],
-        profile_voice: str
+        self, post: Dict, angles: List[str], profile_voice: str
     ) -> Dict[str, float]:
         """
         Compare multiple rewrite angles for a post and score them.
@@ -424,17 +430,16 @@ Return ONLY a JSON object:
                 json_str = response_text
 
             import json
+
             return json.loads(json_str)
 
         except Exception as e:
+            logger.error(f"Error: {e}")
             # Return equal scores if analysis fails
             return {angle: 0.5 for angle in angles}
 
     async def _generate_generic_angles(
-        self,
-        profile_description: str,
-        target_audience: str,
-        tone_tags: List[str]
+        self, profile_description: str, target_audience: str, tone_tags: List[str]
     ) -> Dict[str, Any]:
         """
         Generate generic best practice angles when no posts are available.
@@ -502,19 +507,21 @@ Return ONLY a JSON object:
                 json_str = response_text
 
             import json
+
             result = json.loads(json_str)
 
             # Mark as generic
-            result['no_posts_available'] = True
-            result['content_gaps'] = result.get('content_strategy', [])
+            result["no_posts_available"] = True
+            result["content_gaps"] = result.get("content_strategy", [])
 
             return result
 
         except Exception as e:
+            logger.error(f"Error: {e}")
             return {
-                'error': f'Could not generate angles: {str(e)}',
-                'recommended_angles': [],
-                'content_gaps': [],
-                'voice_suggestions': [],
-                'no_posts_available': True
+                "error": f"Could not generate angles: {str(e)}",
+                "recommended_angles": [],
+                "content_gaps": [],
+                "voice_suggestions": [],
+                "no_posts_available": True,
             }

@@ -1,4 +1,4 @@
-# Streamlit UI - Fixed and Running ✅
+# Svelte UI - Fixed and Running ✅
 
 ## Issue Fixed
 
@@ -30,7 +30,7 @@ if auto_refresh:  # ❌ auto_refresh was never defined
 
 ## Current Status
 
-✅ **Streamlit UI is now running** on http://localhost:8501
+✅ **Svelte UI is now running** on http://localhost:8501
 ✅ **No errors** - the undefined variable issue is resolved
 ✅ **Full content display** - all 26 Threads posts showing complete content
 
@@ -58,7 +58,7 @@ Check any Threads post - you should see:
 
 **Before (truncated)**:
 ```
-Lingma как Cursor только бесплатный ✅ 
+Lingma как Cursor только бесплатный ✅
 - Работает на Qwen3-Coder👨‍💻
 - Бонусом Qwen3-Max и Qwen3-Thinking🧠
 
@@ -68,18 +68,18 @@ Lingma как Cursor только бесплатный ✅
 
 **Now (full content)**:
 ```
-Lingma как Cursor только бесплатный ✅ 
+Lingma как Cursor только бесплатный ✅
 - Работает на Qwen3-Coder👨‍💻
 - Бонусом Qwen3-Max и Qwen3-Thinking🧠
 
-Платного тарифа на AI нет 🤷‍♂️ для обычного пользователя 
-безлимит как у DeepSeek. 
+Платного тарифа на AI нет 🤷‍♂️ для обычного пользователя
+безлимит как у DeepSeek.
 
-Компания заточена на бизнес и продает IDE с доп. 
-безопасностью и менеджерскими фичами по подписке. 
+Компания заточена на бизнес и продает IDE с доп.
+безопасностью и менеджерскими фичами по подписке.
 
 Для использования нужно зарегистрироваться в Alibaba Cloud
-(это Китай детка) 
+(это Китай детка)
 
 Ссылку кидать?
 [385 characters - FULL CONTENT ✅]
@@ -91,7 +91,7 @@ Lingma как Cursor только бесплатный ✅
 ✅ **Validation**: Blocks bad/broken posts
 ✅ **Database**: 26 posts with full content
 ✅ **Supabase**: 26 posts synced with full content
-✅ **Streamlit UI**: Running without errors, displaying full content
+✅ **Svelte UI**: Running without errors, displaying full content
 ✅ **Telegram Bot**: Ready to use (uses same database)
 
 ## If You See Any Other Errors
@@ -100,13 +100,13 @@ If you encounter any other issues:
 
 1. **Check the logs**:
    ```bash
-   tail -f /tmp/streamlit.log
+   tail -f /tmp/svelte.log
    ```
 
-2. **Restart Streamlit**:
+2. **Restart Svelte**:
    ```bash
-   pkill -f "streamlit run"
-   python3 -m streamlit run src/web/app.py --server.port 8501
+   pkill -f "svelte run"
+   python3 -m svelte run src/web/app.py --server.port 8501
    ```
 
 3. **Clear cache** (if pages look weird):
@@ -115,6 +115,6 @@ If you encounter any other issues:
 
 ## Summary
 
-The `auto_refresh` error is fixed, Streamlit is running cleanly, and all your Threads posts are now showing **full content without truncation**! 🎉
+The `auto_refresh` error is fixed, Svelte is running cleanly, and all your Threads posts are now showing **full content without truncation**! 🎉
 
 Just refresh http://localhost:8501 and enjoy the complete content!

@@ -1,0 +1,467 @@
+[
+  {
+    "post_id": "DOIwU3cE1MM",
+    "platform": "threads",
+    "original_content": "harsh.times \u0412\u0438\u0440\u0443\u0441\u043d\u044b\u0439 \u043f\u043e\u0442\u0435\u043d\u0446\u0438\u0430\u043b, \u043a\u043e\u0442\u043e\u0440\u044b\u0439 \u0437\u0430\u043b\u043e\u0436\u0438\u043b\u0438 \u043d\u043e\u0432\u0443\u044e \u0444\u0438\u0447\u0443 \u0441 \u0440\u0435\u043a\u0430\u043c\u0438 \u0432 notebookLM \u043f\u0440\u043e\u0441\u0442\u043e \u043d\u0435\u0432\u0435\u0440\u043e\u044f\u0442\u0435\u043d. \u0414\u0435\u043b\u0430\u0435\u0448\u044c \u043d\u043e\u0443\u0442\u0431\u0443\u043a, \u0448\u0430\u0440\u0438\u0448\u044c \u0441 \u0430\u0443\u0434\u0438\u0442\u043e\u0440\u0438\u0435\u0439, \u043d\u0430\u0433\u043e\u043d\u044f\u0435\u0448\u044c \u0442\u0440\u0430\u0444\u0438\u043a, \u0438 \u0440\u0430\u0434\u043e\u0441\u0442\u043d\u043e \u043f\u0435\u0440\u0435\u043b\u0438\u0432\u0430\u0435\u0448\u044c\u0441\u044f \u0432 \u043d\u0443\u0436\u043d\u044b\u0435 \u0438\u0441\u0442\u043e\u0447\u043d\u0438\u043a\u0438",
+    "engagement": {
+      "likes": 0,
+      "replies": 0,
+      "retweets": 0
+    },
+    "analysis": {
+      "value_score": 3.0,
+      "viral_potential": 0,
+      "category": "General"
+    },
+    "matched_personas": [
+      {
+        "persona": "builder",
+        "score": 20.0,
+        "reason": "complexity match (Intermediate)"
+      },
+      {
+        "persona": "learner",
+        "score": 20.0,
+        "reason": "complexity match (Intermediate)"
+      }
+    ],
+    "rewrites": [
+      {
+        "persona": "builder",
+        "match_score": 20.0,
+        "match_reason": "complexity match (Intermediate)",
+        "rewritten": {
+          "persona": "builder",
+          "persona_name": "Startup Builder",
+          "persona_emoji": "\ud83d\ude80",
+          "platform": "twitter",
+          "platform_fit": "short_tweet",
+          "original_post_id": "DOIwU3cE1MM",
+          "original_platform": "threads",
+          "original_url": "",
+          "rewritten_content": "\ud83d\ude80Build something viral with new features! Integrate interactive \"notebook rivers\" to engage your audience, spike traffic, and seamlessly direct it where you need. Ship this today and watch your project soar! \ud83d\ude80 #StartupBuilder #ViralContent",
+          "angle_used": "How to apply this in your projects",
+          "hook_used": "Build something with this knowledge",
+          "tone_used": "action-oriented",
+          "call_to_action": "Ship this today",
+          "key_points_covered": [
+            "Practical application",
+            "Quick implementation",
+            "Real-world use case"
+          ],
+          "viral_potential": 0,
+          "author_authority": "low",
+          "trend_relevance": "mainstream",
+          "time_sensitivity": "evergreen",
+          "original_value_score": 3.0,
+          "original_quality_score": 3.0,
+          "timestamp": "2025-11-02T22:34:25.462941"
+        }
+      },
+      {
+        "persona": "learner",
+        "match_score": 20.0,
+        "match_reason": "complexity match (Intermediate)",
+        "rewritten": {
+          "persona": "learner",
+          "persona_name": "Learning Guide",
+          "persona_emoji": "\ud83d\udcda",
+          "platform": "linkedin",
+          "platform_fit": "linkedin_post",
+          "original_post_id": "DOIwU3cE1MM",
+          "original_platform": "threads",
+          "original_url": "",
+          "rewritten_content": "\ud83d\udcda Understanding the Fundamentals: Leveraging Viral Potential in Your NotebookLM Projects \ud83d\udcda\n\nHello LinkedIn community! \n\nAre you just getting started with NotebookLM projects? Understanding viral potential is crucial to making your ideas spread like wildfire. Let's break it down step by step:\n\n1. **Core Concept Explained**: When you introduce a new feature, such as \"rivers,\" in NotebookLM, you're essentially enhancing user engagement and interaction within the platform. This feature can significantly boost the content\u2019s reach and engagement.\n\n2. **Why It Matters**: By incorporating viral features, you not only increase your visibility but also build a community around your work. Engaged users are more likely to share and spread the word organically, driving organic traffic to your projects.\n\n3. **How to Get Started**:\n   - **Step 1**: Identify what makes your content unique or valuable.\n   - **Step 2**: Integrate interactive elements like \"rivers\" that encourage user engagement.\n   - **Step 3**: Share your creations with a targeted audience and monitor their reactions.\n\nNow, it\u2019s time to practice this concept! Experiment with different features and see how they resonate with your audience. Happy creating!\n\n#NotebookLM #ViralContent #EngagementBoost \ud83d\udcc8\n\n[Call-to-Action: Share your insights on how you\u2019ve leveraged viral potential in your projects!]",
+          "angle_used": "Understanding the fundamentals",
+          "hook_used": "Learn the basics step by step",
+          "tone_used": "educational",
+          "call_to_action": "Practice this concept",
+          "key_points_covered": [
+            "Core concept explained",
+            "Why it matters",
+            "How to get started"
+          ],
+          "viral_potential": 0,
+          "author_authority": "low",
+          "trend_relevance": "mainstream",
+          "time_sensitivity": "evergreen",
+          "original_value_score": 3.0,
+          "original_quality_score": 3.0,
+          "timestamp": "2025-11-02T22:34:44.858306"
+        }
+      }
+    ]
+  },
+  {
+    "post_id": "DMiz0C2A1Ft",
+    "platform": "threads",
+    "original_content": "\u0417\u0430\u0446\u0435\u043d\u0438\u0442\u0435 \u0445\u0435-\u0445\u0435 \u0421\u043a\u043e\u0440\u043c\u0438\u043b \u0430\u0433\u0435\u043d\u0442\u0443 Chat GPT \u0437\u043d\u0430\u0447\u0438\u0442 \u0441\u0432\u043e\u0435 \u0440\u0435\u0437\u044e\u043c\u0435, \u0430\u0432\u0442\u043e\u0440\u0438\u0437\u043e\u0432\u0430\u043b\u0441\u044f \u043d\u0430 hh, \u0442\u0435\u043f\u0435\u0440\u044c \u043e\u043d \u0437\u0430\u0445\u043e\u0434\u0438\u0442 \u0438 \u0434\u0435\u043b\u0430\u0435\u0442 \u0430\u043d\u0430\u043b\u0438\u0437 \u0432\u0430\u043a\u0430\u043d\u0441\u0438\u0438, \u0435\u0441\u043b\u0438 \u043f\u043e\u0434\u0445\u043e\u0434\u0438\u0442 \u043f\u0438\u0448\u0435\u0442 \u0441\u043e\u043f\u0440\u043e\u0432\u043e\u0434 \u0438 \u043e\u0442\u043a\u043b\u0438\u043a\u0430\u0435\u0442\u0441\u044f \u0421\u043e\u043f\u0440\u043e\u0432\u043e\u0434 \u0437\u043d\u0430\u0447\u0438\u0442 \u043f\u0438\u0448\u0435\u0442 \u043e\u0442 \u0438\u043c\u0435\u043d\u0438 \u0418\u0418",
+    "engagement": {
+      "likes": 0,
+      "replies": 0,
+      "retweets": 0
+    },
+    "analysis": {
+      "value_score": 3.0,
+      "viral_potential": 0,
+      "category": "General"
+    },
+    "matched_personas": [
+      {
+        "persona": "builder",
+        "score": 20.0,
+        "reason": "complexity match (Intermediate)"
+      },
+      {
+        "persona": "learner",
+        "score": 20.0,
+        "reason": "complexity match (Intermediate)"
+      }
+    ],
+    "rewrites": [
+      {
+        "persona": "builder",
+        "match_score": 20.0,
+        "match_reason": "complexity match (Intermediate)",
+        "rewritten": {
+          "persona": "builder",
+          "persona_name": "Startup Builder",
+          "persona_emoji": "\ud83d\ude80",
+          "platform": "twitter",
+          "platform_fit": "short_tweet",
+          "original_post_id": "DMiz0C2A1Ft",
+          "original_platform": "threads",
+          "original_url": "",
+          "rewritten_content": "\ud83d\ude80 Build an AI-powered job seeker tool today! Skim your resume to Chat GPT, log in to HH, let it analyze jobs, and get customized applications when matches are found. Practical application + quick implementation = instant ROI. Ship this idea now! \ud83d\udca1 #StartupBuilder \ud83d\ude80",
+          "angle_used": "How to apply this in your projects",
+          "hook_used": "Build something with this knowledge",
+          "tone_used": "action-oriented",
+          "call_to_action": "Ship this today",
+          "key_points_covered": [
+            "Practical application",
+            "Quick implementation",
+            "Real-world use case"
+          ],
+          "viral_potential": 0,
+          "author_authority": "low",
+          "trend_relevance": "mainstream",
+          "time_sensitivity": "evergreen",
+          "original_value_score": 3.0,
+          "original_quality_score": 3.5,
+          "timestamp": "2025-11-02T22:35:49.365289"
+        }
+      },
+      {
+        "persona": "learner",
+        "match_score": 20.0,
+        "match_reason": "complexity match (Intermediate)",
+        "rewritten": {
+          "persona": "learner",
+          "persona_name": "Learning Guide",
+          "persona_emoji": "\ud83d\udcda",
+          "platform": "linkedin",
+          "platform_fit": "linkedin_post",
+          "original_post_id": "DMiz0C2A1Ft",
+          "original_platform": "threads",
+          "original_url": "",
+          "rewritten_content": "\ud83d\udcda Understanding the Fundamentals: Navigating AI in Your Job Search \ud83d\udcda\n\nAre you curious about how artificial intelligence can assist in your job search? Let\u2019s break down the basics step by step.\n\n**Core Concept Explained:**\nImagine sending your resume to an AI agent like Chat GPT, which then logs into job portals such as HeadHunter (hh). This AI analyzes job listings and crafts tailored responses when it finds suitable positions. It can even write cover letters in your name!\n\n**Why It Matters:**\nUnderstanding this concept is crucial because it showcases the power of AI in automating parts of your job search process, potentially increasing your visibility to potential employers.\n\n**How to Get Started:**\n1. **Create a Strong Profile:** Ensure your resume and online presence are up-to-date.\n2. **Set Up an AI Agent:** Use tools like Chat GPT or similar services to handle initial outreach.\n3. **Monitor Responses:** Keep an eye on the communications generated by the AI to refine its approach.\n\n**Practice This Concept:**\nExperiment with these tools in a controlled environment to see how they can benefit your job search strategy. It\u2019s not just about understanding, but also practical application that will make all the difference!\n\nEmbrace this new tool and start optimizing your job search today! \ud83d\ude80",
+          "angle_used": "Understanding the fundamentals",
+          "hook_used": "Learn the basics step by step",
+          "tone_used": "educational",
+          "call_to_action": "Practice this concept",
+          "key_points_covered": [
+            "Core concept explained",
+            "Why it matters",
+            "How to get started"
+          ],
+          "viral_potential": 0,
+          "author_authority": "low",
+          "trend_relevance": "mainstream",
+          "time_sensitivity": "evergreen",
+          "original_value_score": 3.0,
+          "original_quality_score": 3.5,
+          "timestamp": "2025-11-02T22:36:33.704878"
+        }
+      }
+    ]
+  },
+  {
+    "post_id": "test_1762058771",
+    "platform": "test",
+    "original_content": "Testing that RLS policies now allow inserts",
+    "engagement": {
+      "likes": 0,
+      "replies": 0,
+      "retweets": 0
+    },
+    "analysis": {
+      "value_score": 3.0,
+      "viral_potential": 0,
+      "category": "General"
+    },
+    "matched_personas": [
+      {
+        "persona": "builder",
+        "score": 20.0,
+        "reason": "complexity match (Intermediate)"
+      },
+      {
+        "persona": "learner",
+        "score": 20.0,
+        "reason": "complexity match (Intermediate)"
+      }
+    ],
+    "rewrites": [
+      {
+        "persona": "builder",
+        "match_score": 20.0,
+        "match_reason": "complexity match (Intermediate)",
+        "rewritten": {
+          "persona": "builder",
+          "persona_name": "Startup Builder",
+          "persona_emoji": "\ud83d\ude80",
+          "platform": "twitter",
+          "platform_fit": "short_tweet",
+          "original_post_id": "test_1762058771",
+          "original_platform": "test",
+          "original_url": "",
+          "rewritten_content": "\ud83d\ude80 Boost your project with Real-Life Security Policies! Easily implement inserts and secure your data like a pro. Practical, quick wins for builders today. Ship this knowledge into your projects now! \ud83d\ude80Ship this today! #BuildSmarter #DataSecurity",
+          "angle_used": "How to apply this in your projects",
+          "hook_used": "Build something with this knowledge",
+          "tone_used": "action-oriented",
+          "call_to_action": "Ship this today",
+          "key_points_covered": [
+            "Practical application",
+            "Quick implementation",
+            "Real-world use case"
+          ],
+          "viral_potential": 0,
+          "author_authority": "low",
+          "trend_relevance": "mainstream",
+          "time_sensitivity": "evergreen",
+          "original_value_score": 3.0,
+          "original_quality_score": 0.5,
+          "timestamp": "2025-11-02T22:37:12.236632"
+        }
+      },
+      {
+        "persona": "learner",
+        "match_score": 20.0,
+        "match_reason": "complexity match (Intermediate)",
+        "rewritten": {
+          "persona": "learner",
+          "persona_name": "Learning Guide",
+          "persona_emoji": "\ud83d\udcda",
+          "platform": "linkedin",
+          "platform_fit": "linkedin_post",
+          "original_post_id": "test_1762058771",
+          "original_platform": "test",
+          "original_url": "",
+          "rewritten_content": "\ud83d\udcda Understanding Role-Based Row Level Security (RLS) Policies for Inserts: A Beginner's Guide \ud83d\udcda\n\nAre you new to database security and wondering how RLS policies can help with secure data management? Let\u2019s break down the basics together.\n\n### Core Concept Explained\nRole-Based Row Level Security (RLS) is a powerful feature that allows you to apply fine-grained access control at the row level. This means you can define which users or roles are allowed to see specific rows in your database based on their role. When it comes to inserts, RLS policies ensure that new records are only added according to these defined rules.\n\n### Why It Matters\nIn today\u2019s data-driven world, ensuring that sensitive information is protected while allowing necessary access is crucial. By leveraging RLS for inserts, you can maintain strict control over who can add data to your tables, thereby enhancing the overall security of your database environment.\n\n### How to Get Started\n1. **Define Your Roles**: First, identify and create roles based on user responsibilities.\n2. **Create RLS Policies**: Define the rules that specify which rows a role can insert into. This is typically done using SQL policies in your database management system.\n3. **Test the Policies**: Insert sample data to see if it adheres to the defined rules.\n\n### Practice This Concept\nNow that you understand the basics, try setting up RLS policies for inserts on one of your own projects or a test environment. This hands-on experience will solidify your knowledge and help you apply these concepts in real-world scenarios.\n\n\ud83d\udca1 Ready to dive deeper? Start by experimenting with small-scale implementations before scaling up. Practice makes perfect!\n\n#DatabaseSecurity #RLS #DataManagement",
+          "angle_used": "Understanding the fundamentals",
+          "hook_used": "Learn the basics step by step",
+          "tone_used": "educational",
+          "call_to_action": "Practice this concept",
+          "key_points_covered": [
+            "Core concept explained",
+            "Why it matters",
+            "How to get started"
+          ],
+          "viral_potential": 0,
+          "author_authority": "low",
+          "trend_relevance": "mainstream",
+          "time_sensitivity": "evergreen",
+          "original_value_score": 3.0,
+          "original_quality_score": 0.5,
+          "timestamp": "2025-11-02T22:37:55.385361"
+        }
+      }
+    ]
+  },
+  {
+    "post_id": "DMVYixpINz_",
+    "platform": "threads",
+    "original_content": "$10.000 \u0431\u0443\u043a\u0432\u0430\u043b\u044c\u043d\u043e \u0437\u0430 \u043b\u0435\u0442\u043e \u043d\u0430 YouTube (\u0440\u0435\u0430\u043b\u044c\u043d\u043e \u043f\u0440\u043e\u0441\u0442\u043e)\n\n 1. ChatGPT \u2014 \u043f\u0438\u0448\u0435\u0448\u044c \u0441\u0446\u0435\u043d\u0430\u0440\u0438\u0438 \u0434\u043b\u044f \u0444\u043e\u0440\u043c\u0430\u0442\u043e\u0432 \u00ab\u0442\u043e\u043f-5\u00bb, \u00ab\u0444\u0430\u043a\u0442\u044b\u00bb, \u00ab\u043d\u0435\u043e\u0447\u0435\u0432\u0438\u0434\u043d\u044b\u0435 \u043f\u043e\u0434\u0431\u043e\u0440\u043a\u0438\u00bb\n 2. Pictory ai \u2014 \u0441\u043e\u0431\u0438\u0440\u0430\u0435\u0448\u044c \u0432\u0438\u0434\u0435\u043e \u0438\u0437 \u0442\u0435\u043a\u0441\u0442\u0430 \u0437\u0430 \u043f\u0430\u0440\u0443 \u043c\u0438\u043d\u0443\u0442\n 3. ",
+    "engagement": {
+      "likes": 0,
+      "replies": 0,
+      "retweets": 0
+    },
+    "analysis": {
+      "value_score": 3.0,
+      "viral_potential": 0,
+      "category": "General"
+    },
+    "matched_personas": [
+      {
+        "persona": "builder",
+        "score": 20.0,
+        "reason": "complexity match (Intermediate)"
+      },
+      {
+        "persona": "learner",
+        "score": 20.0,
+        "reason": "complexity match (Intermediate)"
+      }
+    ],
+    "rewrites": [
+      {
+        "persona": "builder",
+        "match_score": 20.0,
+        "match_reason": "complexity match (Intermediate)",
+        "rewritten": {
+          "persona": "builder",
+          "persona_name": "Startup Builder",
+          "persona_emoji": "\ud83d\ude80",
+          "platform": "twitter",
+          "platform_fit": "short_tweet",
+          "original_post_id": "DMVYixpINz_",
+          "original_platform": "threads",
+          "original_url": "",
+          "rewritten_content": "\ud83d\ude80Build something today with AI tools! For just $10K, you can take your YouTube game to the next level this summer:\n\n1\ufe0f\u20e3 ChatGPT: Craft engaging \"top-5\", \"facts\", and \"hidden gems\" scripts in no time.\n2\ufe0f\u20e3 Pictory AI: Turn text into videos effortlessly within minutes.\n\nQuick wins, real results\u2014ship it today! \ud83d\udca1\ud83d\ude80\n\n#StartupBuilder #AIForMakers #YouTubeSuccess",
+          "angle_used": "How to apply this in your projects",
+          "hook_used": "Build something with this knowledge",
+          "tone_used": "action-oriented",
+          "call_to_action": "Ship this today",
+          "key_points_covered": [
+            "Practical application",
+            "Quick implementation",
+            "Real-world use case"
+          ],
+          "viral_potential": 0,
+          "author_authority": "low",
+          "trend_relevance": "mainstream",
+          "time_sensitivity": "evergreen",
+          "original_value_score": 3.0,
+          "original_quality_score": 4.3,
+          "timestamp": "2025-11-02T22:38:39.198886"
+        }
+      },
+      {
+        "persona": "learner",
+        "match_score": 20.0,
+        "match_reason": "complexity match (Intermediate)",
+        "rewritten": {
+          "persona": "learner",
+          "persona_name": "Learning Guide",
+          "persona_emoji": "\ud83d\udcda",
+          "platform": "linkedin",
+          "platform_fit": "linkedin_post",
+          "original_post_id": "DMVYixpINz_",
+          "original_platform": "threads",
+          "original_url": "",
+          "rewritten_content": "\ud83d\udcda Understanding the Fundamentals of Creating Engaging YouTube Content\n\nAre you just starting your journey on YouTube? \ud83c\udfac Dive into the basics with us to create content that resonates! \n\n**Core Concept Explained:** \nYouTube is a vast platform where creators share everything from top lists, factual insights, and intriguing collections. Tools like ChatGPT can help you craft compelling scripts for these formats, making your videos more engaging.\n\n**Why It Matters:**\nIn today's digital age, understanding how to create captivating content is crucial. Whether it\u2019s a \"top-5\" list or an \"unusual facts\" segment, knowing the right tools can significantly enhance viewer engagement and satisfaction.\n\n**How to Get Started:**\n1. **Script Crafting with ChatGPT:** Use this powerful tool to generate ideas for your top lists, factual segments, or unique content collections.\n2. **Efficient Video Editing with Pictory AI:** Turn written content into video magic in just a few minutes using Pictory AI.\n\n**Call-to-Action:**\nPractice these concepts and see the difference they make in your YouTube content! \ud83d\ude80 Let\u2019s create something amazing together!\n\n#YouTubeTips #ContentCreation #StartWithTheBasics",
+          "angle_used": "Understanding the fundamentals",
+          "hook_used": "Learn the basics step by step",
+          "tone_used": "educational",
+          "call_to_action": "Practice this concept",
+          "key_points_covered": [
+            "Core concept explained",
+            "Why it matters",
+            "How to get started"
+          ],
+          "viral_potential": 0,
+          "author_authority": "low",
+          "trend_relevance": "mainstream",
+          "time_sensitivity": "evergreen",
+          "original_value_score": 3.0,
+          "original_quality_score": 4.3,
+          "timestamp": "2025-11-02T22:39:08.516858"
+        }
+      }
+    ]
+  },
+  {
+    "post_id": "DMEnHSDIVch",
+    "platform": "threads",
+    "original_content": "Grok 4 and Perplexity Comet released this week.\n\nBut these 9 huge AI Agent releases went under the radar:\n\n1. After DeepSeek R1, there's new Claude 4 level model from China that outperforms DeepSeek v",
+    "engagement": {
+      "likes": 0,
+      "replies": 0,
+      "retweets": 0
+    },
+    "analysis": {
+      "value_score": 3.0,
+      "viral_potential": 0,
+      "category": "General"
+    },
+    "matched_personas": [
+      {
+        "persona": "trendsetter",
+        "score": 50.0,
+        "reason": "1 interest matches, complexity match (Intermediate), 1 keyword signals, emerging trend"
+      },
+      {
+        "persona": "builder",
+        "score": 20.0,
+        "reason": "complexity match (Intermediate)"
+      }
+    ],
+    "rewrites": [
+      {
+        "persona": "trendsetter",
+        "match_score": 50.0,
+        "match_reason": "1 interest matches, complexity match (Intermediate), 1 keyword signals, emerging trend",
+        "rewritten": {
+          "persona": "trendsetter",
+          "persona_name": "Tech Trendsetter",
+          "persona_emoji": "\ud83d\udd25",
+          "platform": "twitter",
+          "platform_fit": "short_tweet",
+          "original_post_id": "DMEnHSDIVch",
+          "original_platform": "threads",
+          "original_url": "",
+          "rewritten_content": "\ud83d\ude80 Why This AI Trend is \ud83d\udd25 Now \ud83c\udf08\n\nThe AI landscape just got hotter! While Grok 4 & Perplexity Comet made headlines, 9 other groundbreaking models like Claude 4 from China have quietly set new benchmarks. \ud83e\udde0\ud83d\udca1\n\nThese latest agents are pushing the envelope in performance and innovation, giving early adopters a significant edge. Don't miss your chance to get ahead of this transformative trend! \ud83d\ude80 Join the AI revolution today!\n\n#AIRevolution #EarlyAdoption \ud83d\udd25",
+          "angle_used": "Why this is relevant now",
+          "hook_used": "This is trending and here's why",
+          "tone_used": "excited",
+          "call_to_action": "Get ahead of this trend",
+          "key_points_covered": [
+            "Current trend",
+            "Market momentum",
+            "Early adoption opportunity"
+          ],
+          "viral_potential": 0,
+          "author_authority": "low",
+          "trend_relevance": "emerging",
+          "time_sensitivity": "evergreen",
+          "original_value_score": 3.0,
+          "original_quality_score": 4.3,
+          "timestamp": "2025-11-02T22:39:56.769086"
+        }
+      },
+      {
+        "persona": "builder",
+        "match_score": 20.0,
+        "match_reason": "complexity match (Intermediate)",
+        "rewritten": {
+          "persona": "builder",
+          "persona_name": "Startup Builder",
+          "persona_emoji": "\ud83d\ude80",
+          "platform": "twitter",
+          "platform_fit": "short_tweet",
+          "original_post_id": "DMEnHSDIVch",
+          "original_platform": "threads",
+          "original_url": "",
+          "rewritten_content": "\ud83d\ude80 Build your next project with Claude 4+ \ud83d\ude80 | 9 AI Agents launched this week, but only Grok 4 & Perplexity Comet made headlines. Claude 4 from China outperforms DeepSeek v... Practical application? Implement Claude's advanced NLP in real-time chatbots today! Quick win? Yes\u2014follow the latest models for seamless integration. Real-world use case? Enhanced customer support with cutting-edge AI. Ship this knowledge into your projects now & watch your ROI soar! \ud83d\ude80 #AIInAction",
+          "angle_used": "How to apply this in your projects",
+          "hook_used": "Build something with this knowledge",
+          "tone_used": "action-oriented",
+          "call_to_action": "Ship this today",
+          "key_points_covered": [
+            "Practical application",
+            "Quick implementation",
+            "Real-world use case"
+          ],
+          "viral_potential": 0,
+          "author_authority": "low",
+          "trend_relevance": "emerging",
+          "time_sensitivity": "evergreen",
+          "original_value_score": 3.0,
+          "original_quality_score": 4.3,
+          "timestamp": "2025-11-02T22:40:13.052246"
+        }
+      }
+    ]
+  }
+]

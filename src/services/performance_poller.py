@@ -20,12 +20,15 @@ class PerformancePoller:
         # minutes since posting
         self.windows_minutes: List[int] = [15, 60, 24 * 60, 72 * 60]
 
-    async def _fetch_metrics(self, platform: str, platform_post_id: str, url: str) -> Dict[str, Any]:
+    async def _fetch_metrics(
+        self, platform: str, platform_post_id: str, url: str
+    ) -> Dict[str, Any]:
         """Lightweight per-platform fetchers. Threads implemented; others return zeros for now."""
         if platform == "threads" and url:
             try:
                 # Reuse ThreadsExtractor DOM logic to get basic engagement signals
                 from src.core.extraction.threads_extractor import ThreadsExtractor
+
                 extractor = ThreadsExtractor()
                 posts = await extractor.scrape_posts_from_urls_async([url])
                 if posts:
@@ -42,7 +45,8 @@ class PerformancePoller:
                         "bookmarks": 0,
                         "snapshot_at": datetime.utcnow().isoformat(),
                     }
-            except Exception:
+            except Exception as e:
+                logger.error(f"Error: {e}")
                 pass
         # Fallback zeros
         return {
@@ -67,8 +71,11 @@ class PerformancePoller:
                     if not posted_at:
                         continue
                     try:
-                        posted_dt = datetime.fromisoformat(str(posted_at).replace("Z", ""))
-                    except Exception:
+                        posted_dt = datetime.fromisoformat(
+                            str(posted_at).replace("Z", "")
+                        )
+                    except Exception as e:
+                        logger.error(f"Error: {e}")
                         continue
                     age_min = int((now - posted_dt).total_seconds() / 60)
                     # Find closest window within tolerance (±10 min)
@@ -83,13 +90,25 @@ class PerformancePoller:
 
                     snap = await self._fetch_metrics(str(platform), str(pid), url)
                     # Skip pure zeros to avoid noise
-                    if any((snap.get("views") or 0, snap.get("likes") or 0, snap.get("comments") or 0, snap.get("shares") or 0, snap.get("bookmarks") or 0)):
-                        ok = self.agent.upsert_posted_metrics(str(platform), str(pid), snap)
+                    if any(
+                        (
+                            snap.get("views") or 0,
+                            snap.get("likes") or 0,
+                            snap.get("comments") or 0,
+                            snap.get("shares") or 0,
+                            snap.get("bookmarks") or 0,
+                        )
+                    ):
+                        ok = self.agent.upsert_posted_metrics(
+                            str(platform), str(pid), snap
+                        )
                         if ok:
                             processed += 1
-                except Exception:
+                except Exception as e:
+                    logger.error(f"Error: {e}")
                     continue
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error: {e}")
             return processed
         return processed
 
@@ -97,7 +116,8 @@ class PerformancePoller:
         while True:
             try:
                 await self.poll_once()
-            except Exception:
+            except Exception as e:
+                logger.error(f"Error: {e}")
                 pass
             await asyncio.sleep(max(60, interval_seconds))
 
@@ -110,5 +130,3 @@ async def main() -> None:
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-

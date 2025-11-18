@@ -205,10 +205,10 @@
 ## 🚀 Deployment Info
 
 - **Bot**: @BookmarkerQronoya_bot
-- **Status**: Running (PID in /tmp/prismind_bot.pid)
-- **Logs**: /Users/mac/Documents/Development/prismind/logs/telegram_bot.log
-- **Restart**: `kill $(cat /tmp/prismind_bot.pid) && ./run_telegram_bot.sh`
-- **Stop**: `kill $(cat /tmp/prismind_bot.pid)`
+- **Status**: Running (PID in /tmp/beyondlines_bot.pid)
+- **Logs**: /Users/mac/Documents/Development/beyondlines/logs/telegram_bot.log
+- **Restart**: `kill $(cat /tmp/beyondlines_bot.pid) && ./run_telegram_bot.sh`
+- **Stop**: `kill $(cat /tmp/beyondlines_bot.pid)`
 
 ## 📚 Resources
 

@@ -8,7 +8,6 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-
 LOCK_DIR = Path("var")
 LOCK_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -27,16 +26,19 @@ def acquire_analysis_lock(name: str = "analysis") -> bool:
     try:
         fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
     except FileExistsError:
+        logger.error(f"Error: {e}")
         return False
 
     try:
         with os.fdopen(fd, "w") as handle:
             handle.write(str(os.getpid()))
-    except Exception:
+    except Exception as e:
+        logger.error(f"Error: {e}")
         # Best effort cleanup if we fail to write
         try:
             path.unlink()
         except FileNotFoundError:
+            logger.error(f"Error: {e}")
             pass
         return False
 
@@ -50,6 +52,7 @@ def release_analysis_lock(name: str = "analysis") -> None:
     try:
         path.unlink()
     except FileNotFoundError:
+        logger.error(f"Error: {e}")
         pass
 
 
@@ -66,5 +69,3 @@ def analysis_lock_guard(name: str = "analysis") -> Iterator[bool]:
     finally:
         if acquired:
             release_analysis_lock(name)
-
-

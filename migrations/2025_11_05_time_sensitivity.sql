@@ -6,10 +6,3 @@ ALTER TABLE posts
   ADD COLUMN IF NOT EXISTS urgency_score numeric,
   ADD COLUMN IF NOT EXISTS relevance_window text,
   ADD COLUMN IF NOT EXISTS time_sensitive_reasons text[];
-
-
-
-
-
-
-

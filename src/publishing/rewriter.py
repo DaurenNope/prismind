@@ -4,18 +4,20 @@ Content Rewriter for Multi-Persona Publishing
 Transforms discovered content into platform-optimized posts for different personas
 """
 
-import httpx
-import logging
 import json
+import logging
 import os
-from pathlib import Path
-from typing import Dict, Any, List, Optional
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+import httpx
+
+from src.publishing.circuit_breaker import get_circuit_breaker
+from src.publishing.engagement_learner import EngagementLearner
 from src.publishing.fact_validator import FactValidator
 from src.publishing.thread_splitter import ThreadSplitter
-from src.publishing.engagement_learner import EngagementLearner
 from src.publishing.voice_validator import VoiceValidator
-from src.publishing.circuit_breaker import get_circuit_breaker
 
 logger = logging.getLogger(__name__)
 
@@ -23,33 +25,36 @@ logger = logging.getLogger(__name__)
 class ContentRewriter:
     """
     Rewrites content for different personas and platforms
-    
+
     Personas:
     - Technical Expert: Deep technical insights
     - Startup Builder: Practical applications
     - Learner/Educator: Teaching angle
     - Trendsetter: What's hot and why
     - Thought Leader: Big picture thinking
-    
+
     Platforms:
     - Twitter/X: Short, punchy threads
     - LinkedIn: Professional insights
     - Blog: Long-form deep dives
     - Newsletter: Curated summaries
     """
-    
+
     def __init__(self):
         self.personas = self._load_personas()
         self.ollama_url = "http://localhost:11434/api/generate"
 
         # Cloud API setup with rotation and fallback support
-        # Using Gemini 2.0 Flash Experimental (works reliably with Russian)
-        # With 4 keys: 4 × 150 RPD ≈ 600 RPD total (enough for batches)
-        self.gemini_model = "gemini-2.0-flash-exp"
+        # Using Gemini 2.5 Flash-Lite for best daily limits (1,000 RPD on Free Tier)
+        # Falls back to Gemini 2.0 Flash if higher TPM needed (1M TPM vs 250K)
+        # With 4 keys: 4 × 1,000 RPD = 4,000 RPD total (much better than experimental models)
+        self.gemini_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
         self.gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.gemini_model}:generateContent"
         self.gemini_api_keys = self._load_gemini_keys()
         self.current_key_index = 0
-        logger.info(f"✅ Loaded {len(self.gemini_api_keys)} Gemini API key(s) for rotation")
+        logger.info(
+            f"✅ Loaded {len(self.gemini_api_keys)} Gemini API key(s) for rotation"
+        )
 
         # Mistral API setup (fallback option with rotation support)
         self.mistral_api_keys = self._load_mistral_keys()
@@ -57,7 +62,9 @@ class ContentRewriter:
         self.mistral_model = "mistral-large-latest"
         self.mistral_url = "https://api.mistral.ai/v1/chat/completions"
         if self.mistral_api_keys:
-            logger.info(f"✅ Loaded {len(self.mistral_api_keys)} Mistral API key(s) for rotation")
+            logger.info(
+                f"✅ Loaded {len(self.mistral_api_keys)} Mistral API key(s) for rotation"
+            )
 
         # Ollama setup (last resort fallback)
         self.ollama_available = True  # We'll detect on first use
@@ -75,6 +82,7 @@ class ContentRewriter:
         # Analytics tracking
         try:
             from src.publishing.rewrite_analytics import get_analytics
+
             self.analytics = get_analytics()
         except Exception as e:
             logger.warning(f"Analytics not available: {e}")
@@ -101,11 +109,11 @@ class ContentRewriter:
         except Exception as e:
             logger.warning(f"⚠️ Voice validator not available: {e}")
             self.voice_validator = None
-        
+
         # Circuit breaker for API rate limits
         self.circuit_breaker = get_circuit_breaker()
         logger.info("✅ Circuit breaker initialized")
-    
+
     def _load_gemini_keys(self) -> List[str]:
         """Load Gemini API keys from environment for rotation"""
         keys = []
@@ -155,7 +163,9 @@ class ContentRewriter:
             return None
 
         key = self.gemini_api_keys[self.current_key_index]
-        self.current_key_index = (self.current_key_index + 1) % len(self.gemini_api_keys)
+        self.current_key_index = (self.current_key_index + 1) % len(
+            self.gemini_api_keys
+        )
         return key
 
     def _load_personas(self) -> Dict[str, Dict[str, Any]]:
@@ -169,7 +179,7 @@ class ContentRewriter:
                 "style": "Basic but smart - practical tech advice and career insights",
                 "emoji": "💡",
                 "language": "russian",
-                "platforms": ["twitter", "threads", "telegram"]
+                "platforms": ["twitter", "threads", "telegram"],
             },
             "aspandead": {
                 "name": "Aspandead",
@@ -178,7 +188,7 @@ class ContentRewriter:
                 "style": "Deep writer - emotional depth, metaphors, unfiltered observations",
                 "emoji": "🖤",
                 "language": "russian",
-                "platforms": ["twitter", "threads", "telegram", "medium"]
+                "platforms": ["twitter", "threads", "telegram", "medium"],
             },
             "claimzilla": {
                 "name": "Claimzilla",
@@ -187,18 +197,20 @@ class ContentRewriter:
                 "style": "Crypto reply guy - alpha drops, market insights, technical breakdowns",
                 "emoji": "💎",
                 "language": "english",
-                "platforms": ["twitter", "threads"]
-            }
+                "platforms": ["twitter", "threads"],
+            },
         }
 
     def _load_voice_patterns(self) -> Dict[str, Any]:
         """Load voice patterns from config"""
         try:
-            config_path = Path(__file__).parent.parent.parent / "config" / "voice_patterns.json"
+            config_path = (
+                Path(__file__).parent.parent.parent / "config" / "voice_patterns.json"
+            )
             if config_path.exists():
-                with open(config_path, 'r', encoding='utf-8') as f:
+                with open(config_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    return data.get('personas', {})
+                    return data.get("personas", {})
             logger.warning(f"Voice patterns not found at {config_path}")
             return {}
         except Exception as e:
@@ -208,11 +220,13 @@ class ContentRewriter:
     def _load_opinions(self) -> Dict[str, Any]:
         """Load opinions from config"""
         try:
-            config_path = Path(__file__).parent.parent.parent / "config" / "opinions.json"
+            config_path = (
+                Path(__file__).parent.parent.parent / "config" / "opinions.json"
+            )
             if config_path.exists():
-                with open(config_path, 'r', encoding='utf-8') as f:
+                with open(config_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    return data.get('personas', {})
+                    return data.get("personas", {})
             logger.warning(f"Opinions not found at {config_path}")
             return {}
         except Exception as e:
@@ -225,24 +239,35 @@ class ContentRewriter:
         config_dir = Path(__file__).parent.parent.parent / "config" / "personas"
 
         # Casual words to filter OUT for professional accounts
-        casual_markers = ['альтушки', 'скуфы', 'нормисы', 'бамбардилло', 'fr fr', 'was supposed to be', 'Тредс превратился']
+        casual_markers = [
+            "альтушки",
+            "скуфы",
+            "нормисы",
+            "бамбардилло",
+            "fr fr",
+            "was supposed to be",
+            "Тредс превратился",
+        ]
 
         for persona in ["qronoya", "aspandead", "claimzilla"]:
             examples_file = config_dir / f"{persona}_examples.json"
             if examples_file.exists():
                 try:
-                    with open(examples_file, 'r', encoding='utf-8') as f:
+                    with open(examples_file, "r", encoding="utf-8") as f:
                         data = json.load(f)
 
                         # For qronoya: FILTER casual posts, keep only professional
                         if persona == "qronoya":
                             example_texts = []
-                            for ex in data.get('examples', []):
-                                content = ex.get('content', '').strip()
+                            for ex in data.get("examples", []):
+                                content = ex.get("content", "").strip()
                                 if not content:
                                     continue
                                 # Skip if contains casual markers
-                                if any(marker.lower() in content.lower() for marker in casual_markers):
+                                if any(
+                                    marker.lower() in content.lower()
+                                    for marker in casual_markers
+                                ):
                                     continue
                                 # Skip very short posts (likely casual)
                                 if len(content) < 100:
@@ -252,12 +277,15 @@ class ContentRewriter:
                         else:
                             # Other personas: load all examples as dicts
                             example_texts = [
-                                ex for ex in data.get('examples', [])
-                                if ex.get('content', '').strip()
+                                ex
+                                for ex in data.get("examples", [])
+                                if ex.get("content", "").strip()
                             ]
 
                         examples[persona] = example_texts
-                        logger.info(f"Loaded {len(example_texts)} voice examples for {persona}")
+                        logger.info(
+                            f"Loaded {len(example_texts)} voice examples for {persona}"
+                        )
                 except Exception as e:
                     logger.error(f"Error loading {persona} examples: {e}")
                     examples[persona] = []
@@ -274,7 +302,7 @@ class ContentRewriter:
             rules_file = config_dir / "rewrite_rules.json"
 
             if rules_file.exists():
-                with open(rules_file, 'r', encoding='utf-8') as f:
+                with open(rules_file, "r", encoding="utf-8") as f:
                     rules = json.load(f)
                     logger.info("✅ Loaded rewrite rules from config")
                     return rules
@@ -286,53 +314,52 @@ class ContentRewriter:
             return {}
 
     async def rewrite_for_persona(
-        self, 
-        content: Dict[str, Any], 
-        persona: str,
-        platform: str = "twitter"
+        self, content: Dict[str, Any], persona: str, platform: str = "twitter"
     ) -> Dict[str, Any]:
         """
         Rewrite content for specific persona and platform
-        
+
         Args:
             content: Original content with analysis (from agents)
             persona: Persona ID (technical, builder, learner, etc.)
             platform: Target platform (twitter, linkedin, blog)
-            
+
         Returns:
             Rewritten content optimized for persona and platform
         """
-        
+
         if persona not in self.personas:
             return {"error": f"Unknown persona: {persona}"}
-        
+
         persona_info = self.personas[persona]
-        
+
         logger.info(f"✍️  Rewriting as {persona_info['name']} for {platform}")
-        
+
         # Extract content info
         content_type = content.get("type", "article")
-        
+
         if content_type == "github":
             return await self._rewrite_github(content, persona, platform, persona_info)
         elif content_type == "book":
             return await self._rewrite_book(content, persona, platform, persona_info)
         else:
             return await self._rewrite_article(content, persona, platform, persona_info)
-    
+
     async def _rewrite_github(
-        self, 
-        content: Dict[str, Any], 
+        self,
+        content: Dict[str, Any],
         persona: str,
         platform: str,
-        persona_info: Dict[str, Any]
+        persona_info: Dict[str, Any],
     ) -> Dict[str, Any]:
         """Rewrite GitHub repo content"""
-        
+
         # Get rewrite angle for this persona
         angles = content.get("rewrite_angles", [])
-        persona_angle = next((a for a in angles if a["persona"] == persona), angles[0] if angles else {})
-        
+        persona_angle = next(
+            (a for a in angles if a["persona"] == persona), angles[0] if angles else {}
+        )
+
         # Build prompt
         prompt = f"""Rewrite this GitHub repository as a {persona_info['name']} for {platform}.
 
@@ -360,7 +387,7 @@ Platform constraints:
 Rewritten post:"""
 
         result = await self._call_llm(prompt)
-        
+
         return {
             "persona": persona,
             "persona_emoji": persona_info["emoji"],
@@ -369,22 +396,24 @@ Rewritten post:"""
             "rewritten_content": result,
             "angle_used": persona_angle.get("angle", ""),
             "hook": persona_angle.get("hook", ""),
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
-    
+
     async def _rewrite_book(
         self,
         content: Dict[str, Any],
         persona: str,
         platform: str,
-        persona_info: Dict[str, Any]
+        persona_info: Dict[str, Any],
     ) -> Dict[str, Any]:
         """Rewrite book content"""
-        
+
         # Get rewrite angle for this persona
         angles = content.get("rewrite_angles", [])
-        persona_angle = next((a for a in angles if a["persona"] == persona), angles[0] if angles else {})
-        
+        persona_angle = next(
+            (a for a in angles if a["persona"] == persona), angles[0] if angles else {}
+        )
+
         prompt = f"""Rewrite this book insight as a {persona_info['name']} for {platform}.
 
 Book: {content.get('title', '')} by {content.get('author', '')}
@@ -408,7 +437,7 @@ Platform constraints:
 Rewritten post:"""
 
         result = await self._call_llm(prompt)
-        
+
         return {
             "persona": persona,
             "persona_emoji": persona_info["emoji"],
@@ -417,8 +446,38 @@ Rewritten post:"""
             "rewritten_content": result,
             "angle_used": persona_angle.get("angle", ""),
             "hook": persona_angle.get("hook", ""),
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
+
+    def _separate_reddit_content(self, content: str) -> tuple[str, Optional[str]]:
+        """
+        Separate Reddit main post from comments section.
+        Returns: (main_content, comments_section)
+        Comments are helpful context, NOT the main story.
+        """
+        if not content:
+            return content, None
+
+        # Look for comment markers
+        comment_markers = [
+            "=== TOP VALUABLE COMMENTS ===",
+            "TOP VALUABLE COMMENTS",
+            "💬 Comment",
+            "Comment 1",
+            "Comments:",
+            "=== COMMENTS ===",
+        ]
+
+        for marker in comment_markers:
+            if marker in content:
+                parts = content.split(marker, 1)
+                if len(parts) == 2:
+                    main_content = parts[0].strip()
+                    comments_section = marker + parts[1].strip()
+                    return main_content, comments_section
+
+        # No comments found
+        return content, None
 
     def _build_rewrite_instructions(self, persona: str) -> str:
         """Build rewrite instructions dynamically from config (NO HARD-CODING)"""
@@ -426,45 +485,61 @@ Rewritten post:"""
             logger.warning("No rewrite rules loaded, using minimal instructions")
             return "Extract core ideas and rewrite in persona's authentic voice."
 
-        global_rules = self.rewrite_rules.get('global_rules', {})
-        persona_instructions = self.rewrite_rules.get('persona_specific_instructions', {}).get(persona, {})
+        global_rules = self.rewrite_rules.get("global_rules", {})
+        persona_instructions = self.rewrite_rules.get(
+            "persona_specific_instructions", {}
+        ).get(persona, {})
 
         # Build instruction text
         instructions = []
 
         # Global rules - personal profile enforcement
-        personal_profile = global_rules.get('personal_profile_enforcement', {})
+        personal_profile = global_rules.get("personal_profile_enforcement", {})
 
         if personal_profile:
-            instructions.append("🚨 CRITICAL - PERSONAL PROFILE RULES (ABSOLUTELY MANDATORY):")
+            instructions.append(
+                "🚨 CRITICAL - PERSONAL PROFILE RULES (ABSOLUTELY MANDATORY):"
+            )
             instructions.append("")
 
             # Emojis
-            emoji_rules = personal_profile.get('emojis', {})
+            emoji_rules = personal_profile.get("emojis", {})
             if emoji_rules:
-                instructions.append(f"1. {emoji_rules.get('usage', 'NEVER')} EMOJIS - {emoji_rules.get('reason', '')}")
-                instructions.append(f"   ❌ DO NOT USE: {', '.join(emoji_rules.get('examples_to_avoid', []))}")
+                instructions.append(
+                    f"1. {emoji_rules.get('usage', 'NEVER')} EMOJIS - {emoji_rules.get('reason', '')}"
+                )
+                instructions.append(
+                    f"   ❌ DO NOT USE: {', '.join(emoji_rules.get('examples_to_avoid', []))}"
+                )
                 instructions.append(f"   ✅ {emoji_rules.get('guidance', '')}")
                 instructions.append("")
 
             # Hashtags
-            hashtag_rules = personal_profile.get('hashtags', {})
+            hashtag_rules = personal_profile.get("hashtags", {})
             if hashtag_rules:
-                instructions.append(f"2. {hashtag_rules.get('usage', 'NEVER')} HASHTAGS - {hashtag_rules.get('reason', '')}")
-                instructions.append(f"   ❌ DO NOT USE: {', '.join(hashtag_rules.get('examples_to_avoid', []))}")
+                instructions.append(
+                    f"2. {hashtag_rules.get('usage', 'NEVER')} HASHTAGS - {hashtag_rules.get('reason', '')}"
+                )
+                instructions.append(
+                    f"   ❌ DO NOT USE: {', '.join(hashtag_rules.get('examples_to_avoid', []))}"
+                )
                 instructions.append(f"   ✅ {hashtag_rules.get('guidance', '')}")
                 instructions.append("")
 
             # Corporate language
-            corporate_rules = personal_profile.get('corporate_language', {})
+            corporate_rules = personal_profile.get("corporate_language", {})
             if corporate_rules:
-                instructions.append(f"3. {corporate_rules.get('usage', 'NEVER')} CORPORATE LANGUAGE - {corporate_rules.get('reason', '')}")
-                instructions.append(f"   ❌ Avoid: {', '.join(corporate_rules.get('phrases_to_avoid', []))}")
+                instructions.append(
+                    f"3. {corporate_rules.get('usage', 'NEVER')} CORPORATE LANGUAGE - {corporate_rules.get('reason', '')}"
+                )
+                instructions.append(
+                    f"   ❌ Avoid: {', '.join(corporate_rules.get('phrases_to_avoid', []))}"
+                )
                 instructions.append(f"   ✅ {corporate_rules.get('guidance', '')}")
                 instructions.append("")
 
         # Rewriting approach
-        rewriting_approach = global_rules.get('rewriting_approach', {})
+        rewriting_approach = global_rules.get("rewriting_approach", {})
         if rewriting_approach:
             instructions.append("REWRITING APPROACH:")
             for idx, (key, value) in enumerate(rewriting_approach.items(), 4):
@@ -473,20 +548,20 @@ Rewritten post:"""
 
         # Persona-specific instructions
         if persona_instructions:
-            primary_instruction = persona_instructions.get('primary_instruction', '')
+            primary_instruction = persona_instructions.get("primary_instruction", "")
             if primary_instruction:
                 instructions.append(f"PERSONA-SPECIFIC ({persona.upper()}):")
                 instructions.append(primary_instruction)
                 instructions.append("")
 
-        return '\n'.join(instructions)
+        return "\n".join(instructions)
 
     async def _rewrite_article(
         self,
         content: Dict[str, Any],
         persona: str,
         platform: str,
-        persona_info: Dict[str, Any]
+        persona_info: Dict[str, Any],
     ) -> Dict[str, Any]:
         """Rewrite article/blog content"""
 
@@ -514,10 +589,16 @@ Rewritten post:"""
             "platform": platform,
             "original_url": content.get("url", ""),
             "rewritten_content": result,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
 
-    def _classify_content_type(self, content: str, category: str = "", topics: List[str] = None, persona: str = "qronoya") -> str:
+    def _classify_content_type(
+        self,
+        content: str,
+        category: str = "",
+        topics: List[str] = None,
+        persona: str = "qronoya",
+    ) -> str:
         """
         Classify content to determine which type of examples to use.
         Classification depends on the persona.
@@ -535,23 +616,78 @@ Rewritten post:"""
         # ASPANDEAD: Relationship/emotional content classification
         if persona == "aspandead":
             # Breakup/ending keywords
-            if any(kw in content_lower for kw in ['broke', 'breakup', 'ended', 'left', 'ex', 'closure', 'goodbye']):
+            if any(
+                kw in content_lower
+                for kw in [
+                    "broke",
+                    "breakup",
+                    "ended",
+                    "left",
+                    "ex",
+                    "closure",
+                    "goodbye",
+                ]
+            ):
                 return "breakup_experience"
 
             # Healing/growth keywords
-            if any(kw in content_lower for kw in ['healing', 'therapy', 'growth', 'recovering', 'moving on', 'letting go', 'free']):
+            if any(
+                kw in content_lower
+                for kw in [
+                    "healing",
+                    "therapy",
+                    "growth",
+                    "recovering",
+                    "moving on",
+                    "letting go",
+                    "free",
+                ]
+            ):
                 return "healing_journey"
 
             # Modern dating keywords (apps, tech)
-            if any(kw in content_lower for kw in ['dating app', 'tinder', 'bumble', 'swipe', 'match', 'profile', 'online dating']):
+            if any(
+                kw in content_lower
+                for kw in [
+                    "dating app",
+                    "tinder",
+                    "bumble",
+                    "swipe",
+                    "match",
+                    "profile",
+                    "online dating",
+                ]
+            ):
                 return "modern_dating"
 
             # Intimacy/vulnerability keywords
-            if any(kw in content_lower for kw in ['intimacy', 'vulnerable', 'seen', 'walls', 'armor', 'guard', 'open up']):
+            if any(
+                kw in content_lower
+                for kw in [
+                    "intimacy",
+                    "vulnerable",
+                    "seen",
+                    "walls",
+                    "armor",
+                    "guard",
+                    "open up",
+                ]
+            ):
                 return "intimacy_reflection"
 
             # Dating story keywords (narrative, specific moments)
-            if any(kw in content_lower for kw in ['date', 'met', 'coffee', 'talked', 'walked', 'night', 'moment']):
+            if any(
+                kw in content_lower
+                for kw in [
+                    "date",
+                    "met",
+                    "coffee",
+                    "talked",
+                    "walked",
+                    "night",
+                    "moment",
+                ]
+            ):
                 return "dating_story"
 
             # Default to relationship insight
@@ -560,23 +696,77 @@ Rewritten post:"""
         # QRONOYA: Tech content classification
         else:
             # Funding/investment keywords
-            if any(kw in content_lower for kw in ['привлек', 'раунд', '$', 'инвестиц', 'funding', 'series', 'raised']):
+            if any(
+                kw in content_lower
+                for kw in [
+                    "привлек",
+                    "раунд",
+                    "$",
+                    "инвестиц",
+                    "funding",
+                    "series",
+                    "raised",
+                ]
+            ):
                 return "funding_news"
 
             # Research/study keywords
-            if any(kw in content_lower for kw in ['исследование', 'показал', 'точность', '%', 'research', 'study', 'mit']):
+            if any(
+                kw in content_lower
+                for kw in [
+                    "исследование",
+                    "показал",
+                    "точность",
+                    "%",
+                    "research",
+                    "study",
+                    "mit",
+                ]
+            ):
                 return "research_finding"
 
             # Pricing keywords
-            if any(kw in content_lower for kw in ['цен', 'бесплатн', 'pricing', 'free', 'снизил', 'дороже', 'дешевле']):
+            if any(
+                kw in content_lower
+                for kw in [
+                    "цен",
+                    "бесплатн",
+                    "pricing",
+                    "free",
+                    "снизил",
+                    "дороже",
+                    "дешевле",
+                ]
+            ):
                 return "pricing_update"
 
             # Product launch keywords (новый продукт)
-            if any(kw in content_lower for kw in ['вышел', 'выпустил', 'запустил', 'released', 'launched', 'announced', 'выкатил']):
+            if any(
+                kw in content_lower
+                for kw in [
+                    "вышел",
+                    "выпустил",
+                    "запустил",
+                    "released",
+                    "launched",
+                    "announced",
+                    "выкатил",
+                ]
+            ):
                 return "product_launch"
 
             # Feature update keywords (обновление существующего)
-            if any(kw in content_lower for kw in ['добавил', 'теперь', 'новая функция', 'added', 'now supports', 'update']):
+            if any(
+                kw in content_lower
+                for kw in [
+                    "добавил",
+                    "теперь",
+                    "новая функция",
+                    "added",
+                    "now supports",
+                    "update",
+                ]
+            ):
                 return "feature_update"
 
             # Default to trend analysis for opinion/analysis pieces
@@ -591,32 +781,70 @@ Rewritten post:"""
         content_lower = content.lower()
 
         # Vulnerable/emotional keywords
-        vulnerable_words = ['feel', 'emotion', 'heart', 'pain', 'fear', 'love', 'hurt', 'vulnerable', 'scared', 'anxiety']
+        vulnerable_words = [
+            "feel",
+            "emotion",
+            "heart",
+            "pain",
+            "fear",
+            "love",
+            "hurt",
+            "vulnerable",
+            "scared",
+            "anxiety",
+        ]
         vulnerable_score = sum(1 for word in vulnerable_words if word in content_lower)
 
         # Analytical/technical keywords
-        analytical_words = ['data', 'research', 'study', 'analysis', 'metric', 'performance', 'efficiency', 'algorithm']
+        analytical_words = [
+            "data",
+            "research",
+            "study",
+            "analysis",
+            "metric",
+            "performance",
+            "efficiency",
+            "algorithm",
+        ]
         analytical_score = sum(1 for word in analytical_words if word in content_lower)
 
         # Critical/questioning keywords
-        critical_words = ['why', 'problem', 'issue', 'concern', 'wrong', 'fail', 'mistake', 'bad']
+        critical_words = [
+            "why",
+            "problem",
+            "issue",
+            "concern",
+            "wrong",
+            "fail",
+            "mistake",
+            "bad",
+        ]
         critical_score = sum(1 for word in critical_words if word in content_lower)
 
         # Optimistic/positive keywords
-        optimistic_words = ['great', 'amazing', 'excellent', 'opportunity', 'success', 'best', 'love', 'perfect']
+        optimistic_words = [
+            "great",
+            "amazing",
+            "excellent",
+            "opportunity",
+            "success",
+            "best",
+            "love",
+            "perfect",
+        ]
         optimistic_score = sum(1 for word in optimistic_words if word in content_lower)
 
         # Determine primary tone
         scores = {
-            'vulnerable': vulnerable_score,
-            'analytical': analytical_score,
-            'critical': critical_score,
-            'optimistic': optimistic_score
+            "vulnerable": vulnerable_score,
+            "analytical": analytical_score,
+            "critical": critical_score,
+            "optimistic": optimistic_score,
         }
 
         max_score = max(scores.values())
         if max_score == 0:
-            return 'neutral'
+            return "neutral"
 
         return max(scores, key=scores.get)
 
@@ -628,7 +856,7 @@ Rewritten post:"""
         content_text: str = "",
         persona: Optional[str] = None,
         platform: Optional[str] = None,
-        use_performance_weighting: bool = True
+        use_performance_weighting: bool = True,
     ) -> List[str]:
         """
         Intelligently select examples based on:
@@ -652,96 +880,147 @@ Rewritten post:"""
         """
         import random
 
-        logger.info(f"📚 Smart selection: {content_type}, {content_length} chars, {len(examples)} total examples")
+        logger.info(
+            f"📚 Smart selection: {content_type}, {content_length} chars, {len(examples)} total examples"
+        )
 
         # TRY PERFORMANCE-WEIGHTED SELECTION FIRST (if available)
-        if use_performance_weighting and self.engagement_learner and persona and platform:
+        if (
+            use_performance_weighting
+            and self.engagement_learner
+            and persona
+            and platform
+        ):
             try:
-                logger.info(f"🎯 Using performance-weighted example selection for {persona}/{platform}")
+                logger.info(
+                    f"🎯 Using performance-weighted example selection for {persona}/{platform}"
+                )
 
                 # Extract example texts
                 def get_example_text(ex):
                     if isinstance(ex, dict):
-                        return ex.get('content', '')
+                        return ex.get("content", "")
                     return str(ex)
 
-                example_texts = [get_example_text(ex) for ex in examples if get_example_text(ex)]
+                example_texts = [
+                    get_example_text(ex) for ex in examples if get_example_text(ex)
+                ]
 
                 # Get performance-weighted examples
                 weighted_examples = await self.engagement_learner.get_weighted_examples(
                     persona=persona,
                     platform=platform,
                     all_examples=example_texts,
-                    count=5
+                    count=5,
                 )
 
                 if weighted_examples and len(weighted_examples) >= 3:
-                    logger.info(f"✅ Selected {len(weighted_examples)} performance-weighted examples")
+                    logger.info(
+                        f"✅ Selected {len(weighted_examples)} performance-weighted examples"
+                    )
                     return weighted_examples
                 else:
-                    logger.warning(f"⚠️ Performance weighting returned insufficient examples, falling back to smart selection")
+                    logger.warning(
+                        f"⚠️ Performance weighting returned insufficient examples, falling back to smart selection"
+                    )
 
             except Exception as e:
-                logger.warning(f"⚠️ Performance weighting failed: {e}, falling back to smart selection")
+                logger.warning(
+                    f"⚠️ Performance weighting failed: {e}, falling back to smart selection"
+                )
 
         # FALLBACK TO SMART SELECTION (original algorithm)
 
         # Handle both string examples and dict examples
         def get_example_text(ex):
             if isinstance(ex, dict):
-                return ex.get('content', '')
+                return ex.get("content", "")
             return str(ex)
 
         def get_example_type(ex):
             if isinstance(ex, dict):
-                return ex.get('content_type', '')
-            return ''
+                return ex.get("content_type", "")
+            return ""
 
         def get_example_structure(ex):
             if isinstance(ex, dict):
-                return ex.get('structure', '')
-            return ''
+                return ex.get("structure", "")
+            return ""
 
         # Filter professional examples (skip scraped personal posts)
         professional_examples = [
-            ex for ex in examples
-            if isinstance(ex, dict) and 'content_type' in ex
+            ex for ex in examples if isinstance(ex, dict) and "content_type" in ex
         ]
 
-        logger.info(f"📚 Found {len(professional_examples)} professional examples with content_type")
+        logger.info(
+            f"📚 Found {len(professional_examples)} professional examples with content_type"
+        )
 
         if not professional_examples:
             # Fallback to random if no categorized examples
-            logger.warning(f"⚠️ No professional examples found - falling back to random selection")
+            logger.warning(
+                f"⚠️ No professional examples found - falling back to random selection"
+            )
             num_examples = min(5, len(examples))
-            return [get_example_text(ex) for ex in random.sample(examples, num_examples)]
+            return [
+                get_example_text(ex) for ex in random.sample(examples, num_examples)
+            ]
 
         # Detect content tone for better matching
-        content_tone = self._detect_content_tone(content_text) if content_text else 'neutral'
+        content_tone = (
+            self._detect_content_tone(content_text) if content_text else "neutral"
+        )
         logger.info(f"🎭 Detected tone: {content_tone}")
 
         # PRIMARY: Match by content_type (strongest signal)
-        type_matches = [ex for ex in professional_examples if get_example_type(ex) == content_type]
+        type_matches = [
+            ex for ex in professional_examples if get_example_type(ex) == content_type
+        ]
 
         # SECONDARY: Match by structure based on length
         if content_length < 200:
             # Short content: prefer concise, practical examples
-            structure_matches = [ex for ex in professional_examples if get_example_structure(ex) in ['concise', 'practical', 'moment_captured']]
+            structure_matches = [
+                ex
+                for ex in professional_examples
+                if get_example_structure(ex)
+                in ["concise", "practical", "moment_captured"]
+            ]
         elif content_length > 800:
             # Long content: prefer analytical, detailed examples
-            structure_matches = [ex for ex in professional_examples if get_example_structure(ex) in ['data_driven', 'observational', 'problem_solution', 'philosophical']]
+            structure_matches = [
+                ex
+                for ex in professional_examples
+                if get_example_structure(ex)
+                in ["data_driven", "observational", "problem_solution", "philosophical"]
+            ]
         else:
             # Medium content: prefer narrative, questioning styles
-            structure_matches = [ex for ex in professional_examples if get_example_structure(ex) in ['narrative', 'questioning', 'revelation']]
+            structure_matches = [
+                ex
+                for ex in professional_examples
+                if get_example_structure(ex)
+                in ["narrative", "questioning", "revelation"]
+            ]
 
         # TERTIARY: Match by tone (vulnerable vs analytical)
         tone_matches = []
-        if content_tone == 'vulnerable':
+        if content_tone == "vulnerable":
             # Prefer vulnerable, emotional examples
-            tone_matches = [ex for ex in professional_examples if get_example_structure(ex) in ['revelation', 'questioning', 'narrative']]
-        elif content_tone == 'analytical':
+            tone_matches = [
+                ex
+                for ex in professional_examples
+                if get_example_structure(ex)
+                in ["revelation", "questioning", "narrative"]
+            ]
+        elif content_tone == "analytical":
             # Prefer analytical, wisdom-based examples
-            tone_matches = [ex for ex in professional_examples if get_example_structure(ex) in ['wisdom', 'philosophical', 'observational']]
+            tone_matches = [
+                ex
+                for ex in professional_examples
+                if get_example_structure(ex)
+                in ["wisdom", "philosophical", "observational"]
+            ]
 
         # Build selection pool with weighted priorities
         selected = []
@@ -750,7 +1029,9 @@ Rewritten post:"""
         if type_matches:
             num_type = min(3, len(type_matches))
             selected.extend(random.sample(type_matches, num_type))
-            logger.info(f"  ✓ Added {len(selected)} content-type matches ({content_type})")
+            logger.info(
+                f"  ✓ Added {len(selected)} content-type matches ({content_type})"
+            )
 
         # 2. Add 1-2 structure matches (if available and not duplicates)
         remaining_structure = [ex for ex in structure_matches if ex not in selected]
@@ -763,10 +1044,14 @@ Rewritten post:"""
         remaining_tone = [ex for ex in tone_matches if ex not in selected]
         if remaining_tone and len(selected) < 5:
             selected.append(random.choice(remaining_tone))
-            logger.info(f"  ✓ Added tone match ({content_tone}), total: {len(selected)}")
+            logger.info(
+                f"  ✓ Added tone match ({content_tone}), total: {len(selected)}"
+            )
 
         # 4. Fill remaining slots with random professional examples for variety
-        remaining_professional = [ex for ex in professional_examples if ex not in selected]
+        remaining_professional = [
+            ex for ex in professional_examples if ex not in selected
+        ]
         if remaining_professional and len(selected) < 5:
             num_random = min(5 - len(selected), len(remaining_professional))
             selected.extend(random.sample(remaining_professional, num_random))
@@ -778,7 +1063,9 @@ Rewritten post:"""
             if remaining:
                 selected.extend(random.sample(remaining, min(needed, len(remaining))))
 
-        logger.info(f"📚 Final selection: {len(selected)} examples (type: {len(type_matches)}, structure: {len(structure_matches)}, tone: {len(tone_matches)})")
+        logger.info(
+            f"📚 Final selection: {len(selected)} examples (type: {len(type_matches)}, structure: {len(structure_matches)}, tone: {len(tone_matches)})"
+        )
 
         return [get_example_text(ex) for ex in selected]
 
@@ -796,44 +1083,55 @@ Rewritten post:"""
         Returns:
             Humanized text
         """
-        import re
         import random
+        import re
 
-        # 1. Fix dashes: em-dash (—) → single dash with spaces ( - )
-        text = re.sub(r'\s*—\s*', ' - ', text)  # em-dash with any spacing → " - "
-        text = re.sub(r'\s*–\s*', ' - ', text)  # en-dash → " - "
+        # 1. Fix dashes: em-dash (—) and en-dash (–) → single dash (-)
+        # Long dashes are AI telltale signs - humans don't use them properly
+        # Convert ALL instances, with or without spaces
+        text = re.sub(r"—", "-", text)  # em-dash → single dash (anywhere)
+        text = re.sub(r"–", "-", text)  # en-dash → single dash (anywhere)
+        # Also handle with spaces around them (normalize spacing)
+        text = re.sub(r"\s*—\s*", " - ", text)  # em-dash with spacing → " - "
+        text = re.sub(r"\s*–\s*", " - ", text)  # en-dash with spacing → " - "
 
         # 2. Occasionally remove a comma for casual grammar (very subtle - 5% per comma)
         # This makes it feel like you're typing fast and missed one
-        sentences = text.split('\n')
+        sentences = text.split("\n")
         humanized_sentences = []
 
         for sentence in sentences:
             # Find commas that could be "accidentally" skipped
             # Skip if it's the last comma in sentence (would be weird to remove)
-            commas = [m.start() for m in re.finditer(',', sentence)]
+            commas = [m.start() for m in re.finditer(",", sentence)]
 
             if commas and random.random() < 0.05:  # 5% chance per sentence
                 # Remove one random comma (not the last one)
                 if len(commas) > 1:
                     comma_to_remove = random.choice(commas[:-1])
-                    sentence = sentence[:comma_to_remove] + sentence[comma_to_remove+1:]
+                    sentence = (
+                        sentence[:comma_to_remove] + sentence[comma_to_remove + 1 :]
+                    )
                     logger.debug(f"🎭 Humanization: Removed comma for casual feel")
 
             humanized_sentences.append(sentence)
 
-        text = '\n'.join(humanized_sentences)
+        text = "\n".join(humanized_sentences)
 
         # 3. Fix double spaces
-        text = re.sub(r'  +', ' ', text)
+        text = re.sub(r"  +", " ", text)
 
         # 4. Ensure consistent spacing around punctuation
-        text = re.sub(r'\s+([.!?])', r'\1', text)  # Remove space before punctuation
-        text = re.sub(r'([.!?])([А-Яа-яA-Za-z])', r'\1 \2', text)  # Add space after punctuation
+        text = re.sub(r"\s+([.!?])", r"\1", text)  # Remove space before punctuation
+        text = re.sub(
+            r"([.!?])([А-Яа-яA-Za-z])", r"\1 \2", text
+        )  # Add space after punctuation
 
         return text
 
-    def _validate_output_length(self, content: str, platform: str, is_thread: bool) -> Dict[str, Any]:
+    def _validate_output_length(
+        self, content: str, platform: str, is_thread: bool
+    ) -> Dict[str, Any]:
         """
         Validate output fits platform constraints
 
@@ -848,7 +1146,8 @@ Rewritten post:"""
         if is_thread:
             # Split by thread markers (1/, 2/, 3/, etc.)
             import re
-            tweets = re.split(r'\n\d+/\n', content)
+
+            tweets = re.split(r"\n\d+/\n", content)
             tweets = [t.strip() for t in tweets if t.strip()]
 
             max_length = 0
@@ -858,31 +1157,37 @@ Rewritten post:"""
                 length = len(tweet)
                 max_length = max(max_length, length)
 
-                if platform in ['twitter', 'threads'] and length > 280:
+                if platform in ["twitter", "threads"] and length > 280:
                     over_limit.append(f"Tweet {i}: {length} chars (max 280)")
-                    warnings.append(f"⚠️ Tweet {i} exceeds 280 characters ({length} chars)")
+                    warnings.append(
+                        f"⚠️ Tweet {i} exceeds 280 characters ({length} chars)"
+                    )
 
             return {
                 "valid": len(over_limit) == 0,
                 "warnings": warnings,
                 "tweet_count": len(tweets),
                 "max_tweet_length": max_length,
-                "over_limit_tweets": over_limit
+                "over_limit_tweets": over_limit,
             }
         else:
             # Single post
             length = len(content)
 
-            if platform == 'twitter' and length > 280:
+            if platform == "twitter" and length > 280:
                 warnings.append(f"⚠️ Tweet exceeds 280 characters ({length} chars)")
                 return {"valid": False, "warnings": warnings, "length": length}
-            elif platform == 'threads' and length > 500:
-                warnings.append(f"⚠️ Threads post exceeds 500 characters ({length} chars)")
+            elif platform == "threads" and length > 500:
+                warnings.append(
+                    f"⚠️ Threads post exceeds 500 characters ({length} chars)"
+                )
                 return {"valid": False, "warnings": warnings, "length": length}
 
             return {"valid": True, "warnings": [], "length": length}
 
-    def _score_output_quality(self, rewritten: str, persona: str, examples: List[Any]) -> Dict[str, Any]:
+    def _score_output_quality(
+        self, rewritten: str, persona: str, examples: List[Any]
+    ) -> Dict[str, Any]:
         """
         Score rewritten content quality 0-100
 
@@ -899,35 +1204,51 @@ Rewritten post:"""
 
         # Check for emojis (should be zero)
         import re
-        emoji_pattern = re.compile('['
-            u'\U0001F600-\U0001F64F'  # emoticons
-            u'\U0001F300-\U0001F5FF'  # symbols & pictographs
-            u'\U0001F680-\U0001F6FF'  # transport & map symbols
-            u'\U0001F1E0-\U0001F1FF'  # flags
-            u'\U00002702-\U000027B0'
-            u'\U000024C2-\U0001F251'
-            u'\U0001F900-\U0001F9FF'  # supplemental symbols
-            u'\U0001FA70-\U0001FAFF'
-            ']+', flags=re.UNICODE)
+
+        emoji_pattern = re.compile(
+            "["
+            "\U0001F600-\U0001F64F"  # emoticons
+            "\U0001F300-\U0001F5FF"  # symbols & pictographs
+            "\U0001F680-\U0001F6FF"  # transport & map symbols
+            "\U0001F1E0-\U0001F1FF"  # flags
+            "\U00002702-\U000027B0"
+            "\U000024C2-\U0001F251"
+            "\U0001F900-\U0001F9FF"  # supplemental symbols
+            "\U0001FA70-\U0001FAFF"
+            "]+",
+            flags=re.UNICODE,
+        )
 
         emoji_matches = emoji_pattern.findall(rewritten)
         if emoji_matches:
             score -= 20
-            issues.append(f"Contains {len(emoji_matches)} emoji(s): {emoji_matches[:3]}")
+            issues.append(
+                f"Contains {len(emoji_matches)} emoji(s): {emoji_matches[:3]}"
+            )
 
         # Check for hashtags (should be zero)
-        hashtag_pattern = re.compile(r'#\w+')
+        hashtag_pattern = re.compile(r"#\w+")
         hashtag_matches = hashtag_pattern.findall(rewritten)
         if hashtag_matches:
             score -= 15
-            issues.append(f"Contains {len(hashtag_matches)} hashtag(s): {hashtag_matches[:3]}")
+            issues.append(
+                f"Contains {len(hashtag_matches)} hashtag(s): {hashtag_matches[:3]}"
+            )
 
         # Check for corporate language
         corporate_phrases = [
-            'join us', 'follow for more', 'don\'t miss out', 'click the link',
-            'subscribe now', 'check out our', 'visit our website', 'learn more at'
+            "join us",
+            "follow for more",
+            "don't miss out",
+            "click the link",
+            "subscribe now",
+            "check out our",
+            "visit our website",
+            "learn more at",
         ]
-        found_corporate = [phrase for phrase in corporate_phrases if phrase in rewritten.lower()]
+        found_corporate = [
+            phrase for phrase in corporate_phrases if phrase in rewritten.lower()
+        ]
         if found_corporate:
             score -= 10
             issues.append(f"Corporate language detected: {found_corporate}")
@@ -937,9 +1258,11 @@ Rewritten post:"""
         from collections import Counter
 
         # Check 3-word phrases
-        trigrams = [' '.join(words[i:i+3]) for i in range(len(words)-2)]
+        trigrams = [" ".join(words[i : i + 3]) for i in range(len(words) - 2)]
         trigram_counts = Counter(trigrams)
-        repetitive = {phrase: count for phrase, count in trigram_counts.items() if count >= 3}
+        repetitive = {
+            phrase: count for phrase, count in trigram_counts.items() if count >= 3
+        }
 
         if repetitive:
             score -= 10
@@ -952,9 +1275,13 @@ Rewritten post:"""
 
         return {
             "score": max(0, score),
-            "quality": "excellent" if score >= 90 else "good" if score >= 70 else "needs_improvement",
+            "quality": "excellent"
+            if score >= 90
+            else "good"
+            if score >= 70
+            else "needs_improvement",
             "issues": issues,
-            "passed": score >= 70
+            "passed": score >= 70,
         }
 
     async def rewrite_analyzed_post(
@@ -966,7 +1293,7 @@ Rewritten post:"""
         custom_prompt: Optional[str] = None,
         platform_constraints: Optional[Dict[str, Any]] = None,
         target_content_type: Optional[str] = None,
-        _retry_attempt: int = 0
+        _retry_attempt: int = 0,
     ) -> Dict[str, Any]:
         """
         Rewrite an analyzed social media post using enhanced rewrite_angles.
@@ -992,29 +1319,113 @@ Rewritten post:"""
             return {"error": f"Unknown persona: {persona}"}
 
         # Get the rewrite angle for this persona
-        rewrite_angles = analyzed_content.get('rewrite_angles', [])
-        persona_angle = next((a for a in rewrite_angles if a['persona'] == persona), None)
+        # Handle both formats:
+        # 1. Old format: [{"persona": "qronoya", "angle": "...", ...}]
+        # 2. New format: {"qronoya": [{"angle_name": "...", "approach": "...", ...}]}
+        # NEW: Use rewrite_suggestions (generated during analysis, creative and content-specific)
+        rewrite_suggestions = analyzed_content.get("rewrite_suggestions", [])
+        persona_angle = None
 
+        # Check for rewrite_suggestions (new format - creative suggestions from AI)
+        if isinstance(rewrite_suggestions, list) and len(rewrite_suggestions) > 0:
+            # Use first (best) suggestion (already sorted by confidence)
+            best_suggestion = rewrite_suggestions[0]
+            persona_angle = {
+                "persona": persona,
+                "angle": best_suggestion.get("angle", "Natural rewrite"),
+                "description": best_suggestion.get("angle", ""),
+                "tone": best_suggestion.get("tone", "natural"),
+                "approach": best_suggestion.get(
+                    "approach",
+                    "Rewrite this content naturally in your authentic voice. Be creative and unique.",
+                ),
+                "confidence": float(best_suggestion.get("confidence", 0.7)),
+                "platform_fit": "threads"
+                if len(analyzed_content.get("content", "")) > 280
+                else "twitter",
+            }
+
+        # FALLBACK: Check old rewrite_angles format for backward compatibility
         if not persona_angle:
-            return {"error": f"No rewrite angle found for persona: {persona}"}
+            rewrite_angles_raw = analyzed_content.get("rewrite_angles", [])
+
+            # Check if it's the old dict format (dict with persona keys)
+            if isinstance(rewrite_angles_raw, dict) and persona in rewrite_angles_raw:
+                # Old dict format: get first (best) angle for this persona
+                angles_list = rewrite_angles_raw[persona]
+                if angles_list and len(angles_list) > 0:
+                    best_angle = angles_list[0]  # Already sorted by confidence
+                    # Convert to old format for compatibility
+                    persona_angle = {
+                        "persona": persona,
+                        "angle": best_angle.get("angle_name", ""),
+                        "description": best_angle.get("description", ""),
+                        "tone": best_angle.get("tone", "natural"),
+                        "approach": best_angle.get("approach", ""),
+                        "confidence": best_angle.get("confidence", 0.7),
+                        "platform_fit": "threads"
+                        if len(analyzed_content.get("content", "")) > 280
+                        else "twitter",
+                    }
+            elif isinstance(rewrite_angles_raw, list):
+                # Old list format: find angle for this persona
+                persona_angle = next(
+                    (a for a in rewrite_angles_raw if a.get("persona") == persona), None
+                )
+
+        # If no angle found, create a simple fallback angle
+        if not persona_angle:
+            logger.warning(
+                f"⚠️ No rewrite suggestion found for persona: {persona}, using fallback"
+            )
+            persona_angle = {
+                "persona": persona,
+                "angle": "Natural rewrite",
+                "description": "Rewrite naturally in persona voice",
+                "tone": "natural",
+                "approach": "Rewrite this content naturally in your authentic voice. Be creative and unique.",
+                "confidence": 0.5,
+                "platform_fit": "threads"
+                if len(analyzed_content.get("content", "")) > 280
+                else "twitter",
+            }
 
         # Use platform_fit from angle if platform is "auto"
         if platform == "auto":
-            platform_fit = persona_angle.get('platform_fit', 'twitter_thread')
-            if 'twitter' in platform_fit:
-                platform = 'twitter'
-            elif 'linkedin' in platform_fit:
-                platform = 'linkedin'
+            platform_fit = persona_angle.get("platform_fit", "twitter_thread")
+            if "twitter" in platform_fit:
+                platform = "twitter"
+            elif "linkedin" in platform_fit:
+                platform = "linkedin"
             else:
-                platform = 'twitter'  # Default
+                platform = "twitter"  # Default
 
         persona_info = self.personas[persona]
 
-        logger.info(f"✍️  Rewriting {analyzed_content.get('post_id')} as {persona_info['name']} for {platform}")
+        logger.info(
+            f"✍️  Rewriting {analyzed_content.get('post_id')} as {persona_info['name']} for {platform}"
+        )
         logger.info(f"   Using angle: {persona_angle.get('angle')}")
 
         # Extract original content info
-        original_content = analyzed_content.get('summary', analyzed_content.get('content', ''))
+        original_content = analyzed_content.get(
+            "summary", analyzed_content.get("content", "")
+        )
+
+        # 🚨 REDDIT COMMENTS HANDLING: Separate main post from comments
+        # Comments are helpful context, NOT the main story
+        if analyzed_content.get("platform") == "reddit" and original_content:
+            main_content, comments_section = self._separate_reddit_content(
+                original_content
+            )
+            if comments_section:
+                logger.info(
+                    "📝 Detected Reddit comments - using main post as primary, comments as context only"
+                )
+                # Use main post as primary content
+                original_content = main_content
+                # Store comments as context (not primary content)
+                analyzed_content["_reddit_comments_context"] = comments_section
 
         # VALIDATION: Check for truncated/incomplete content
         if not original_content or len(original_content.strip()) == 0:
@@ -1023,31 +1434,41 @@ Rewritten post:"""
 
         # Check for truncation indicators (ending with ... means incomplete)
         # NOTE: We allow short content - it might be a concise banger post
-        truncation_indicators = ['...', '…', '[truncated]', '[...]']
-        if any(indicator in original_content[-20:] for indicator in truncation_indicators):
+        truncation_indicators = ["...", "…", "[truncated]", "[...]"]
+        if any(
+            indicator in original_content[-20:] for indicator in truncation_indicators
+        ):
             logger.warning("⚠️ Content appears truncated (ends with ...) - skipping")
-            return {"error": "Content appears truncated - cannot rewrite incomplete content", "skipped": True}
+            return {
+                "error": "Content appears truncated - cannot rewrite incomplete content",
+                "skipped": True,
+            }
 
         # Check if content starts with truncation (incomplete beginning)
-        if any(indicator in original_content[:20] for indicator in truncation_indicators):
+        if any(
+            indicator in original_content[:20] for indicator in truncation_indicators
+        ):
             logger.warning("⚠️ Content appears truncated (starts with ...) - skipping")
-            return {"error": "Content appears truncated - cannot rewrite incomplete content", "skipped": True}
+            return {
+                "error": "Content appears truncated - cannot rewrite incomplete content",
+                "skipped": True,
+            }
 
-        category = analyzed_content.get('category', '')
-        topics = analyzed_content.get('topics') or []
-        key_concepts = analyzed_content.get('key_concepts') or []
+        category = analyzed_content.get("category", "")
+        topics = analyzed_content.get("topics") or []
+        key_concepts = analyzed_content.get("key_concepts") or []
 
         # Get enhanced angle fields
-        angle_tone = persona_angle.get('tone', persona_info['tone'])
-        hook = persona_angle.get('hook', '')
-        key_points = persona_angle.get('key_points', [])
-        call_to_action = persona_angle.get('call_to_action', '')
-        target_audience = persona_angle.get('target_audience', persona_info['audience'])
+        angle_tone = persona_angle.get("tone", persona_info["tone"])
+        hook = persona_angle.get("hook", "")
+        key_points = persona_angle.get("key_points", [])
+        call_to_action = persona_angle.get("call_to_action", "")
+        target_audience = persona_angle.get("target_audience", persona_info["audience"])
 
         # Determine format based on platform_fit
-        platform_fit = persona_angle.get('platform_fit', 'single_post')
+        platform_fit = persona_angle.get("platform_fit", "single_post")
         # Only treat as thread if EXPLICITLY marked as thread (not just contains word "thread")
-        is_thread = platform_fit in ['twitter_thread', 'threads_thread', 'thread']
+        is_thread = platform_fit in ["twitter_thread", "threads_thread", "thread"]
 
         if is_thread:
             format_constraint = "Thread format: 3-7 tweets, each <280 chars"
@@ -1075,15 +1496,19 @@ VALIDATION:
 - Test: Can you split on "\n\d+/\n" pattern?
 
 IMPORTANT: Only use threads if content needs 3+ tweets. Single post is preferred."""
-        elif 'short' in platform_fit:
+        elif "short" in platform_fit:
             format_constraint = "Single tweet: <280 chars, punchy and direct"
-            format_instructions = "Write a single, standalone post. NO thread format needed."
-        elif 'linkedin' in platform_fit:
+            format_instructions = (
+                "Write a single, standalone post. NO thread format needed."
+            )
+        elif "linkedin" in platform_fit:
             format_constraint = "LinkedIn post: 150-300 words, professional tone"
             format_instructions = "Write a single LinkedIn post. NO thread numbering."
         else:
             format_constraint = "Single post, optimized for engagement"
-            format_instructions = "Write a single, standalone post. NO thread format needed."
+            format_instructions = (
+                "Write a single, standalone post. NO thread format needed."
+            )
 
         # Get voice patterns and opinions for this persona
         voice_pattern = self.voice_patterns.get(persona, {})
@@ -1091,16 +1516,18 @@ IMPORTANT: Only use threads if content needs 3+ tweets. Single post is preferred
         examples = self.voice_examples.get(persona, [])
 
         # Extract voice guidance
-        vocabulary = voice_pattern.get('vocabulary', {})
-        sentence_patterns = voice_pattern.get('sentence_patterns', {})
-        tone_markers = voice_pattern.get('tone_markers', {})
-        quirks = voice_pattern.get('quirks', [])
+        vocabulary = voice_pattern.get("vocabulary", {})
+        sentence_patterns = voice_pattern.get("sentence_patterns", {})
+        tone_markers = voice_pattern.get("tone_markers", {})
+        quirks = voice_pattern.get("quirks", [])
 
         # Build voice examples section (if available)
         voice_examples_text = ""
         if examples:
             # SMART EXAMPLE SELECTION - match examples to content type and characteristics
-            content_type = self._classify_content_type(original_content, category, topics, persona=persona)
+            content_type = self._classify_content_type(
+                original_content, category, topics, persona=persona
+            )
             content_length = len(original_content)
             logger.info(f"🔍 Classified as: {content_type} ({content_length} chars)")
             examples_sample = await self._select_smart_examples(
@@ -1109,7 +1536,7 @@ IMPORTANT: Only use threads if content needs 3+ tweets. Single post is preferred
                 content_length,
                 original_content,
                 persona=persona,
-                platform=platform
+                platform=platform,
             )
 
             voice_examples_text = f"""
@@ -1138,49 +1565,87 @@ PERSONA OPINIONS & STANCES:
 
         # Language instruction
         language_instruction = ""
-        if persona_info.get('language') == 'russian':
+        if persona_info.get("language") == "russian":
             language_instruction = "\n⚠️  CRITICAL: Write ENTIRELY in RUSSIAN language. This is a Russian-language profile. Do NOT write in English."
         else:
             language_instruction = "\n✓ Write in English language."
 
         # Determine language for LLM call
-        llm_language = "russian" if persona_info.get('language') == 'russian' else "english"
+        llm_language = (
+            "russian" if persona_info.get("language") == "russian" else "english"
+        )
 
         # TWO-STAGE PIPELINE FOR RUSSIAN: Extract ideas first, then write
         if llm_language == "russian":
-            logger.info("🔄 Using TWO-STAGE pipeline: Gemini extraction → Gemini writing")
+            logger.info(
+                "🔄 Using TWO-STAGE pipeline: Gemini extraction → Gemini writing"
+            )
 
             # Stage 1: Extract core ideas using Gemini (cloud-based)
+            # Include Reddit comments as context if available, but emphasize main post
+            extraction_context = original_content
+            if analyzed_content.get("_reddit_comments_context"):
+                # Add comments as helpful context, but make it clear main post is primary
+                extraction_context = f"""MAIN POST (this is the primary story):
+{original_content}
+
+HELPFUL CONTEXT FROM COMMENTS (use this to understand the topic better, but don't make comments the focus):
+{analyzed_content.get('_reddit_comments_context')}
+
+Remember: The MAIN POST is the story. Comments are just helpful context to understand the topic better."""
+
             extracted_ideas = await self._extract_core_ideas(
-                original_content,
+                extraction_context,
                 analyzed_content,
                 target_platform=platform,
-                target_content_type=target_content_type
+                target_content_type=target_content_type,
             )
 
             # ERROR HANDLING: Check if extraction failed due to rate limits
             # If Stage 1 returns an error, FAIL immediately instead of passing error text to Stage 2
-            from src.utils.error_handler import is_rate_limit_error_in_content, create_rate_limit_error_result
+            from src.utils.error_handler import (
+                create_rate_limit_error_result,
+                is_rate_limit_error_in_content,
+            )
 
             if is_rate_limit_error_in_content(extracted_ideas):
-                logger.error(f"❌ Stage 1 extraction failed with rate limit/error - FAILING output instead of propagating")
+                logger.error(
+                    f"❌ Stage 1 extraction failed with rate limit/error - FAILING output instead of propagating"
+                )
                 return create_rate_limit_error_result(
-                    post_id=analyzed_content.get('post_id', 'unknown'),
-                    platform=analyzed_content.get('platform', 'unknown'),
-                    persona_name=persona_info.get('name', persona),
+                    post_id=analyzed_content.get("post_id", "unknown"),
+                    platform=analyzed_content.get("platform", "unknown"),
+                    persona_name=persona_info.get("name", persona),
                     provider="Gemini",
-                    stage="extraction"
+                    stage="extraction",
                 )
 
             # Stage 2: Write from ideas using Gemini (Russian-native)
-            logger.info("✍️  Stage 2: Writing in Russian with Gemini from extracted ideas")
+            logger.info(
+                "✍️  Stage 2: Writing in Russian with Gemini from extracted ideas"
+            )
 
             # Get the angle/strategy from rewrite_angles
-            angle_strategy = analyzed_content.get('rewrite_angles', [{}])[0].get('angle', '')
+            rewrite_angles_data = analyzed_content.get("rewrite_angles")
+            if isinstance(rewrite_angles_data, dict) and persona in rewrite_angles_data:
+                angles_list = rewrite_angles_data[persona]
+                angle_strategy = (
+                    angles_list[0].get("angle_name", "")
+                    if angles_list and len(angles_list) > 0
+                    else ""
+                )
+            elif isinstance(rewrite_angles_data, list) and len(rewrite_angles_data) > 0:
+                angle_strategy = rewrite_angles_data[0].get("angle", "")
+            else:
+                angle_strategy = persona_angle.get("angle", "")
 
             # Define strategy-specific instructions
             strategy_instructions = ""
-            if 'short' in angle_strategy.lower() or 'короткий' in angle_strategy.lower() or 'punchy' in angle_strategy.lower():
+            if (
+                "short" in angle_strategy.lower()
+                or "короткий" in angle_strategy.lower()
+                or "punchy" in angle_strategy.lower()
+            ):
                 strategy_instructions = """
 WRITING STRATEGY: SHORT & PUNCHY
 - Maximum 3-4 sentences total
@@ -1188,7 +1653,11 @@ WRITING STRATEGY: SHORT & PUNCHY
 - Direct, minimal, no fluff
 - Each line = complete thought"""
 
-            elif 'expanded' in angle_strategy.lower() or 'развёрнутый' in angle_strategy.lower() or 'context' in angle_strategy.lower():
+            elif (
+                "expanded" in angle_strategy.lower()
+                or "развёрнутый" in angle_strategy.lower()
+                or "context" in angle_strategy.lower()
+            ):
                 strategy_instructions = """
 WRITING STRATEGY: EXPANDED WITH CONTEXT
 - Add specific details: numbers, comparisons, examples
@@ -1197,7 +1666,12 @@ WRITING STRATEGY: EXPANDED WITH CONTEXT
 - Include background context or concrete data points
 - Make it informative and thorough (5-7 sentences)"""
 
-            elif 'provocative' in angle_strategy.lower() or 'story' in angle_strategy.lower() or 'провокационный' in angle_strategy.lower() or 'personal' in angle_strategy.lower():
+            elif (
+                "provocative" in angle_strategy.lower()
+                or "story" in angle_strategy.lower()
+                or "провокационный" in angle_strategy.lower()
+                or "personal" in angle_strategy.lower()
+            ):
                 strategy_instructions = """
 WRITING STRATEGY: PROVOCATIVE/STORY
 - Start with controversial statement or personal admission
@@ -1213,24 +1687,76 @@ WRITING STRATEGY: BALANCED
 - Add line breaks (\\n\\n) every 1-2 sentences for Twitter readability
 - Keep concise but informative"""
 
+            # 🎲 INJECT VARIETY: Randomly select an opening style to force creativity (Russian path)
+            import random
+
+            opening_styles_ru = [
+                "Начни со смелого утверждения или провокационного мнения",
+                "Начни с конкретной цифры, факта или детали из источника",
+                "Начни с вопроса, который цепляет читателя",
+                "Начни с личной эмоциональной реакции (удивление, скептицизм, восторг)",
+                "Начни с середины мысли, как будто продолжаешь разговор",
+                "Начни с прямого наблюдения или истории",
+                "Начни с цитаты или ссылки на источник",
+                "Начни с контринтуитивного инсайта",
+            ]
+            selected_opening_style_ru = random.choice(opening_styles_ru)
+            logger.info(
+                f"🎲 Random opening style selected (RU): {selected_opening_style_ru}"
+            )
+
+            variety_instruction_ru = f"""
+🎲 ОБЯЗАТЕЛЬНЫЙ СТИЛЬ НАЧАЛА ДЛЯ ЭТОГО ПОСТА:
+Ты ДОЛЖЕН начать с: {selected_opening_style_ru}
+Это случайно выбрано для обеспечения разнообразия - следуй этому точно, но сделай это естественно и креативно.
+"""
+
             # Use custom prompt from profile pipeline if provided, otherwise build internal prompt
             if custom_prompt:
                 logger.info("📝 Using custom prompt from ProfileContentPipeline")
                 prompt = custom_prompt
+                # Inject variety instruction into custom prompt
+                if variety_instruction_ru not in prompt:
+                    prompt = variety_instruction_ru + "\n\n" + prompt
                 # Replace placeholders in custom prompt with actual content
-                prompt = prompt.replace('{extracted_ideas}', extracted_ideas)
-                prompt = prompt.replace('{voice_examples}', voice_examples_text)
+                prompt = prompt.replace("{extracted_ideas}", extracted_ideas)
+                prompt = prompt.replace("{voice_examples}", voice_examples_text)
             else:
                 logger.info("📝 Building internal prompt")
+
+                # Use creative approach from angle if available
+                creative_approach = persona_angle.get("approach", "")
+                approach_guidance = ""
+                if creative_approach:
+                    approach_guidance = f"""
+CREATIVE APPROACH (follow this naturally, don't force it):
+{creative_approach}
+
+Use this approach as inspiration - be creative and natural, not mechanical.
+"""
+
                 prompt = f"""You are {persona_info['name']}, writing for {platform}.
 
 TOPIC:
 {extracted_ideas}
 
-{strategy_instructions}
+{approach_guidance}{strategy_instructions}
 
 VOICE EXAMPLES - Study these to match your style:
 {voice_examples_text}
+
+🚨 CRITICAL - PERSONALIZATION & SOCIAL MEDIA REQUIREMENTS:
+- Write from FIRST-PERSON experience ("я протестировал", "я заметил", "я попробовал")
+- Include SPECIFIC details: actual tool names, numbers, real examples from the source
+- Add your REACTION: what surprised you, what you liked/hated, what you're skeptical about
+- Make it feel like YOU actually tried/experienced this, not like you're summarizing an article
+- If the source mentions a tool/product, reference it by name and share YOUR take on it
+- Add emotional honesty: "это звучит круто, но я всё равно боюсь", "ненавижу, что приходится доверять браузеру"
+- Connect it to YOUR real experience: "перепробовал >5 инструментов", "уже месяц использую X"
+- NO generic analysis language like "это интересный кейс" or "давайте разберем" - write like you're sharing something YOU did
+- FOR SOCIAL MEDIA: Be CONCISE - focus on the JUICY parts, not every technical detail
+- FOR SOCIAL MEDIA: Lead with PERSONALITY and EMOTION, not technical analysis
+- FOR SOCIAL MEDIA: If it's Reddit with comments, the MAIN POST is the story - comments are just helpful context, don't make them the focus
 
 CORE RULES:
 1. Write in RUSSIAN
@@ -1239,6 +1765,16 @@ CORE RULES:
 4. If source has an opinion/preference, KEEP that sentiment (don't flip positive to negative)
 5. Use ONLY facts from source - don't invent product names or features
 6. Match the voice examples' tone and structure
+7. Follow the creative approach naturally - be unique and spontaneous
+8. Write from personal experience - make it feel like YOU actually did this
+9. Use ONLY single dash (-) NEVER use long dashes (— or –) - long dashes are AI telltale signs, humans don't use them
+
+{variety_instruction_ru}🚨 КРИТИЧЕСКИ ВАЖНО - КРЕАТИВНОСТЬ И РАЗНООБРАЗИЕ:
+- КАЖДЫЙ пост должен быть УНИКАЛЬНЫМ - разная структура, разный ритм, разное настроение
+- Меняй ВСЁ: структуру, длину, стиль начала, ритм предложений, разрывы абзацев
+- Каждый пост должен ощущаться как написанный в разное время, в разном настроении
+- Будь по-настоящему креативным и спонтанным - пиши естественно, как живой человек
+- Следуй указанному стилю начала выше, но сделай это естественно и творчески
 {opinions_text}
 
 Write the post:"""
@@ -1249,17 +1785,77 @@ Write the post:"""
             # SINGLE-STAGE FOR ENGLISH (use same quality approach as Russian)
             logger.info("📝 Using SINGLE-STAGE pipeline for English")
 
+            # Use creative approach from angle if available
+            creative_approach = persona_angle.get("approach", "")
+            approach_guidance = ""
+            if creative_approach:
+                approach_guidance = f"""
+CREATIVE APPROACH (follow this naturally, don't force it):
+{creative_approach}
+
+Use this approach as inspiration - be creative and natural, not mechanical.
+"""
+
+            # Include Reddit comments as context if available, but emphasize main post
+            content_context = original_content
+            if analyzed_content.get("_reddit_comments_context"):
+                # Add comments as helpful context, but make it clear main post is primary
+                content_context = f"""MAIN POST (this is the primary story):
+{original_content}
+
+HELPFUL CONTEXT FROM COMMENTS (use this to understand the topic better, but don't make comments the focus):
+{analyzed_content.get('_reddit_comments_context')}
+
+Remember: The MAIN POST is the story. Comments are just helpful context to understand the topic better."""
+
+            # 🎲 INJECT VARIETY: Randomly select an opening style for English path too
+            import random
+
+            opening_styles = [
+                "Start with a bold statement or controversial take",
+                "Start with a specific number, fact, or detail from the source",
+                "Start with a question that hooks the reader",
+                "Start with a personal emotional reaction (surprise, skepticism, excitement)",
+                "Start mid-thought, like you're continuing a conversation",
+                "Start with a direct observation or story",
+                "Start with a quote or reference from the source",
+                "Start with a counter-intuitive insight",
+            ]
+            selected_opening_style = random.choice(opening_styles)
+            logger.info(
+                f"🎲 Random opening style selected (EN): {selected_opening_style}"
+            )
+
+            variety_instruction = f"""
+🎲 MANDATORY OPENING STYLE FOR THIS POST:
+You MUST start with: {selected_opening_style}
+This is randomly selected to ensure variety - follow it exactly, but make it natural and creative.
+"""
+
             prompt = f"""You are {persona_info['name']}, writing for {platform}.
 
 CONTENT IDEAS TO WORK WITH:
 - Main topic: {category}
 - Key concepts: {', '.join(key_concepts)}
-- Context: {original_content}
+- Context: {content_context}
 
-YOUR TASK:
+{approach_guidance}{variety_instruction}YOUR TASK:
 Write this as a social media post in {persona_info['name']}'s authentic voice. Study the examples below to understand HOW this person writes - the rhythm, variety, natural style. Don't follow formulas or patterns.
 
 {voice_examples_text}
+
+🚨 CRITICAL - PERSONALIZATION & SOCIAL MEDIA REQUIREMENTS:
+- Write from FIRST-PERSON experience ("I tried", "I noticed", "I tested")
+- Include SPECIFIC details: actual tool names, numbers, real examples from the source
+- Add your REACTION: what surprised you, what you liked/hated, what you're skeptical about
+- Make it feel like YOU actually tried/experienced this, not like you're summarizing an article
+- If the source mentions a tool/product, reference it by name and share YOUR take on it
+- Add emotional honesty: "sounds cool but I'm still worried", "hate that I have to trust the browser"
+- Connect it to YOUR real experience: "tried >5 tools", "been using X for a month"
+- NO generic analysis language like "this is an interesting case" or "let's analyze" - write like you're sharing something YOU did
+- FOR SOCIAL MEDIA: Be CONCISE - focus on the JUICY parts, not every technical detail
+- FOR SOCIAL MEDIA: Lead with PERSONALITY and EMOTION, not technical analysis
+- FOR SOCIAL MEDIA: If it's Reddit with comments, the MAIN POST is the story - comments are just helpful context, don't make them the focus
 
 VOICE GUIDELINES:
 {chr(10).join(f"- {trait}" for trait in persona_info.get('traits', []))}
@@ -1273,14 +1869,16 @@ WRITING STYLE:
 - Don't add details that weren't in the original content
 - Sound like a real person, not an AI trying to be helpful
 - Get to the point quickly, then stop
-- Use single dash with spaces (like " - ") not em-dash (—)
+- Use ONLY single dash (-) NEVER use long dashes (— or –) - long dashes are AI telltale signs, humans don't use them
 - Occasional minor imperfections are OK (missing comma, casual grammar) - you're human writing fast
+- Write from personal experience - make it feel like YOU actually did this
 
-CREATIVITY IS KEY:
-- Each post should feel unique and spontaneous
-- Vary structure, length, opening, ending every time
-- Don't repeat phrases or patterns from post to post
-- Write like a real person sharing interesting content, not following a template
+🚨 CRITICAL - CREATIVITY & VARIETY (THIS IS MANDATORY):
+- EVERY post must be UNIQUE - different structure, different rhythm, different mood
+- Vary EVERYTHING: structure, length, opening style, sentence rhythm, paragraph breaks
+- Each post should feel like it was written at a different time, in a different mood
+- Be genuinely creative and spontaneous - write naturally, like a real person
+- Follow the opening style specified above, but make it natural and creative
 {opinions_text}
 
 IMPORTANT:
@@ -1298,30 +1896,42 @@ Write the post now (JUST THE POST, no labels like "Hook:" or "Key Points:", just
         import re
 
         # Remove <think> tags from Vikhr model output
-        think_pattern = re.compile(r'<think>.*?</think>', re.DOTALL)
-        result = think_pattern.sub('', result)
+        think_pattern = re.compile(r"<think>.*?</think>", re.DOTALL)
+        result = think_pattern.sub("", result)
 
-        emoji_pattern = re.compile('['
-            u'\U0001F600-\U0001F64F'  # emoticons
-            u'\U0001F300-\U0001F5FF'  # symbols & pictographs
-            u'\U0001F680-\U0001F6FF'  # transport & map symbols
-            u'\U0001F1E0-\U0001F1FF'  # flags
-            u'\U00002702-\U000027B0'
-            u'\U000024C2-\U0001F251'
-            u'\U0001F900-\U0001F9FF'  # supplemental symbols
-            u'\U0001FA70-\U0001FAFF'
-            ']+', flags=re.UNICODE)
-        hashtag_pattern = re.compile(r'#\w+')
+        emoji_pattern = re.compile(
+            "["
+            "\U0001F600-\U0001F64F"  # emoticons
+            "\U0001F300-\U0001F5FF"  # symbols & pictographs
+            "\U0001F680-\U0001F6FF"  # transport & map symbols
+            "\U0001F1E0-\U0001F1FF"  # flags
+            "\U00002702-\U000027B0"
+            "\U000024C2-\U0001F251"
+            "\U0001F900-\U0001F9FF"  # supplemental symbols
+            "\U0001FA70-\U0001FAFF"
+            "]+",
+            flags=re.UNICODE,
+        )
+        hashtag_pattern = re.compile(r"#\w+")
 
-        result = emoji_pattern.sub('', result)
-        result = hashtag_pattern.sub('', result)
+        result = emoji_pattern.sub("", result)
+        result = hashtag_pattern.sub("", result)
 
         # 🎭 HUMANIZATION: Fix dashes and add subtle imperfections
         result = self._humanize_text(result, persona)
 
+        # 🚨 CRITICAL: Double-check for long dashes (AI telltale sign)
+        # Convert any remaining em-dash (—) or en-dash (–) to single dash (-)
+        import re
+
+        result = re.sub(r"—", "-", result)  # em-dash → single dash
+        result = re.sub(r"–", "-", result)  # en-dash → single dash
+
         # 🔧 FIX: Convert literal \n\n to actual line breaks
-        result = result.replace('\\n\\n', '\n\n')
-        result = result.replace(' \n\n ', '\n\n')  # Clean up extra spaces around line breaks
+        result = result.replace("\\n\\n", "\n\n")
+        result = result.replace(
+            " \n\n ", "\n\n"
+        )  # Clean up extra spaces around line breaks
 
         result = result.strip()
 
@@ -1329,100 +1939,121 @@ Write the post now (JUST THE POST, no labels like "Hook:" or "Key Points:", just
         thread_result = None
         if platform_constraints:
             # Apply max_length constraint with smart thread splitting
-            max_length = platform_constraints.get('max_length')
+            max_length = platform_constraints.get("max_length")
             if max_length and len(result) > max_length:
                 # For Twitter, use thread splitting instead of truncation
-                if platform == 'twitter':
-                    logger.info(f"📝 Content exceeds {max_length} chars, splitting into thread...")
-                    thread_result = self.thread_splitter.split_into_thread(result, platform=platform)
+                if platform == "twitter":
+                    logger.info(
+                        f"📝 Content exceeds {max_length} chars, splitting into thread..."
+                    )
+                    thread_result = self.thread_splitter.split_into_thread(
+                        result, platform=platform
+                    )
 
-                    if thread_result['is_thread']:
+                    if thread_result["is_thread"]:
                         # Use threaded version
-                        result = '\n\n'.join(thread_result['tweets'])
-                        logger.info(f"✂️ Split into {thread_result['tweet_count']} tweets")
+                        result = "\n\n".join(thread_result["tweets"])
+                        logger.info(
+                            f"✂️ Split into {thread_result['tweet_count']} tweets"
+                        )
 
                         # Log any warnings
-                        for warning in thread_result['warnings']:
+                        for warning in thread_result["warnings"]:
                             logger.warning(f"⚠️ Thread: {warning}")
                     else:
                         # Fallback to truncation
                         logger.warning(f"⚠️ Could not split into thread, truncating...")
-                        sentences = result[:max_length].split('.')
+                        sentences = result[:max_length].split(".")
                         if len(sentences) > 1:
-                            result = '.'.join(sentences[:-1]) + '.'
+                            result = ".".join(sentences[:-1]) + "."
                         else:
-                            result = result[:max_length].rstrip() + '...'
+                            result = result[:max_length].rstrip() + "..."
                 else:
                     # For non-Twitter platforms, truncate at sentence boundary
-                    logger.warning(f"⚠️ Content exceeds max_length ({len(result)} > {max_length}), truncating...")
-                    sentences = result[:max_length].split('.')
+                    logger.warning(
+                        f"⚠️ Content exceeds max_length ({len(result)} > {max_length}), truncating..."
+                    )
+                    sentences = result[:max_length].split(".")
                     if len(sentences) > 1:
-                        result = '.'.join(sentences[:-1]) + '.'
+                        result = ".".join(sentences[:-1]) + "."
                     else:
-                        result = result[:max_length].rstrip() + '...'
+                        result = result[:max_length].rstrip() + "..."
                     logger.info(f"✂️ Truncated to {len(result)} chars")
 
             # Apply line break constraints
-            use_line_breaks = platform_constraints.get('use_line_breaks')
+            use_line_breaks = platform_constraints.get("use_line_breaks")
             if use_line_breaks is False:
                 # Remove line breaks if disabled
-                result = result.replace('\n\n', ' ').replace('\n', ' ')
+                result = result.replace("\n\n", " ").replace("\n", " ")
                 # Clean up multiple spaces
-                result = ' '.join(result.split())
+                result = " ".join(result.split())
             elif use_line_breaks is True:
                 # Ensure consistent line breaks
-                result = result.replace('\n\n\n', '\n\n')  # Max 2 newlines
+                result = result.replace("\n\n\n", "\n\n")  # Max 2 newlines
 
             # Apply emoji constraints
-            use_emojis = platform_constraints.get('use_emojis')
+            use_emojis = platform_constraints.get("use_emojis")
             if use_emojis is False:
                 # Already removed above, but ensure
-                result = emoji_pattern.sub('', result)
+                result = emoji_pattern.sub("", result)
 
             # Apply hashtag constraints
-            use_hashtags = platform_constraints.get('use_hashtags')
+            use_hashtags = platform_constraints.get("use_hashtags")
             if use_hashtags is False:
                 # Already removed above, but ensure
-                result = hashtag_pattern.sub('', result)
+                result = hashtag_pattern.sub("", result)
 
         # 🔍 VALIDATE OUTPUT LENGTH
         length_validation = self._validate_output_length(result, platform, is_thread)
-        if not length_validation['valid']:
-            for warning in length_validation['warnings']:
+        if not length_validation["valid"]:
+            for warning in length_validation["warnings"]:
                 logger.warning(warning)
 
         # 🔍 SCORE OUTPUT QUALITY
         quality_score = self._score_output_quality(result, persona, examples)
-        if quality_score['score'] < 90:
-            logger.warning(f"⚠️ Quality score: {quality_score['score']}/100 - Issues: {quality_score['issues']}")
+        if quality_score["score"] < 90:
+            logger.warning(
+                f"⚠️ Quality score: {quality_score['score']}/100 - Issues: {quality_score['issues']}"
+            )
 
         # 🔍 VALIDATE FACT PRESERVATION
         fact_validation = self.fact_validator.validate_preservation(
             source=original_content,
             output=result,
-            critical_threshold=0.7  # 70% of critical facts must be preserved
+            critical_threshold=0.7,  # 70% of critical facts must be preserved
         )
 
         # Add fact preservation to quality score
-        if not fact_validation['valid']:
-            logger.warning(f"⚠️ Fact preservation: {fact_validation['critical_preservation_rate']}% (below threshold)")
-            for warning in fact_validation['warnings'][:3]:  # Show top 3 warnings
+        if not fact_validation["valid"]:
+            logger.warning(
+                f"⚠️ Fact preservation: {fact_validation['critical_preservation_rate']}% (below threshold)"
+            )
+            for warning in fact_validation["warnings"][:3]:  # Show top 3 warnings
                 logger.warning(f"   {warning}")
 
             # Penalize quality score for missing facts
-            fact_penalty = (100 - fact_validation['preservation_score']) * 0.3  # Max -30 points
-            quality_score['score'] = max(0, quality_score['score'] - fact_penalty)
-            quality_score['issues'].append(f"Missing facts (-{int(fact_penalty)} pts)")
+            fact_penalty = (
+                100 - fact_validation["preservation_score"]
+            ) * 0.3  # Max -30 points
+            quality_score["score"] = max(0, quality_score["score"] - fact_penalty)
+            quality_score["issues"].append(f"Missing facts (-{int(fact_penalty)} pts)")
         else:
-            logger.info(f"✅ Fact preservation: {fact_validation['preservation_score']}%")
+            logger.info(
+                f"✅ Fact preservation: {fact_validation['preservation_score']}%"
+            )
 
         # 🔄 QUALITY-BASED RETRY LOGIC
         # If quality is below 70 and we haven't retried yet, try again with different approach
         MIN_QUALITY_THRESHOLD = 70
         MAX_RETRIES = 1
 
-        if quality_score['score'] < MIN_QUALITY_THRESHOLD and _retry_attempt < MAX_RETRIES:
-            logger.warning(f"🔄 Quality below threshold ({quality_score['score']} < {MIN_QUALITY_THRESHOLD}), retrying with different strategy...")
+        if (
+            quality_score["score"] < MIN_QUALITY_THRESHOLD
+            and _retry_attempt < MAX_RETRIES
+        ):
+            logger.warning(
+                f"🔄 Quality below threshold ({quality_score['score']} < {MIN_QUALITY_THRESHOLD}), retrying with different strategy..."
+            )
 
             # For retry, we'll use random example selection to get different voice examples
             # This is done by not passing the specific examples, letting smart selection pick different ones
@@ -1438,43 +2069,54 @@ Write the post now (JUST THE POST, no labels like "Hook:" or "Key Points:", just
                 custom_prompt=custom_prompt,
                 platform_constraints=platform_constraints,
                 target_content_type=target_content_type,
-                _retry_attempt=_retry_attempt + 1
+                _retry_attempt=_retry_attempt + 1,
             )
 
             # Compare quality scores and return the better result
-            retry_quality = retry_result.get('quality_score', 0)
+            retry_quality = retry_result.get("quality_score", 0)
 
-            if retry_quality > quality_score['score']:
-                logger.info(f"✅ Retry improved quality: {quality_score['score']} → {retry_quality}")
-                retry_result['retry_count'] = _retry_attempt + 1
-                retry_result['original_quality_score'] = quality_score['score']
+            if retry_quality > quality_score["score"]:
+                logger.info(
+                    f"✅ Retry improved quality: {quality_score['score']} → {retry_quality}"
+                )
+                retry_result["retry_count"] = _retry_attempt + 1
+                retry_result["original_quality_score"] = quality_score["score"]
                 return retry_result
             else:
-                logger.info(f"⚠️ Retry did not improve quality ({retry_quality} ≤ {quality_score['score']}), using original")
+                logger.info(
+                    f"⚠️ Retry did not improve quality ({retry_quality} ≤ {quality_score['score']}), using original"
+                )
 
         # Get discovery signals for metadata
-        discovery_signals = analyzed_content.get('discovery_signals', {})
-        content_freshness = analyzed_content.get('content_freshness', {})
+        discovery_signals = analyzed_content.get("discovery_signals", {})
+        content_freshness = analyzed_content.get("content_freshness", {})
 
         # 🎭 VOICE CONSISTENCY VALIDATION
-        voice_validation = {'is_consistent': True, 'consistency_score': 100, 'issues': [], 'warnings': []}
+        voice_validation = {
+            "is_consistent": True,
+            "consistency_score": 100,
+            "issues": [],
+            "warnings": [],
+        }
         if self.voice_validator:
             try:
                 logger.info(f"🎭 Validating voice consistency for {persona}")
                 voice_validation = self.voice_validator.validate_voice(
-                    text=result,
-                    persona=persona,
-                    return_details=True
+                    text=result, persona=persona, return_details=True
                 )
 
-                if not voice_validation['is_consistent']:
-                    logger.warning(f"⚠️ Voice consistency check failed ({voice_validation['consistency_score']:.1f}%)")
-                    for issue in voice_validation['issues']:
+                if not voice_validation["is_consistent"]:
+                    logger.warning(
+                        f"⚠️ Voice consistency check failed ({voice_validation['consistency_score']:.1f}%)"
+                    )
+                    for issue in voice_validation["issues"]:
                         logger.warning(f"  - {issue}")
 
                     # Get improvement suggestions
-                    suggestions = self.voice_validator.get_improvement_suggestions(voice_validation, persona)
-                    voice_validation['suggestions'] = suggestions
+                    suggestions = self.voice_validator.get_improvement_suggestions(
+                        voice_validation, persona
+                    )
+                    voice_validation["suggestions"] = suggestions
 
             except Exception as e:
                 logger.warning(f"⚠️ Voice validation failed: {e}")
@@ -1482,17 +2124,26 @@ Write the post now (JUST THE POST, no labels like "Hook:" or "Key Points:", just
         # 📊 LOG ANALYTICS
         if self.analytics:
             try:
-                self.analytics.log_rewrite({
-                    "persona": persona,
-                    "platform": platform,
-                    "content_type": self._classify_content_type(original_content, category, topics, persona=persona),
-                    "quality_score": quality_score['score'],
-                    "length_valid": length_validation['valid'],
-                    "examples_used": [ex.get('id') if isinstance(ex, dict) else None for ex in examples_sample] if 'examples_sample' in locals() else [],
-                    "tone_detected": self._detect_content_tone(original_content),
-                    "timestamp": datetime.now().isoformat(),
-                    "success": True
-                })
+                self.analytics.log_rewrite(
+                    {
+                        "persona": persona,
+                        "platform": platform,
+                        "content_type": self._classify_content_type(
+                            original_content, category, topics, persona=persona
+                        ),
+                        "quality_score": quality_score["score"],
+                        "length_valid": length_validation["valid"],
+                        "examples_used": [
+                            ex.get("id") if isinstance(ex, dict) else None
+                            for ex in examples_sample
+                        ]
+                        if "examples_sample" in locals()
+                        else [],
+                        "tone_detected": self._detect_content_tone(original_content),
+                        "timestamp": datetime.now().isoformat(),
+                        "success": True,
+                    }
+                )
             except Exception as e:
                 logger.warning(f"Failed to log analytics: {e}")
 
@@ -1502,57 +2153,53 @@ Write the post now (JUST THE POST, no labels like "Hook:" or "Key Points:", just
             "persona_emoji": persona_info["emoji"],
             "platform": platform,
             "platform_fit": platform_fit,
-            "original_post_id": analyzed_content.get('post_id'),
-            "original_platform": analyzed_content.get('platform'),
-            "original_url": analyzed_content.get('url', ''),
+            "original_post_id": analyzed_content.get("post_id"),
+            "original_platform": analyzed_content.get("platform"),
+            "original_url": analyzed_content.get("url", ""),
             "rewritten_content": result,
-
             # Enhanced metadata from analyzer
-            "angle_used": persona_angle.get('angle'),
+            "angle_used": persona_angle.get("angle"),
             "hook_used": hook,
             "tone_used": angle_tone,
             "call_to_action": call_to_action,
             "key_points_covered": key_points,
-
             # Discovery signals (for scheduling/prioritization)
-            "viral_potential": discovery_signals.get('viral_potential', 0),
-            "author_authority": discovery_signals.get('author_authority', 'medium'),
-            "trend_relevance": discovery_signals.get('trend_relevance', 'mainstream'),
-            "time_sensitivity": content_freshness.get('time_sensitivity', 'evergreen'),
-
+            "viral_potential": discovery_signals.get("viral_potential", 0),
+            "author_authority": discovery_signals.get("author_authority", "medium"),
+            "trend_relevance": discovery_signals.get("trend_relevance", "mainstream"),
+            "time_sensitivity": content_freshness.get("time_sensitivity", "evergreen"),
             # Scores
-            "original_value_score": analyzed_content.get('intelligent_value_score', 0),
-            "original_quality_score": analyzed_content.get('content_quality_score', 0),
-
+            "original_value_score": analyzed_content.get("intelligent_value_score", 0),
+            "original_quality_score": analyzed_content.get("content_quality_score", 0),
             # NEW: Quality and validation
-            "quality_score": quality_score['score'],
-            "quality_rating": quality_score['quality'],
-            "quality_issues": quality_score['issues'],
-            "length_valid": length_validation['valid'],
-            "length_warnings": length_validation.get('warnings', []),
-            "content_length": length_validation.get('length', 0) if not is_thread else length_validation.get('max_tweet_length', 0),
-            "tweet_count": length_validation.get('tweet_count', 1) if is_thread else 1,
-
+            "quality_score": quality_score["score"],
+            "quality_rating": quality_score["quality"],
+            "quality_issues": quality_score["issues"],
+            "length_valid": length_validation["valid"],
+            "length_warnings": length_validation.get("warnings", []),
+            "content_length": length_validation.get("length", 0)
+            if not is_thread
+            else length_validation.get("max_tweet_length", 0),
+            "tweet_count": length_validation.get("tweet_count", 1) if is_thread else 1,
             # Fact preservation
-            "fact_preservation_score": fact_validation['preservation_score'],
-            "fact_preservation_valid": fact_validation['valid'],
-            "facts_preserved": fact_validation['total_facts'],
-            "fact_warnings": fact_validation['warnings'],
-
+            "fact_preservation_score": fact_validation["preservation_score"],
+            "fact_preservation_valid": fact_validation["valid"],
+            "facts_preserved": fact_validation["total_facts"],
+            "fact_warnings": fact_validation["warnings"],
             # Thread info (if split into thread)
-            "is_thread": thread_result['is_thread'] if thread_result else False,
-            "thread_tweets": thread_result['tweets'] if thread_result and thread_result['is_thread'] else [result],
-            "thread_count": thread_result['tweet_count'] if thread_result else 1,
-
+            "is_thread": thread_result["is_thread"] if thread_result else False,
+            "thread_tweets": thread_result["tweets"]
+            if thread_result and thread_result["is_thread"]
+            else [result],
+            "thread_count": thread_result["tweet_count"] if thread_result else 1,
             # Voice consistency
-            "voice_consistent": voice_validation['is_consistent'],
-            "voice_consistency_score": voice_validation['consistency_score'],
-            "voice_issues": voice_validation['issues'],
-            "voice_warnings": voice_validation['warnings'],
-            "voice_suggestions": voice_validation.get('suggestions', []),
-            "voice_details": voice_validation.get('details', {}),
-
-            "timestamp": datetime.now().isoformat()
+            "voice_consistent": voice_validation["is_consistent"],
+            "voice_consistency_score": voice_validation["consistency_score"],
+            "voice_issues": voice_validation["issues"],
+            "voice_warnings": voice_validation["warnings"],
+            "voice_suggestions": voice_validation.get("suggestions", []),
+            "voice_details": voice_validation.get("details", {}),
+            "timestamp": datetime.now().isoformat(),
         }
 
     async def _extract_core_ideas(
@@ -1560,7 +2207,7 @@ Write the post now (JUST THE POST, no labels like "Hook:" or "Key Points:", just
         content: str,
         analyzed_content: Dict[str, Any],
         target_platform: str = None,
-        target_content_type: str = None
+        target_content_type: str = None,
     ) -> str:
         """
         Stage 1: Extract core ideas from content using Gemini
@@ -1572,30 +2219,41 @@ Write the post now (JUST THE POST, no labels like "Hook:" or "Key Points:", just
             target_platform: Target platform (twitter/threads/telegram) - affects extraction focus
             target_content_type: Content type (tech_news/deep_analysis/etc) - guides extraction depth
         """
-        logger.info(f"📝 Stage 1: Extracting core ideas with Gemini (target: {target_platform}/{target_content_type})")
+        logger.info(
+            f"📝 Stage 1: Extracting core ideas with Gemini (target: {target_platform}/{target_content_type})"
+        )
 
-        summary = analyzed_content.get('summary', '')
-        category = analyzed_content.get('category', 'General')
-        key_concepts = analyzed_content.get('key_concepts') or []
-        topics = analyzed_content.get('topics') or []
+        summary = analyzed_content.get("summary", "")
+        category = analyzed_content.get("category", "General")
+        key_concepts = analyzed_content.get("key_concepts") or []
+        topics = analyzed_content.get("topics") or []
 
         # Platform-specific extraction guidance
         platform_guidance = ""
-        if target_platform == 'twitter':
+        if target_platform == "twitter":
             platform_guidance = "\n\nEXTRACTION FOCUS FOR TWITTER: Extract punchy insights, key numbers, one-sentence takeaways. Keep it concise."
-        elif target_platform == 'threads':
+        elif target_platform == "threads":
             platform_guidance = "\n\nEXTRACTION FOCUS FOR THREADS: Extract with context - why this matters, implications, comparisons. Include background."
-        elif target_platform == 'telegram':
+        elif target_platform == "telegram":
             platform_guidance = "\n\nEXTRACTION FOCUS FOR TELEGRAM: Extract deep analysis points, technical details, step-by-step explanations. Be thorough."
 
         # Content type-specific extraction depth
         depth_guidance = ""
         if target_content_type:
-            if 'breaking' in target_content_type.lower() or 'news' in target_content_type.lower():
+            if (
+                "breaking" in target_content_type.lower()
+                or "news" in target_content_type.lower()
+            ):
                 depth_guidance = "\n\nCONTENT TYPE: News/Breaking - Focus on what happened, key facts, immediate impact."
-            elif 'analysis' in target_content_type.lower() or 'deep' in target_content_type.lower():
+            elif (
+                "analysis" in target_content_type.lower()
+                or "deep" in target_content_type.lower()
+            ):
                 depth_guidance = "\n\nCONTENT TYPE: Analysis - Focus on implications, context, deeper meaning, connections to trends."
-            elif 'tutorial' in target_content_type.lower() or 'guide' in target_content_type.lower():
+            elif (
+                "tutorial" in target_content_type.lower()
+                or "guide" in target_content_type.lower()
+            ):
                 depth_guidance = "\n\nCONTENT TYPE: Tutorial/Guide - Focus on actionable steps, practical tips, how-to insights."
 
         extraction_prompt = f"""Analyze this content and extract the CORE IDEAS and KEY INSIGHTS.
@@ -1631,11 +2289,15 @@ Core ideas:"""
 
         # Use LLM with fallback chain for extraction
         # (Gemini first, then Mistral, then Ollama)
-        ideas = await self._call_llm(extraction_prompt, max_tokens=400, language="english")
+        ideas = await self._call_llm(
+            extraction_prompt, max_tokens=400, language="english"
+        )
         logger.info(f"✅ Extracted ideas: {ideas[:200]}...")
         return ideas
 
-    async def _call_llm(self, prompt: str, max_tokens: int = 500, language: str = "russian") -> str:
+    async def _call_llm(
+        self, prompt: str, max_tokens: int = 500, language: str = "russian"
+    ) -> str:
         """
         Call LLM with automatic fallback chain and circuit breaker protection:
         1. Try Gemini (primary, free tier)
@@ -1663,13 +2325,22 @@ Core ideas:"""
 
             # Last resort: try local Ollama (always available, no circuit breaker needed)
             # Use Vikhr for Russian, Qwen for English
-            model = os.getenv('OLLAMA_RUSSIAN_MODEL', 'hf.co/Vikhrmodels/QVikhr-3-4B-Instruction-GGUF:latest') if language == "russian" else "qwen2.5:7b"
+            model = (
+                os.getenv(
+                    "OLLAMA_RUSSIAN_MODEL",
+                    "hf.co/Vikhrmodels/QVikhr-3-4B-Instruction-GGUF:latest",
+                )
+                if language == "russian"
+                else "qwen2.5:7b"
+            )
             logger.info(f"🔄 Falling back to local Ollama ({model})...")
             result = await self._call_ollama(prompt, max_tokens, model)
 
         return result
 
-    async def _call_gemini(self, prompt: str, max_tokens: int = 500, retry_count: int = 0) -> str:
+    async def _call_gemini(
+        self, prompt: str, max_tokens: int = 500, retry_count: int = 0
+    ) -> str:
         """
         Call Gemini API for Russian content generation with:
         - Key rotation
@@ -1678,7 +2349,7 @@ Core ideas:"""
         - Better error handling
         - Circuit breaker protection
         """
-        logger.info("🌟 Using Gemini 2.0 Flash for Russian content")
+        logger.info(f"🌟 Using Gemini model: {self.gemini_model}")
 
         if not self.gemini_api_keys:
             logger.error("No Gemini API keys configured in environment")
@@ -1698,7 +2369,7 @@ Core ideas:"""
         for attempt in range(max_retries):
             api_key = self._get_next_gemini_key()
             key_num = (self.current_key_index - 1) % len(self.gemini_api_keys) + 1
-            
+
             # Skip exhausted keys (tracked by circuit breaker)
             if (key_num - 1) in exhausted_keys:
                 logger.debug(f"⏭️ Skipping exhausted key #{key_num} (circuit breaker)")
@@ -1706,24 +2377,22 @@ Core ideas:"""
 
             try:
                 async with httpx.AsyncClient() as client:
-                    logger.info(f"📡 Trying API key #{key_num}/{len(self.gemini_api_keys)} (attempt {retry_count + 1})")
+                    logger.info(
+                        f"📡 Trying API key #{key_num}/{len(self.gemini_api_keys)} (attempt {retry_count + 1})"
+                    )
 
                     response = await client.post(
                         f"{self.gemini_url}?key={api_key}",
                         json={
-                            "contents": [{
-                                "parts": [{
-                                    "text": prompt
-                                }]
-                            }],
+                            "contents": [{"parts": [{"text": prompt}]}],
                             "generationConfig": {
                                 "temperature": 0.7,  # Lower temp for more consistent quality
                                 "maxOutputTokens": max_tokens,
                                 "topP": 0.9,
-                                "topK": 40
-                            }
+                                "topK": 40,
+                            },
                         },
-                        timeout=60
+                        timeout=60,
                     )
 
                     if response.status_code == 200:
@@ -1734,7 +2403,9 @@ Core ideas:"""
                             parts = content.get("parts", [])
                             if parts:
                                 text = parts[0].get("text", "").strip()
-                                logger.info(f"✅ Gemini (key #{key_num}) generated {len(text)} chars")
+                                logger.info(
+                                    f"✅ Gemini (key #{key_num}) generated {len(text)} chars"
+                                )
                                 # ✅ SUCCESS - record it in circuit breaker
                                 self.circuit_breaker.record_success("gemini")
                                 return text
@@ -1745,29 +2416,43 @@ Core ideas:"""
                         logger.warning(f"⚠️ {error_msg}, trying next key...")
                         all_errors.append(error_msg)
                         last_error = error_msg
-                        
+
                         # ❌ FAILURE - record it in circuit breaker
                         self.circuit_breaker.record_failure(
                             provider="gemini",
                             error_type="rate_limit",
-                            api_key_index=key_num - 1
+                            api_key_index=key_num - 1,
                         )
 
                         # If this is our last key and we haven't retried yet, wait and retry
                         # But only if we have more than 1 key (otherwise waiting won't help)
-                        if attempt == max_retries - 1 and retry_count == 0 and len(self.gemini_api_keys) > 1:
-                            logger.info("⏳ All keys hit limits, waiting 10s before retry...")
+                        if (
+                            attempt == max_retries - 1
+                            and retry_count == 0
+                            and len(self.gemini_api_keys) > 1
+                        ):
+                            logger.info(
+                                "⏳ All keys hit limits, waiting 10s before retry..."
+                            )
                             import asyncio
+
                             await asyncio.sleep(10)
-                            return await self._call_gemini(prompt, max_tokens, retry_count + 1)
-                        elif attempt == max_retries - 1 and len(self.gemini_api_keys) == 1:
+                            return await self._call_gemini(
+                                prompt, max_tokens, retry_count + 1
+                            )
+                        elif (
+                            attempt == max_retries - 1
+                            and len(self.gemini_api_keys) == 1
+                        ):
                             logger.warning("🚫 Single API key hit rate limit - no retry")
                             break
 
                         continue
 
                     # Other errors
-                    error_msg = f"API error {response.status_code}: {response.text[:200]}"
+                    error_msg = (
+                        f"API error {response.status_code}: {response.text[:200]}"
+                    )
                     logger.error(f"Gemini error (key #{key_num}): {error_msg}")
                     all_errors.append(error_msg)
                     last_error = error_msg
@@ -1806,18 +2491,23 @@ Core ideas:"""
                 continue
 
         # All keys failed - log detailed error summary
-        logger.error(f"❌ All {len(self.gemini_api_keys)} API keys failed after {retry_count + 1} attempts")
+        logger.error(
+            f"❌ All {len(self.gemini_api_keys)} API keys failed after {retry_count + 1} attempts"
+        )
         logger.error(f"Error summary: {all_errors}")
 
         # Check if ALL errors were rate limits - if so, don't waste time retrying
-        all_rate_limits = all("Rate limit" in err or "quota" in err for err in all_errors)
+        all_rate_limits = all(
+            "Rate limit" in err or "quota" in err for err in all_errors
+        )
 
         if all_rate_limits:
-            logger.error("🚫 All API keys hit rate limits - circuit breaker will prevent further attempts")
+            logger.error(
+                "🚫 All API keys hit rate limits - circuit breaker will prevent further attempts"
+            )
             # Record final failure to open circuit breaker
             self.circuit_breaker.record_failure(
-                provider="gemini",
-                error_type="rate_limit"
+                provider="gemini", error_type="rate_limit"
             )
             return f"Error: All API keys exhausted (rate limits) - {last_error}"
 
@@ -1849,13 +2539,19 @@ Core ideas:"""
         for key_num in range(len(self.mistral_api_keys)):
             # Skip exhausted keys
             if key_num in exhausted_keys:
-                logger.debug(f"⏭️ Skipping exhausted Mistral key #{key_num + 1} (circuit breaker)")
+                logger.debug(
+                    f"⏭️ Skipping exhausted Mistral key #{key_num + 1} (circuit breaker)"
+                )
                 continue
             api_key = self.mistral_api_keys[self.current_mistral_index]
-            logger.info(f"📡 Trying Mistral key #{self.current_mistral_index + 1}/{len(self.mistral_api_keys)}")
+            logger.info(
+                f"📡 Trying Mistral key #{self.current_mistral_index + 1}/{len(self.mistral_api_keys)}"
+            )
 
             # Rotate to next key for next call
-            self.current_mistral_index = (self.current_mistral_index + 1) % len(self.mistral_api_keys)
+            self.current_mistral_index = (self.current_mistral_index + 1) % len(
+                self.mistral_api_keys
+            )
 
             try:
                 async with httpx.AsyncClient() as client:
@@ -1863,24 +2559,24 @@ Core ideas:"""
                         self.mistral_url,
                         headers={
                             "Authorization": f"Bearer {api_key}",
-                            "Content-Type": "application/json"
+                            "Content-Type": "application/json",
                         },
                         json={
                             "model": self.mistral_model,
-                            "messages": [
-                                {"role": "user", "content": prompt}
-                            ],
+                            "messages": [{"role": "user", "content": prompt}],
                             "temperature": 0.9,
-                            "max_tokens": max_tokens
+                            "max_tokens": max_tokens,
                         },
-                        timeout=60
+                        timeout=60,
                     )
 
                     if response.status_code == 200:
                         result = response.json()
                         choices = result.get("choices", [])
                         if choices:
-                            text = choices[0].get("message", {}).get("content", "").strip()
+                            text = (
+                                choices[0].get("message", {}).get("content", "").strip()
+                            )
                             logger.info(f"✅ Mistral generated {len(text)} chars")
                             # ✅ SUCCESS - record it in circuit breaker
                             self.circuit_breaker.record_success("mistral")
@@ -1892,9 +2588,11 @@ Core ideas:"""
                         self.circuit_breaker.record_failure(
                             provider="mistral",
                             error_type="rate_limit",
-                            api_key_index=key_num
+                            api_key_index=key_num,
                         )
-                    logger.warning(f"⚠️ Mistral key #{key_num + 1} failed: {response.status_code}")
+                    logger.warning(
+                        f"⚠️ Mistral key #{key_num + 1} failed: {response.status_code}"
+                    )
                     continue
 
             except Exception as e:
@@ -1905,7 +2603,9 @@ Core ideas:"""
         logger.error("❌ All Mistral API keys failed")
         return "Error: All Mistral API keys exhausted"
 
-    async def _call_ollama(self, prompt: str, max_tokens: int = 500, model: str = "qwen2.5:7b") -> str:
+    async def _call_ollama(
+        self, prompt: str, max_tokens: int = 500, model: str = "qwen2.5:7b"
+    ) -> str:
         """Call local Ollama LLM as last-resort fallback"""
         logger.info(f"⚠️  Using local Ollama as last resort: {model}")
 
@@ -1917,12 +2617,9 @@ Core ideas:"""
                         "model": model,
                         "prompt": prompt,
                         "stream": False,
-                        "options": {
-                            "temperature": 0.7,
-                            "num_predict": max_tokens
-                        }
+                        "options": {"temperature": 0.7, "num_predict": max_tokens},
                     },
-                    timeout=90
+                    timeout=90,
                 )
 
                 if response.status_code == 200:
@@ -1934,36 +2631,34 @@ Core ideas:"""
         except Exception as e:
             logger.error(f"Ollama call failed: {e}")
             return f"Error: {e}"
-    
+
     def get_available_personas(self) -> List[Dict[str, str]]:
         """Get list of available personas"""
-        
+
         return [
             {
                 "id": persona_id,
                 "name": info["name"],
                 "emoji": info["emoji"],
                 "audience": info["audience"],
-                "style": info["style"]
+                "style": info["style"],
             }
             for persona_id, info in self.personas.items()
         ]
-    
+
     async def generate_all_versions(
-        self,
-        content: Dict[str, Any],
-        platform: str = "twitter"
+        self, content: Dict[str, Any], platform: str = "twitter"
     ) -> Dict[str, Dict[str, Any]]:
         """Generate versions for all personas"""
-        
+
         logger.info(f"🎭 Generating all persona versions for {platform}")
-        
+
         versions = {}
-        
+
         for persona_id in self.personas.keys():
             rewritten = await self.rewrite_for_persona(content, persona_id, platform)
             versions[persona_id] = rewritten
-        
+
         return versions
 
 
@@ -1981,11 +2676,11 @@ def get_rewriter() -> ContentRewriter:
 
 async def test_rewriter():
     """Test content rewriter"""
-    
-    print("🧪 Testing Content Rewriter\n")
-    
+
+    logger.info("🧪 Testing Content Rewriter\n")
+
     rewriter = get_rewriter()
-    
+
     # Test GitHub content
     github_content = {
         "type": "github",
@@ -1993,42 +2688,53 @@ async def test_rewriter():
         "description": "Robust Speech Recognition via Large-Scale Weak Supervision",
         "stars": 88865,
         "tldr": "State-of-the-art speech recognition with 99 language support",
-        "use_cases": ["transcription", "subtitles", "voice interfaces", "accessibility"],
-        "key_features": ["99 languages", "Multiple model sizes", "Easy to use", "Open source"],
+        "use_cases": [
+            "transcription",
+            "subtitles",
+            "voice interfaces",
+            "accessibility",
+        ],
+        "key_features": [
+            "99 languages",
+            "Multiple model sizes",
+            "Easy to use",
+            "Open source",
+        ],
         "why_matters": "Industry-leading solution • Excellent quality",
         "target_audience": ["developers", "data scientists"],
         "rewrite_angles": [
             {
                 "persona": "technical",
                 "angle": "Deep dive into architecture",
-                "hook": "How Whisper achieves SOTA accuracy"
+                "hook": "How Whisper achieves SOTA accuracy",
             },
             {
                 "persona": "builder",
                 "angle": "Practical applications",
-                "hook": "5 ways to use Whisper in your products"
-            }
-        ]
+                "hook": "5 ways to use Whisper in your products",
+            },
+        ],
     }
-    
+
     # Test rewrite for builder persona
-    print("✍️  Rewriting for: Startup Builder\n")
-    
+    logger.info("✍️  Rewriting for: Startup Builder\n")
+
     result = await rewriter.rewrite_for_persona(github_content, "builder", "twitter")
-    
+
+    logger.info("=" * 70)
+    logger.info(f"{result['persona_emoji']} {result['persona'].upper()} VERSION")
     print("=" * 70)
-    print(f"{result['persona_emoji']} {result['persona'].upper()} VERSION")
-    print("=" * 70)
-    print()
-    print(result['rewritten_content'])
-    print()
-    print(f"Angle: {result['angle_used']}")
-    print(f"Hook: {result['hook']}")
-    print()
-    print("✅ Rewriter working!")
+    logger.info()
+    logger.info(result["rewritten_content"])
+    logger.info()
+    logger.info(f"Angle: {result['angle_used']}")
+    logger.info(f"Hook: {result['hook']}")
+    logger.info()
+    logger.info("✅ Rewriter working!")
 
 
 if __name__ == "__main__":
     import asyncio
+
     logging.basicConfig(level=logging.INFO)
     asyncio.run(test_rewriter())

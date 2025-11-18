@@ -11,35 +11,35 @@ from .content_organizer import ContentOrganizer
 
 class SmartOrganizer:
     """Creates smart tables and organized views of content"""
-    
-    def __init__(self, db_path="data/prismind.db"):
+
+    def __init__(self, db_path="data/beyondlines.db"):
         self.db_path = Path(db_path)
         self.organizer = ContentOrganizer(db_path)
-    
+
     def get_tools_by_category(self) -> Dict[str, List[Dict]]:
         """Organize tools by category"""
         return self.organizer.get_tools_by_category()
-    
+
     def get_opinions_by_topic(self) -> Dict[str, List[Dict]]:
         """Organize opinions by topic"""
         return self.organizer.get_opinions_by_topic()
-    
+
     def get_learning_resources_by_level(self) -> Dict[str, List[Dict]]:
         """Organize learning resources by complexity level"""
         return self.organizer.get_learning_resources_by_level()
-    
+
     def get_author_collections(self, min_posts=3) -> Dict[str, List[Dict]]:
         """Get collections of posts by author"""
         return self.organizer.get_author_collections(min_posts)
-    
+
     def get_trending_topics(self, days=30) -> List[Dict]:
         """Get trending topics based on recent activity"""
         return self.organizer.get_trending_topics(days)
-    
+
     def create_markdown_tables(self) -> str:
         """Create markdown tables for organized content"""
-        markdown = "# PrisMind Content Organization\n\n"
-        
+        markdown = "# BEYONDLINES Content Organization\n\n"
+
         # Tools by category
         tools = self.get_tools_by_category()
         if tools:
@@ -51,7 +51,7 @@ class SmartOrganizer:
                 for tool in tool_list[:5]:  # Show top 5
                     markdown += f"| {tool['title']} | {tool['author']} | {tool['value_score']:.2f} | {tool['topic']} |\n"
                 markdown += "\n"
-        
+
         # Opinions by topic
         opinions = self.get_opinions_by_topic()
         if opinions:
@@ -63,7 +63,7 @@ class SmartOrganizer:
                 for opinion in opinion_list[:3]:  # Show top 3
                     markdown += f"| {opinion['title']} | {opinion['author']} | {opinion['value_score']:.2f} |\n"
                 markdown += "\n"
-        
+
         # Learning resources by level
         resources = self.get_learning_resources_by_level()
         if resources:
@@ -75,7 +75,7 @@ class SmartOrganizer:
                 for resource in resource_list[:5]:  # Show top 5
                     markdown += f"| {resource['title']} | {resource['author']} | {resource['value_score']:.2f} | {resource['topic']} |\n"
                 markdown += "\n"
-        
+
         # Trending topics
         trending = self.get_trending_topics()
         if trending:
@@ -85,5 +85,5 @@ class SmartOrganizer:
             for topic in trending[:10]:  # Show top 10
                 markdown += f"| {topic['topic']} | {topic['post_count']} | {topic['avg_score']:.2f} |\n"
             markdown += "\n"
-        
+
         return markdown

@@ -1,23 +1,26 @@
+import logging
+
+logger = logging.getLogger(__name__)
 """
-PrisMind Data Schemas - Standardized Types
+BEYONDLINES Data Schemas - Standardized Types
 ===========================================
 
-This module defines the standardized data structures used throughout PrisMind.
+This module defines the standardized data structures used throughout BEYONDLINES.
 These TypedDict classes create contracts between components, ensuring:
 - Analyzer produces exactly what Rewriter needs
 - Discovery Engine receives complete signals
 - Learning System gets proper user profile data
 - All components speak the same language
 
-Author: PrisMind AI System
+Author: BEYONDLINES AI System
 """
 
-from typing import TypedDict, List, Dict, Optional, Literal
-
+from typing import Dict, List, Literal, Optional, TypedDict
 
 # ============================================================================
 # REWRITE ANGLES - For Content Transformation
 # ============================================================================
+
 
 class RewriteAngle(TypedDict):
     """
@@ -26,6 +29,7 @@ class RewriteAngle(TypedDict):
     Used by: Analyzer → Rewriter
     Purpose: Provides distinct angles for each of the 5 personas
     """
+
     persona: Literal["technical", "builder", "learner", "trendsetter", "thought_leader"]
     angle: str  # How to approach this content for this persona
     hook: str  # The most compelling opening line
@@ -41,6 +45,7 @@ class RewriteAngle(TypedDict):
 # DISCOVERY SIGNALS - For Autonomous Discovery
 # ============================================================================
 
+
 class DiscoverySignals(TypedDict):
     """
     Signals that help discover similar high-quality content.
@@ -48,6 +53,7 @@ class DiscoverySignals(TypedDict):
     Used by: Analyzer → Discovery Engine
     Purpose: Determine content worth and discoverability patterns
     """
+
     author_authority: Literal["high", "medium", "low"]  # Credibility assessment
     trend_relevance: Literal["emerging", "mainstream", "declining"]  # Topic lifecycle
     viral_potential: int  # 0-100 score for shareability
@@ -59,6 +65,7 @@ class DiscoverySignals(TypedDict):
 # CONTENT FRESHNESS - For Timing & Relevance
 # ============================================================================
 
+
 class ContentFreshness(TypedDict):
     """
     How timely and relevant content is right now.
@@ -66,6 +73,7 @@ class ContentFreshness(TypedDict):
     Used by: Analyzer → Scheduler, Publisher
     Purpose: Determine optimal timing for rewriting and publishing
     """
+
     publication_age: str  # "X hours/days/weeks"
     still_relevant: Literal["yes", "no"]  # Is this still useful
     time_sensitivity: Literal["urgent", "timely", "evergreen"]  # How time-dependent
@@ -75,6 +83,7 @@ class ContentFreshness(TypedDict):
 # MEDIA INSIGHT - For Vision Analysis Results
 # ============================================================================
 
+
 class MediaInsight(TypedDict):
     """
     AI vision analysis of an image/video from a post.
@@ -82,8 +91,11 @@ class MediaInsight(TypedDict):
     Used by: Analyzer (Vision Model) → Analysis Storage
     Purpose: Extract value from visual content
     """
+
     media_url: str
-    content_type: Literal["diagram", "code", "screenshot", "infographic", "photo", "chart", "other"]
+    content_type: Literal[
+        "diagram", "code", "screenshot", "infographic", "photo", "chart", "other"
+    ]
     description: str  # What's shown (2-3 sentences)
     key_elements: List[str]  # Notable elements in the image
     extracted_text: str  # OCR text (if applicable)
@@ -97,6 +109,7 @@ class MediaInsight(TypedDict):
 # ============================================================================
 # COMPLETE ANALYSIS - Full Output from Analyzer
 # ============================================================================
+
 
 class AnalyzedContent(TypedDict, total=False):
     """
@@ -183,14 +196,17 @@ class AnalyzedContent(TypedDict, total=False):
 # USER PROFILE - For Learning & Personalization
 # ============================================================================
 
+
 class UserInterest(TypedDict):
     """A single interest/topic the user cares about"""
+
     weight: float  # 0.0-1.0 strength of interest
     subtopics: List[str]  # Specific subtopics within this interest
 
 
 class ContentPreferences(TypedDict):
     """What kinds of content the user prefers"""
+
     types: List[str]  # ["tutorial", "tool", "thread"]
     length: Literal["short", "medium", "long"]
     complexity: Literal["beginner", "intermediate", "advanced", "expert"]
@@ -199,6 +215,7 @@ class ContentPreferences(TypedDict):
 
 class WritingStyle(TypedDict):
     """How the user writes/wants to write"""
+
     voice: Literal["authoritative", "friendly", "educational", "provocative"]
     structure: Literal["bullet-heavy", "paragraph-heavy", "mixed"]
     emoji_usage: Literal["none", "minimal", "moderate", "heavy"]
@@ -212,6 +229,7 @@ class UserProfile(TypedDict):
     Used by: Learning System → Analyzer, Discovery, Rewriter
     Purpose: Personalize everything to the user's preferences
     """
+
     user_id: str
     created_at: str
     last_updated: str
@@ -241,8 +259,10 @@ class UserProfile(TypedDict):
 # CONCEPT GRAPH - For Knowledge Connections
 # ============================================================================
 
+
 class Concept(TypedDict):
     """A single concept extracted from content"""
+
     concept: str
     related_concepts: List[str]
     posts_count: int  # How many posts mention this
@@ -253,6 +273,7 @@ class Concept(TypedDict):
 
 class ConceptConnection(TypedDict):
     """A connection between two concepts"""
+
     concept_a: str
     concept_b: str
     connection_type: Literal["requires", "relates_to", "implements", "is_type_of"]
@@ -264,8 +285,10 @@ class ConceptConnection(TypedDict):
 # PUBLISHED CONTENT - For Tracking Published Posts
 # ============================================================================
 
+
 class PublishedPost(TypedDict):
     """A post that was published to social media"""
+
     published_id: str
     original_post_id: str  # Source post
     platform: Literal["twitter", "threads", "telegram"]
@@ -281,6 +304,7 @@ class PublishedPost(TypedDict):
 # HELPER FUNCTIONS
 # ============================================================================
 
+
 def validate_analyzed_content(data: dict) -> bool:
     """
     Validate that analysis output has all required fields.
@@ -289,28 +313,37 @@ def validate_analyzed_content(data: dict) -> bool:
         True if valid, False otherwise
     """
     required_fields = [
-        'post_id', 'platform', 'category', 'summary',
-        'rewrite_angles', 'discovery_signals', 'content_freshness'
+        "post_id",
+        "platform",
+        "category",
+        "summary",
+        "rewrite_angles",
+        "discovery_signals",
+        "content_freshness",
     ]
 
     for field in required_fields:
         if field not in data:
-            print(f"Missing required field: {field}")
+            logger.warning(f"Missing required field: {field}")
             return False
 
     # Validate rewrite_angles structure
-    if not isinstance(data['rewrite_angles'], list):
-        print("rewrite_angles must be a list")
+    if not isinstance(data["rewrite_angles"], list):
+        logger.info("rewrite_angles must be a list")
         return False
 
-    if len(data['rewrite_angles']) != 5:
-        print(f"rewrite_angles must have 5 personas, got {len(data['rewrite_angles'])}")
+    if len(data["rewrite_angles"]) != 5:
+        logger.info(
+            f"rewrite_angles must have 5 personas, got {len(data['rewrite_angles'])}"
+        )
         return False
 
     return True
 
 
-def get_rewrite_angle(analysis: AnalyzedContent, persona: str) -> Optional[RewriteAngle]:
+def get_rewrite_angle(
+    analysis: AnalyzedContent, persona: str
+) -> Optional[RewriteAngle]:
     """
     Extract the rewrite angle for a specific persona.
 
@@ -321,10 +354,10 @@ def get_rewrite_angle(analysis: AnalyzedContent, persona: str) -> Optional[Rewri
     Returns:
         RewriteAngle for that persona or None
     """
-    rewrite_angles = analysis.get('rewrite_angles', [])
+    rewrite_angles = analysis.get("rewrite_angles", [])
 
     for angle in rewrite_angles:
-        if angle.get('persona') == persona:
+        if angle.get("persona") == persona:
             return angle
 
     return None
@@ -332,19 +365,19 @@ def get_rewrite_angle(analysis: AnalyzedContent, persona: str) -> Optional[Rewri
 
 # Example usage
 if __name__ == "__main__":
-    print("PrisMind Data Schemas")
-    print("=====================")
-    print()
-    print("Available schemas:")
-    print("  - RewriteAngle: Content transformation for each persona")
-    print("  - DiscoverySignals: Signals for discovering similar content")
-    print("  - ContentFreshness: Timing and relevance metrics")
-    print("  - MediaInsight: Vision AI analysis of images")
-    print("  - AnalyzedContent: Complete analysis output (main contract)")
-    print("  - UserProfile: User preferences and personalization")
-    print("  - Concept: Knowledge graph concepts")
-    print("  - ConceptConnection: Relationships between concepts")
-    print("  - PublishedPost: Tracking published content")
-    print()
-    print("These schemas ensure all PrisMind components communicate with")
-    print("standardized, type-checked data structures.")
+    logger.info("BEYONDLINES Data Schemas")
+    logger.info("=====================")
+    logger.info()
+    logger.info("Available schemas:")
+    logger.info("  - RewriteAngle: Content transformation for each persona")
+    logger.info("  - DiscoverySignals: Signals for discovering similar content")
+    logger.info("  - ContentFreshness: Timing and relevance metrics")
+    logger.info("  - MediaInsight: Vision AI analysis of images")
+    logger.info("  - AnalyzedContent: Complete analysis output (main contract)")
+    logger.info("  - UserProfile: User preferences and personalization")
+    logger.info("  - Concept: Knowledge graph concepts")
+    logger.info("  - ConceptConnection: Relationships between concepts")
+    logger.info("  - PublishedPost: Tracking published content")
+    logger.info()
+    logger.info("These schemas ensure all BEYONDLINES components communicate with")
+    logger.info("standardized, type-checked data structures.")

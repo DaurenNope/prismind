@@ -1,0 +1,34 @@
+# VCS and IDE
+.git
+.gitignore
+**/.DS_Store
+**/.idea/**
+**/.vscode/**
+
+# Python caches
+**/__pycache__/**
+**/*.pyc
+**/.pytest_cache/**
+
+# Local env and secrets (mounted via env_file)
+.env
+.env.*
+
+# Large/local data not needed in images
+backups/**
+logs/**
+var/**
+data/**
+image/**
+*.db
+*.sqlite
+
+# Node/npm caches if present
+node_modules/**
+
+# Playwright/Browser artifacts if generated locally
+playwright-report/**
+**/test-results/**
+
+# Other
+*.log

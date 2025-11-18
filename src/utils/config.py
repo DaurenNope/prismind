@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Unified configuration loader for PrisMind.
+Unified configuration loader for BEYONDLINES.
 
 Loads environment variables and JSON config, exposes feature flags and paths.
 """
 
-import os
 import json
+import os
 from pathlib import Path
 from typing import Any, Dict
 
@@ -31,7 +31,7 @@ class Config:
             "enable_github_trending": True,
             "enable_telegram_channels": False,
             "enable_analysis": True,
-            "enable_sqlite_cache": True,
+            "enable_sqlite_cache": False,
             "supabase_enabled": True,
             "research_api_enabled": False,
             # Automation defaults
@@ -81,7 +81,8 @@ class Config:
                     for key in self.flags.keys():
                         if key in data:
                             self.flags[key] = bool(data[key])
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error: {e}")
             # Non-fatal; keep defaults
             pass
 
@@ -99,30 +100,69 @@ class Config:
             try:
                 return int(raw)
             except ValueError:
+                logger.error(f"Error: {e}")
                 return default
 
-        self.flags["enable_threads"] = env_bool("ENABLE_THREADS", self.flags["enable_threads"])
-        self.flags["enable_github_trending"] = env_bool("ENABLE_GITHUB_TRENDING", self.flags["enable_github_trending"])
-        self.flags["enable_telegram_channels"] = env_bool("ENABLE_TELEGRAM_CHANNELS", self.flags["enable_telegram_channels"])
-        self.flags["enable_analysis"] = env_bool("ENABLE_ANALYSIS", self.flags["enable_analysis"])
-        self.flags["enable_sqlite_cache"] = env_bool("ENABLE_SQLITE_CACHE", self.flags["enable_sqlite_cache"])
-        self.flags["supabase_enabled"] = env_bool("SUPABASE_ENABLED", self.flags["supabase_enabled"])
-        self.flags["research_api_enabled"] = env_bool("RESEARCH_API_ENABLED", self.flags["research_api_enabled"])
-        self.flags["auto_analyze_after_collection"] = env_bool("AUTO_ANALYZE_AFTER_COLLECTION", self.flags["auto_analyze_after_collection"])
-        self.flags["auto_rewrite_after_analysis"] = env_bool("AUTO_REWRITE_AFTER_ANALYSIS", self.flags["auto_rewrite_after_analysis"])
-        self.flags["auto_schedule_after_rewrite"] = env_bool("AUTO_SCHEDULE_AFTER_REWRITE", self.flags["auto_schedule_after_rewrite"])
-        self.flags["auto_pipeline_batch_limit"] = env_int("AUTO_PIPELINE_BATCH_LIMIT", self.flags["auto_pipeline_batch_limit"])
-        self.flags["auto_rewrite_posts_per_profile"] = env_int("AUTO_REWRITE_POSTS_PER_PROFILE", self.flags["auto_rewrite_posts_per_profile"])
-        self.flags["auto_schedule_delay_minutes"] = env_int("AUTO_SCHEDULE_DELAY_MINUTES", self.flags["auto_schedule_delay_minutes"])
+        self.flags["enable_threads"] = env_bool(
+            "ENABLE_THREADS", self.flags["enable_threads"]
+        )
+        self.flags["enable_github_trending"] = env_bool(
+            "ENABLE_GITHUB_TRENDING", self.flags["enable_github_trending"]
+        )
+        self.flags["enable_telegram_channels"] = env_bool(
+            "ENABLE_TELEGRAM_CHANNELS", self.flags["enable_telegram_channels"]
+        )
+        self.flags["enable_analysis"] = env_bool(
+            "ENABLE_ANALYSIS", self.flags["enable_analysis"]
+        )
+        self.flags["enable_sqlite_cache"] = env_bool(
+            "ENABLE_SQLITE_CACHE", self.flags["enable_sqlite_cache"]
+        )
+        self.flags["supabase_enabled"] = env_bool(
+            "SUPABASE_ENABLED", self.flags["supabase_enabled"]
+        )
+        self.flags["research_api_enabled"] = env_bool(
+            "RESEARCH_API_ENABLED", self.flags["research_api_enabled"]
+        )
+        self.flags["auto_analyze_after_collection"] = env_bool(
+            "AUTO_ANALYZE_AFTER_COLLECTION", self.flags["auto_analyze_after_collection"]
+        )
+        self.flags["auto_rewrite_after_analysis"] = env_bool(
+            "AUTO_REWRITE_AFTER_ANALYSIS", self.flags["auto_rewrite_after_analysis"]
+        )
+        self.flags["auto_schedule_after_rewrite"] = env_bool(
+            "AUTO_SCHEDULE_AFTER_REWRITE", self.flags["auto_schedule_after_rewrite"]
+        )
+        self.flags["auto_pipeline_batch_limit"] = env_int(
+            "AUTO_PIPELINE_BATCH_LIMIT", self.flags["auto_pipeline_batch_limit"]
+        )
+        self.flags["auto_rewrite_posts_per_profile"] = env_int(
+            "AUTO_REWRITE_POSTS_PER_PROFILE",
+            self.flags["auto_rewrite_posts_per_profile"],
+        )
+        self.flags["auto_schedule_delay_minutes"] = env_int(
+            "AUTO_SCHEDULE_DELAY_MINUTES", self.flags["auto_schedule_delay_minutes"]
+        )
         # Rewriter fast-path
-        self.flags["rewriter_fast_mode"] = env_bool("REWRITER_FAST_MODE", self.flags["rewriter_fast_mode"])
-        self.flags["rewriter_max_attempts_per_provider"] = env_int("REWRITER_MAX_ATTEMPTS_PER_PROVIDER", self.flags["rewriter_max_attempts_per_provider"])
+        self.flags["rewriter_fast_mode"] = env_bool(
+            "REWRITER_FAST_MODE", self.flags["rewriter_fast_mode"]
+        )
+        self.flags["rewriter_max_attempts_per_provider"] = env_int(
+            "REWRITER_MAX_ATTEMPTS_PER_PROVIDER",
+            self.flags["rewriter_max_attempts_per_provider"],
+        )
         provider_order = os.getenv("REWRITER_PROVIDER_ORDER")
         if provider_order:
             self.flags["rewriter_provider_order"] = provider_order
-        self.flags["rewriter_min_quality_score"] = env_int("REWRITER_MIN_QUALITY_SCORE", int(self.flags["rewriter_min_quality_score"]))
-        self.flags["rewriter_min_value_score"] = env_int("REWRITER_MIN_VALUE_SCORE", int(self.flags["rewriter_min_value_score"]))
-        self.flags["rewriter_min_rewrite_score"] = env_int("REWRITER_MIN_REWRITE_SCORE", int(self.flags["rewriter_min_rewrite_score"]))
+        self.flags["rewriter_min_quality_score"] = env_int(
+            "REWRITER_MIN_QUALITY_SCORE", int(self.flags["rewriter_min_quality_score"])
+        )
+        self.flags["rewriter_min_value_score"] = env_int(
+            "REWRITER_MIN_VALUE_SCORE", int(self.flags["rewriter_min_value_score"])
+        )
+        self.flags["rewriter_min_rewrite_score"] = env_int(
+            "REWRITER_MIN_REWRITE_SCORE", int(self.flags["rewriter_min_rewrite_score"])
+        )
 
 
 _config_singleton: "Config | None" = None
@@ -133,5 +173,3 @@ def get_config() -> Config:
     if _config_singleton is None:
         _config_singleton = Config()
     return _config_singleton
-
-

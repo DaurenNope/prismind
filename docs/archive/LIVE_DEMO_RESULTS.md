@@ -11,7 +11,7 @@ We just ran a **real, live collection** from Threads showing the complete unifie
 ### Initial Database Stats
 ```
 🧵 Threads: 40 posts
-🐦 Twitter: 100 posts  
+🐦 Twitter: 100 posts
 📱 Reddit: 100 posts
 📦 Total: 240 posts
 ```
@@ -30,7 +30,7 @@ Scrolling Progress:
   Scroll 3/5: Found 5 new posts (total: 35)
   Scroll 4/5: Found 4 new posts (total: 39)
   Scroll 5/5: Found 5 new posts (total: 44)
-  
+
 ✅ Found 44 total saved posts, scraping all...
 ```
 
@@ -129,7 +129,7 @@ Scrolling Progress:
 ### Unified Service Features
 ```python
 ✅ Single interface for all platforms
-✅ Progress callbacks working perfectly  
+✅ Progress callbacks working perfectly
 ✅ Status tracking (Starting → Auth → Collecting → Complete)
 ✅ Error handling and retries
 ✅ Rate limiting ready
@@ -235,7 +235,7 @@ The demo just proved the system is:
 
 ## 🎬 Try It Yourself!
 
-### Streamlit UI
+### Svelte UI
 ```bash
 # Already running at:
 http://localhost:8501

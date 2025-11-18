@@ -1,8 +1,8 @@
 # ✅ What Works, What Stays, What Goes
 
-**Status Check:** October 14, 2024  
-**Branch:** cleanup/project-structure  
-**Python:** 3.11.12  
+**Status Check:** October 14, 2024
+**Branch:** cleanup/project-structure
+**Python:** 3.11.12
 **Venv:** .venv311/
 
 ---
@@ -40,7 +40,7 @@ src/
 │   └── ...
 ├── storage/             ✅ Database adapters (SQLite, Supabase)
 ├── utils/               ✅ Utilities
-└── web/                 ✅ Streamlit UI (dashboard, discoveries, telegram tabs)
+└── web/                 ✅ Svelte UI (dashboard, discoveries, telegram tabs)
 ```
 
 ### Key Working Features
@@ -49,8 +49,8 @@ src/
    - Reddit hot posts
    - GitHub trending
    - Quality filtering (score > 0.7)
-   
-2. **Web Dashboard** (Streamlit)
+
+2. **Web Dashboard** (Svelte)
    - Discoveries tab
    - Telegram tab
    - Bookmarks tab
@@ -96,9 +96,9 @@ src/
 - Cookie files from config/ - **MOVE HERE**
 
 ### Database Files (KEEP PRIMARY)
-- `prismind.db` (708 KB) - Active database - **KEEP**
-- `prismind.db.backup` (596 KB) - Oct 9 backup - **MOVE to backups/**
-- `data/prismind.db` (0 KB) - Empty duplicate - **DELETE**
+- `beyondlines.db` (708 KB) - Active database - **KEEP**
+- `beyondlines.db.backup` (596 KB) - Oct 9 backup - **MOVE to backups/**
+- `data/beyondlines.db` (0 KB) - Empty duplicate - **DELETE**
 
 ### Scripts Directory (KEEP)
 ```
@@ -218,7 +218,7 @@ backfill_full.log                → logs/
 
 ### Category 7: Duplicate/Empty Files (DELETE)
 ```bash
-data/prismind.db                 # Empty (0 KB) - DELETE
+data/beyondlines.db                 # Empty (0 KB) - DELETE
 ```
 
 ### Category 8: Obsolete Scripts (DELETE IF VERIFIED)
@@ -246,7 +246,7 @@ mkdir -p docs/archive/        # Historical docs (optional)
    - `telegram_channels.txt` → `config/telegram_channels.txt`
 
 2. **Database backups:**
-   - `prismind.db.backup` → `backups/prismind_20241009.db`
+   - `beyondlines.db.backup` → `backups/beyondlines_20241009.db`
 
 3. **SQL migrations:**
    - All `.sql` files → `migrations/`
@@ -266,7 +266,7 @@ mkdir -p docs/archive/        # Historical docs (optional)
 ## 🎯 FINAL STRUCTURE (After Cleanup)
 
 ```
-prismind/
+beyondlines/
 ├── .env.example              # Env template
 ├── .gitignore               # Git rules
 ├── .pre-commit-config.yaml  # Hooks
@@ -285,7 +285,7 @@ prismind/
 ├── TESTING_GUIDE.md         # Testing
 │
 ├── backups/                 # Database backups
-│   └── prismind_20241009.db
+│   └── beyondlines_20241009.db
 │
 ├── config/                  # Configuration
 │   ├── collection.json
@@ -314,7 +314,7 @@ prismind/
 │   ├── SUPABASE_RLS_FIX.sql
 │   └── supabase_schema_update.sql
 │
-├── prismind.db              # Active database ⭐
+├── beyondlines.db              # Active database ⭐
 │
 ├── scripts/                 # Utility scripts
 │   └── (22 utility scripts)
