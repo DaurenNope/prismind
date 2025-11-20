@@ -26,7 +26,11 @@ sys.path.insert(0, str(project_root))
 
 from src.database.database_agent import DatabaseAgent
 from src.database.manager import SupabaseManager
-from src.publishing.rewriter import ContentRewriter
+from src.publishing.modular_rewriter import (
+    ModularRewriter,
+    RewriteRequest,
+    build_persona_context,
+)
 from src.services.analysis.post_analyzer import analyze_and_store_post
 from src.services.analysis_lock import acquire_analysis_lock, release_analysis_lock
 from src.services.new_database_manager import NewDatabaseManager
@@ -54,7 +58,7 @@ class FullAutomationLoop:
             self.supabase = None
 
         # Initialize proper content rewriter (not SimpleTransformer)
-        self.rewriter = ContentRewriter()
+        self.rewriter = ModularRewriter()
 
     async def run_collection(
         self, platforms: Optional[List[str]] = None
@@ -211,7 +215,10 @@ class FullAutomationLoop:
             release_analysis_lock()
 
     async def run_transformation_and_scheduling(
-        self, min_match_score: float = 0.65, schedule_minutes: int = 60
+        self,
+        min_match_score: float = 0.65,
+        schedule_minutes: int = 60,
+        auto_schedule: bool = False,
     ) -> Dict[str, Any]:
         """Step 3: Transform matched posts and schedule them"""
         logger.info("\n" + "=" * 70)
@@ -367,12 +374,21 @@ class FullAutomationLoop:
                 score_0_10 = match_score / 10.0
 
                 try:
-                    # Use ContentRewriter to rewrite the analyzed post
-                    rewrite_result = await self.rewriter.rewrite_analyzed_post(
-                        analyzed_content=post, persona=persona_key, platform="auto"
+                    # Use modular rewriter to rewrite the analyzed post
+                    persona_context = build_persona_context(persona_key)
+                    rewrite_request = RewriteRequest(
+                        analyzed_content=post,
+                        persona=persona_context,
+                        platform="auto",
                     )
+                    modular_result = await self.rewriter.rewrite(rewrite_request)
+                    rewrite_result = modular_result.metadata
+                    rewrite_result["rewritten_content"] = modular_result.rewritten_content
+                    rewrite_result["quality_score"] = modular_result.quality_score
+                    rewrite_result["voice_consistency_score"] = modular_result.voice_consistency_score
+                    rewrite_result["fact_preservation_score"] = modular_result.fact_preservation_score
 
-                    if "error" in rewrite_result:
+                    if rewrite_result.get("error"):
                         logger.warning(
                             f"   ⚠️  {persona_key}: Rewrite failed - {rewrite_result.get('error')}"
                         )
@@ -415,7 +431,6 @@ class FullAutomationLoop:
 
                     platform = persona.get("platform", "twitter")
 
-                    # Save to mimesis_transformations (not schedule directly)
                     from datetime import datetime, timezone
 
                     now_iso = datetime.now(timezone.utc).isoformat()
@@ -440,6 +455,31 @@ class FullAutomationLoop:
                             logger.info(
                                 f"   ✅ {persona_key}: Rewritten and saved (score: {score_0_10:.2f}/10, length: {len(transformed_content)})"
                             )
+
+                            if auto_schedule:
+                                try:
+                                    scheduled_at = datetime.now(timezone.utc) + timedelta(
+                                        minutes=schedule_minutes
+                                    )
+                                    self.supabase.client.table(
+                                        "scheduled_posts"
+                                    ).insert(
+                                        {
+                                            "persona_key": persona_key,
+                                            "platform": platform,
+                                            "content": transformed_content,
+                                            "scheduled_for": scheduled_at.isoformat(),
+                                            "source_post_id": str(post.get("post_id")),
+                                        }
+                                    ).execute()
+                                    scheduled += 1
+                                    logger.info(
+                                        f"      📅 Auto-scheduled for {scheduled_at.isoformat()}"
+                                    )
+                                except Exception as schedule_error:
+                                    logger.warning(
+                                        f"      ⚠️ Scheduling failed: {schedule_error}"
+                                    )
                         except Exception as e:
                             logger.error(
                                 f"   ❌ {persona_key}: Failed to save transformation - {e}"
@@ -457,12 +497,63 @@ class FullAutomationLoop:
         )
         return {"transformed": transformed, "scheduled": scheduled}
 
+    def run_curation_backfill(
+        self, batch_size: int = 500, max_batches: int = 2
+    ) -> Dict[str, Any]:
+        """Ensure analyzed posts land in usable_posts"""
+        if not self.supabase:
+            logger.warning("Supabase unavailable; skipping curation backfill")
+            return {"checked": 0, "curated": 0, "batches": 0}
+
+        agent = DatabaseAgent()
+        total_curated = 0
+        total_checked = 0
+        batches_ran = 0
+        offset = 0
+
+        while batches_ran < max_batches:
+            resp = (
+                self.supabase.client.table("posts")
+                .select("*")
+                .order("created_at", desc=True)
+                .range(offset, offset + batch_size - 1)
+                .execute()
+            )
+            posts = resp.data or []
+            if not posts:
+                break
+
+            for post in posts:
+                if not post.get("ai_summary") or not post.get("content"):
+                    continue
+                total_checked += 1
+                try:
+                    if agent.auto_curate_to_usable_posts(post):
+                        total_curated += 1
+                except Exception as curation_error:
+                    logger.debug(f"Curation backfill error: {curation_error}")
+
+            offset += batch_size
+            batches_ran += 1
+
+        logger.info(
+            f"📦 Curation backfill checked {total_checked} posts, curated {total_curated}"
+        )
+        return {
+            "checked": total_checked,
+            "curated": total_curated,
+            "batches": batches_ran,
+        }
+
     async def run_full_loop(
         self,
         platforms: Optional[List[str]] = None,
         analyze_limit: Optional[int] = None,
         min_match_score: float = 0.65,
         schedule_minutes: int = 60,
+        auto_schedule: bool = False,
+        curation_batch_size: int = 500,
+        curation_batches: int = 2,
     ) -> Dict[str, Any]:
         """
         Run the complete automated loop
@@ -482,6 +573,7 @@ class FullAutomationLoop:
             "collection": {},
             "analysis": {},
             "transformation": {},
+            "curation": {},
             "started_at": datetime.now().isoformat(),
         }
 
@@ -493,9 +585,17 @@ class FullAutomationLoop:
         analysis_results = await self.run_analysis(limit=analyze_limit)
         results["analysis"] = analysis_results
 
+        # Step 2b: Make sure usable_posts reflects most recent analysis
+        curation_results = self.run_curation_backfill(
+            batch_size=curation_batch_size, max_batches=curation_batches
+        )
+        results["curation"] = curation_results
+
         # Step 3: Transformation & Scheduling
         transformation_results = await self.run_transformation_and_scheduling(
-            min_match_score=min_match_score, schedule_minutes=schedule_minutes
+            min_match_score=min_match_score,
+            schedule_minutes=schedule_minutes,
+            auto_schedule=auto_schedule,
         )
         results["transformation"] = transformation_results
 
@@ -547,6 +647,23 @@ async def main():
         default=60,
         help="Minutes to schedule posts in future",
     )
+    parser.add_argument(
+        "--auto-schedule",
+        action="store_true",
+        help="Also push rewrites into scheduled_posts table (default: off)",
+    )
+    parser.add_argument(
+        "--curation-batch-size",
+        type=int,
+        default=500,
+        help="Posts per batch for curation backfill (default: 500)",
+    )
+    parser.add_argument(
+        "--curation-batches",
+        type=int,
+        default=2,
+        help="How many curation batches to run after analysis (default: 2)",
+    )
 
     args = parser.parse_args()
 
@@ -556,6 +673,9 @@ async def main():
         analyze_limit=args.analyze_limit,
         min_match_score=args.min_match_score,
         schedule_minutes=args.schedule_minutes,
+        auto_schedule=args.auto_schedule,
+        curation_batch_size=args.curation_batch_size,
+        curation_batches=args.curation_batches,
     )
 
     logger.info("\n✅ Full loop complete!")

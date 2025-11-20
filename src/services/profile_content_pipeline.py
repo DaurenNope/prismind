@@ -177,7 +177,18 @@ class ProfileContentPipeline:
             Dict with max_length, use_markdown, use_emojis, etc.
         """
         platform_config = self.config["platforms"].get(platform, {})
-        return platform_config.get("format_preferences", {})
+        constraints = dict(platform_config.get("format_preferences", {}))
+
+        if platform == "twitter":
+            constraints.setdefault("max_length", 220)
+            # Only allow automatic threading when explicitly requested
+            constraints.setdefault("use_threads", False)
+        elif platform == "threads":
+            constraints.setdefault("max_length", 500)
+        elif platform == "telegram":
+            constraints.setdefault("max_length", 4000)
+
+        return constraints
 
     def should_include_reddit_comments(self) -> bool:
         """Check if Reddit comments should be included"""
@@ -311,7 +322,7 @@ def list_available_profiles() -> List[Dict[str, str]]:
         logger.warning(f"Profiles directory not found: {profiles_dir}")
         return []
 
-    profiles = []
+    profiles: List[Dict[str, Any]] = []
 
     for config_file in profiles_dir.glob("*.json"):
         try:
@@ -332,6 +343,34 @@ def list_available_profiles() -> List[Dict[str, str]]:
             )
         except Exception as e:
             logger.error(f"Error loading profile {config_file}: {e}")
+
+    existing_keys = {profile["profile_key"] for profile in profiles}
+
+    # Auto-include persona configs that don't yet have profile files.
+    personas_dir = Path(__file__).parent.parent.parent / "config" / "personas"
+    if personas_dir.exists():
+        for persona_file in personas_dir.glob("*.json"):
+            if persona_file.name.endswith("_examples.json"):
+                continue
+            persona_key = persona_file.stem
+            if persona_key in existing_keys:
+                continue
+            try:
+                with persona_file.open("r", encoding="utf-8") as fp:
+                    persona_config = json.load(fp)
+                profiles.append(
+                    {
+                        "profile_key": persona_key,
+                        "display_name": persona_config.get("name", persona_key),
+                        "description": persona_config.get(
+                            "description", persona_config.get("voice_description", "")
+                        ),
+                        "enabled_platforms": persona_config.get("platforms", []),
+                    }
+                )
+                existing_keys.add(persona_key)
+            except Exception as exc:
+                logger.error("Failed to hydrate persona %s: %s", persona_file, exc)
 
     return profiles
 

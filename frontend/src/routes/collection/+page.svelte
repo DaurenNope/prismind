@@ -51,7 +51,17 @@
         runningPlatforms.clear();
       }
     } catch (err) {
-      error = err instanceof Error ? err.message : 'Failed to load collector data';
+      const errMessage = err instanceof Error ? err.message : 'Failed to load collector data';
+      // Provide more helpful error messages
+      if (errMessage.includes('timeout')) {
+        error = 'Request timed out. The backend may be busy processing collection. Retrying automatically...';
+        // Auto-retry after 3 seconds
+        setTimeout(() => {
+          void loadData();
+        }, 3000);
+      } else {
+        error = errMessage;
+      }
       console.error('Collection data load error:', err);
       // Set empty arrays on error so UI doesn't stay stuck
       collectors = [];

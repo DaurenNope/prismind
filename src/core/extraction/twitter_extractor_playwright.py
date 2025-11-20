@@ -5,12 +5,14 @@ import random
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
+from urllib.parse import parse_qs, urlencode, urlparse
 
 from playwright.async_api import Browser, Page, async_playwright
 
 from ..rate_limiting.rate_limit_config import RateLimitConfig
 from .social_extractor_base import SocialExtractorBase, SocialPost
+from .twitter.api_client import TwitterAPIClient
 from .twitter_cookies import TwitterCookieStore
 
 logger = logging.getLogger(__name__)
@@ -1150,10 +1152,568 @@ class TwitterExtractorPlaywright(SocialExtractorBase):
         except Exception as e:
             logger.error(f"⚠️ Scroll error: {e}")
 
+    async def get_saved_posts_api_first(
+        self,
+        limit: int = 50,
+        stop_at_post_id: Optional[str] = None,
+    ) -> List[SocialPost]:
+        """
+        Fetch bookmarks purely via Twitter's GraphQL responses instead of DOM scraping.
+        Returns newest-first posts and stops once the last collected ID is reached.
+        """
+        if limit <= 0:
+            return []
+
+        if not self.is_authenticated:
+            if not await self.authenticate():
+                return []
+
+        if not self.page:
+            logger.error("Twitter page is not initialized; cannot run API collector")
+            return []
+
+        direct_api_posts = await self._collect_saved_posts_via_direct_api(
+            limit=limit, stop_at_post_id=stop_at_post_id
+        )
+        if direct_api_posts:
+            logger.info(
+                f"📥 Direct GraphQL client returned {len(direct_api_posts)} tweets (limit={limit})"
+            )
+            return direct_api_posts
+
+        response_promises = []
+        bookmarks_event = asyncio.Event()
+        request_snapshot: Dict[str, Optional[dict]] = {
+            "headers": None,
+            "base_url": None,
+            "query_params": None,
+            "method": None,
+            "body": None,
+        }
+
+        snapshot_file = Path("logs/twitter_graphql_request.json")
+        cached_snapshot: Dict[str, Any] = {}
+        if snapshot_file.exists():
+            try:
+                with snapshot_file.open("r", encoding="utf-8") as fh:
+                    cached_snapshot = json.load(fh)
+            except Exception as cached_err:
+                logger.debug(f"⚠️ Could not load cached Twitter snapshot: {cached_err}")
+
+        def handle_request(request):
+            """Capture the outbound GraphQL request template."""
+            try:
+                url = request.url
+            except Exception:
+                return
+
+            lower_url = url.lower()
+            if "/graphql" not in lower_url:
+                return
+            if "bookmark" not in lower_url and "timeline" not in lower_url:
+                return
+
+            if not request_snapshot["headers"]:
+                try:
+                    request_snapshot["headers"] = request.headers
+                except Exception:
+                    pass
+
+            if not request_snapshot["method"]:
+                try:
+                    request_snapshot["method"] = request.method
+                except Exception:
+                    pass
+
+            if not request_snapshot["body"]:
+                try:
+                    body = request.post_data or request.post_data_json
+                except Exception:
+                    body = None
+                if body:
+                    request_snapshot["body"] = body
+
+            if not request_snapshot["base_url"]:
+                try:
+                    parsed = urlparse(url)
+                    request_snapshot["base_url"] = (
+                        f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+                    )
+                    request_snapshot["query_params"] = parse_qs(parsed.query)
+                except Exception:
+                    pass
+
+        async def handle_response(response):
+            """Capture bookmark GraphQL responses without blocking."""
+            try:
+                url = response.url
+            except Exception:
+                return
+
+            lower_url = url.lower()
+            if "/graphql" not in lower_url:
+                return
+            if "bookmark" not in lower_url and "timeline" not in lower_url:
+                return
+            if response.status != 200:
+                return
+
+            response_promises.append((url, response))
+            req = response.request
+            if req and not request_snapshot["headers"]:
+                try:
+                    request_snapshot["headers"] = req.headers
+                except Exception:
+                    pass
+
+            if not request_snapshot["base_url"]:
+                try:
+                    parsed = urlparse(url)
+                    request_snapshot["base_url"] = (
+                        f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+                    )
+                    request_snapshot["query_params"] = parse_qs(parsed.query)
+                except Exception:
+                    pass
+
+            if not bookmarks_event.is_set():
+                bookmarks_event.set()
+
+        self.page.on("request", handle_request)
+        self.page.on("response", handle_response)
+        if self.context:
+            self.context.on("request", handle_request)
+            self.context.on("response", handle_response)
+
+        try:
+            logger.info("📡 Navigating to bookmarks page (API-first mode)...")
+            await self.page.goto(
+                "https://x.com/i/bookmarks",
+                wait_until="domcontentloaded",
+                timeout=30000,
+            )
+            try:
+                await asyncio.wait_for(bookmarks_event.wait(), timeout=15)
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "⚠️ No bookmark GraphQL responses detected within timeout window"
+                )
+            await self._jitter(1000)
+        finally:
+            try:
+                self.page.off("response", handle_response)
+            except Exception:
+                pass
+            if self.context:
+                try:
+                    self.context.off("response", handle_response)
+                except Exception:
+                    pass
+                try:
+                    self.context.off("request", handle_request)
+                except Exception:
+                    pass
+            try:
+                self.page.off("request", handle_request)
+            except Exception:
+                pass
+
+        def normalize_tweet_id(value: Optional[str]) -> str:
+            return self._normalize_tweet_id(value)
+
+        def decode_param(params: Optional[dict], key: str) -> Dict:
+            if not params:
+                return {}
+            raw = params.get(key)
+            if not raw:
+                return {}
+            try:
+                return json.loads(raw[0])
+            except Exception:
+                return {}
+
+        def extract_cursor(api_payload: dict, cursor_type: str = "Bottom") -> Optional[str]:
+            def walk(obj):
+                if isinstance(obj, dict):
+                    entry_id = obj.get("entryId", "")
+                    if entry_id and cursor_type.lower() in entry_id.lower():
+                        content = obj.get("content", {})
+                        if isinstance(content, dict):
+                            val = (
+                                content.get("value")
+                                or content.get("cursorValue")
+                                or content.get("text")
+                            )
+                            if val:
+                                return val
+                    content = obj.get("content")
+                    if isinstance(content, dict):
+                        if (
+                            content.get("__typename") == "TimelineCursor"
+                            and content.get("cursorType") == cursor_type
+                        ):
+                            val = (
+                                content.get("value")
+                                or content.get("cursorValue")
+                                or content.get("text")
+                            )
+                            if val:
+                                return val
+                    for child in obj.values():
+                        result = walk(child)
+                        if result:
+                            return result
+                elif isinstance(obj, list):
+                    for item in obj:
+                        result = walk(item)
+                        if result:
+                            return result
+                return None
+
+            return walk(api_payload)
+
+        def parse_json_value(raw):
+            if not raw:
+                return {}
+            data = raw
+            if isinstance(raw, list):
+                data = raw[0] if raw else None
+            if isinstance(data, bytes):
+                data = data.decode("utf-8", errors="ignore")
+            if isinstance(data, str):
+                try:
+                    return json.loads(data)
+                except Exception:
+                    return {}
+            if isinstance(data, dict):
+                return data
+            return {}
+
+        def parse_request_body(raw_body):
+            if not raw_body:
+                return {}
+            data = raw_body
+            if isinstance(data, bytes):
+                data = data.decode("utf-8", errors="ignore")
+            if isinstance(data, str):
+                try:
+                    return json.loads(data)
+                except Exception:
+                    return {}
+            if isinstance(data, dict):
+                return data
+            return {}
+
+        cached_body_source = (
+            request_snapshot.get("body")
+            or cached_snapshot.get("body")
+            or cached_snapshot.get("body_template")
+        )
+        body_template = parse_request_body(cached_body_source)
+        query_params = (
+            request_snapshot.get("query_params")
+            or cached_snapshot.get("query_params")
+            or {}
+        )
+
+        base_request_payload = {
+            "base_url": request_snapshot.get("base_url")
+            or cached_snapshot.get("base_url"),
+            "headers": request_snapshot.get("headers")
+            or cached_snapshot.get("headers")
+            or {},
+            "method": (
+                request_snapshot.get("method")
+                or cached_snapshot.get("method")
+                or "GET"
+            ).upper(),
+            "body_template": body_template,
+            "variables": body_template.get("variables")
+            or cached_snapshot.get("variables")
+            or parse_json_value(query_params.get("variables")),
+            "features": body_template.get("features")
+            or body_template.get("extensions", {}).get("features")
+            or cached_snapshot.get("features")
+            or parse_json_value(query_params.get("features")),
+            "field_toggles": body_template.get("fieldToggles")
+            or cached_snapshot.get("field_toggles")
+            or parse_json_value(query_params.get("fieldToggles")),
+            "query_params": query_params,
+        }
+
+        # Persist snapshot for debugging (only when we actually captured the template)
+        if base_request_payload["base_url"] and base_request_payload["headers"]:
+            try:
+                logs_dir = Path("logs")
+                logs_dir.mkdir(exist_ok=True)
+                payload_preview = {
+                    "base_url": base_request_payload["base_url"],
+                    "method": base_request_payload["method"],
+                    "variables": base_request_payload["variables"],
+                    "features": base_request_payload["features"],
+                    "field_toggles": base_request_payload["field_toggles"],
+                    "body_template": base_request_payload["body_template"],
+                    "headers": base_request_payload["headers"],
+                    "query_params": base_request_payload.get("query_params"),
+                    "body": request_snapshot.get("body"),
+                }
+                with snapshot_file.open("w", encoding="utf-8") as fh:
+                    json.dump(payload_preview, fh, indent=2)
+                logger.info(
+                    f"💾 Saved Twitter GraphQL request snapshot to {snapshot_file}"
+                )
+            except Exception as snapshot_err:
+                logger.debug(f"Could not write Twitter request snapshot: {snapshot_err}")
+
+        def build_graphql_url(base_url: str, variables: dict, features: dict, toggles: dict):
+            params = {
+                "variables": json.dumps(variables or {}, separators=(",", ":")),
+                "features": json.dumps(features or {}, separators=(",", ":")),
+            }
+            if toggles:
+                params["fieldToggles"] = json.dumps(toggles, separators=(",", ":"))
+            return f"{base_url}?{urlencode(params)}"
+
+        async def fetch_graphql_page(cursor_value: Optional[str]) -> Optional[dict]:
+            if (
+                not base_request_payload["base_url"]
+                or not base_request_payload["headers"]
+                or not getattr(self.context, "request", None)
+            ):
+                return None
+
+            variables = dict(base_request_payload["variables"] or {})
+            if cursor_value:
+                variables["cursor"] = cursor_value
+            else:
+                variables.pop("cursor", None)
+            if limit and variables is not None:
+                variables["count"] = max(
+                    min(limit, 100), int(variables.get("count", 20) or 20)
+                )
+
+            headers = {
+                k: v
+                for k, v in (base_request_payload["headers"] or {}).items()
+                if not k.startswith(":")
+            }
+            headers.setdefault("accept", "application/json, text/plain, */*")
+            headers.setdefault("content-type", "application/json")
+
+            request_context = self.context.request
+            method = base_request_payload.get("method", "GET")
+            try:
+                if method == "POST":
+                    body = dict(base_request_payload["body_template"] or {})
+                    body["variables"] = variables
+                    if base_request_payload["features"]:
+                        body.setdefault("features", base_request_payload["features"])
+                    if base_request_payload["field_toggles"]:
+                        body.setdefault(
+                            "fieldToggles", base_request_payload["field_toggles"]
+                        )
+                    resp = await request_context.post(
+                        base_request_payload["base_url"],
+                        headers=headers,
+                        data=json.dumps(body, separators=(",", ":")),
+                        timeout=20000,
+                    )
+                else:
+                    full_url = build_graphql_url(
+                        base_request_payload["base_url"],
+                        variables,
+                        base_request_payload["features"],
+                        base_request_payload["field_toggles"],
+                    )
+                    resp = await request_context.get(
+                        full_url,
+                        headers=headers,
+                        timeout=20000,
+                    )
+                if resp.ok:
+                    return await resp.json()
+                logger.warning(
+                    f"⚠️ GraphQL request failed with status {resp.status}"
+                )
+            except Exception as exc:
+                logger.warning(f"⚠️ GraphQL request error: {exc}")
+            return None
+
+        posts: List[SocialPost] = []
+        seen_ids: Set[str] = set()
+        normalized_stop = normalize_tweet_id(stop_at_post_id)
+
+        def process_payload(payload: dict) -> str:
+            """Add tweets from payload; return 'stop', 'full', or 'continue'."""
+            tweets = self._extract_tweets_from_api_response(payload) or []
+            for tweet in tweets:
+                tweet_id = normalize_tweet_id(getattr(tweet, "post_id", None))
+                if not tweet_id:
+                    continue
+                if tweet_id in seen_ids:
+                    continue
+                if normalized_stop and tweet_id == normalized_stop:
+                    logger.info(f"🛑 Reached last collected tweet via API: {tweet_id}")
+                    return "stop"
+                seen_ids.add(tweet_id)
+                posts.append(tweet)
+                if len(posts) >= limit:
+                    return "full"
+            return "continue"
+
+        next_cursor = None
+        for url, response in response_promises:
+            try:
+                text = await response.text()
+                if not text or text.strip().startswith("<!DOCTYPE"):
+                    continue
+                payload = json.loads(text)
+            except Exception as exc:
+                logger.debug(f"⚠️ Could not parse bookmarks response {url}: {exc}")
+                continue
+
+            result = process_payload(payload)
+            if result in ("stop", "full"):
+                next_cursor = None
+                break
+
+            cursor_candidate = extract_cursor(payload, "Bottom")
+            if cursor_candidate:
+                next_cursor = cursor_candidate
+
+            if len(posts) >= limit:
+                break
+
+        if not posts and base_request_payload["base_url"]:
+            logger.info(
+                "📡 No bookmark responses intercepted; attempting direct GraphQL fetch"
+            )
+            payload = await fetch_graphql_page(cursor_value=None)
+            if payload:
+                result = process_payload(payload)
+                if result not in ("stop", "full"):
+                    next_cursor = extract_cursor(payload, "Bottom")
+
+        pagination_attempts = 0
+        while (
+            next_cursor
+            and len(posts) < limit
+            and pagination_attempts < 5
+        ):
+            pagination_attempts += 1
+            payload = await fetch_graphql_page(next_cursor)
+            if not payload:
+                break
+            result = process_payload(payload)
+            if result in ("stop", "full"):
+                break
+            new_cursor = extract_cursor(payload, "Bottom")
+            if not new_cursor or new_cursor == next_cursor:
+                break
+            next_cursor = new_cursor
+
+        logger.info(
+            f"📥 API-first collector captured {len(posts)} tweets (limit={limit}, stop_at={stop_at_post_id})"
+        )
+        if not posts:
+            logger.warning("⚠️ API-first collector returned no posts")
+        else:
+            await self._refresh_and_save_cookies()
+
+        return posts
+
+    async def _collect_saved_posts_via_direct_api(
+        self, limit: int, stop_at_post_id: Optional[str]
+    ) -> List[SocialPost]:
+        """Use cookie-authenticated GraphQL client to fetch bookmarks directly."""
+        if not self.context:
+            return []
+
+        try:
+            cookies_list = await self.context.cookies()
+        except Exception as err:
+            logger.debug(f"⚠️ Could not read cookies for direct API call: {err}")
+            return []
+
+        cookie_map = {}
+        for cookie in cookies_list or []:
+            name = cookie.get("name")
+            value = cookie.get("value")
+            if name and value:
+                cookie_map[name] = value
+
+        ct0 = cookie_map.get("ct0")
+        auth_token = cookie_map.get("auth_token")
+
+        if not ct0 or not auth_token:
+            logger.debug(
+                "⚠️ Missing ct0/auth_token cookies; skipping direct GraphQL bookmark fetch"
+            )
+            return []
+
+        client = TwitterAPIClient(cookie_map, auth_token, ct0)
+        collected: List[SocialPost] = []
+        seen_ids: Set[str] = set()
+        normalized_stop = self._normalize_tweet_id(stop_at_post_id)
+        cursor: Optional[str] = None
+
+        while len(collected) < limit:
+            batch_size = max(1, min(50, limit - len(collected)))
+            try:
+                batch, next_cursor = await client.get_bookmarks(
+                    limit=batch_size, cursor=cursor
+                )
+            except Exception as exc:
+                logger.warning(f"⚠️ Direct Twitter API request failed: {exc}")
+                break
+
+            if not batch:
+                break
+
+            for tweet in batch:
+                tweet_id = self._normalize_tweet_id(tweet.post_id)
+                if not tweet_id or tweet_id in seen_ids:
+                    continue
+                if normalized_stop and tweet_id == normalized_stop:
+                    logger.info("🛑 Reached stop tweet via direct API")
+                    return collected
+
+                seen_ids.add(tweet_id)
+                collected.append(tweet)
+                if len(collected) >= limit:
+                    break
+
+            if not next_cursor or next_cursor == cursor:
+                break
+            cursor = next_cursor
+
+        if collected:
+            await self._refresh_and_save_cookies()
+
+        return collected
+
+    @staticmethod
+    def _normalize_tweet_id(value: Optional[str]) -> str:
+        if not value:
+            return ""
+        text = str(value).strip()
+        if text.lower().startswith("twitter_"):
+            return text.split("_", 1)[1]
+        return text
+
     async def get_saved_posts(
         self, limit: int = 50, skip_cached_ids: set = None, stop_at_post_id: str = None
     ) -> List[SocialPost]:
-        """Get bookmarked tweets from Twitter with improved scrolling and thread handling"""
+        """
+        Legacy DOM-based bookmark scraping.
+        This path is deprecated and disabled unless TWITTER_DOM_FALLBACK=true.
+        Use get_saved_posts_api_first for production.
+        """
+        if os.getenv("TWITTER_DOM_FALLBACK", "false").lower() not in ("1", "true", "yes"):
+            logger.warning(
+                "⚠️ Twitter DOM fallback is disabled. Set TWITTER_DOM_FALLBACK=true to re-enable."
+            )
+            return []
         if not self.is_authenticated:
             if not await self.authenticate():
                 return []

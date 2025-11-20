@@ -170,8 +170,9 @@ async def analyze_and_store_post(db_manager, post_dict, supabase_manager=None):
     except Exception as e:
         import logging
 
-        logger = logging.getLogger(__name__)
-        logger.debug(f"Cancel manager check failed (non-critical): {e}")
+        logging.getLogger(__name__).debug(
+            f"Cancel manager check failed (non-critical): {e}"
+        )
         # Continue - cancel check is optional
 
     # CRITICAL: Prefer DatabaseAgent for data normalization and quality control
@@ -183,8 +184,7 @@ async def analyze_and_store_post(db_manager, post_dict, supabase_manager=None):
     except Exception as e:
         import logging
 
-        logger = logging.getLogger(__name__)
-        logger.warning(
+        logging.getLogger(__name__).warning(
             f"⚠️ DatabaseAgent initialization failed, using fallback: {e}",
             exc_info=True,
         )

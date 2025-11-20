@@ -309,4 +309,6 @@
   </section>
 </div>
 
-<Toast {toastMessage} {toastTone} visible={toastVisible} />
+{#if toastVisible}
+  <Toast message={toastMessage} tone={toastTone} />
+{/if}

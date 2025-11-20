@@ -3,6 +3,7 @@
   import { page } from '$app/stores';
   import { onMount, onDestroy } from 'svelte';
   import logoMark from '$lib/assets/beyondlines-mark.svg';
+  import ToastCenter from '../components/Toast.svelte';
 
   interface NavItem {
     label: string;
@@ -15,9 +16,10 @@
     { label: 'Dashboard', href: '/', icon: '📊', sublabel: 'Mission control' },
     { label: 'Feed', href: '/feed', icon: '🧭', sublabel: 'Signal streams' },
     { label: 'Collection', href: '/collection', icon: '📥', sublabel: 'Crawlers' },
+    { label: 'Persona Studio', href: '/persona-studio', icon: '🎭', sublabel: 'AI persona creation' },
     { label: 'Publishing', href: '/publishing', icon: '📝', sublabel: 'Persona output' },
     { label: 'Analysis', href: '/analysis', icon: '🤖', sublabel: 'AI workbench' },
-    { label: 'Profiles', href: '/profiles', icon: '👤', sublabel: 'Persona management' },
+    { label: 'Profiles', href: '/profiles', icon: '👤', sublabel: 'Legacy profiles' },
     { label: 'System', href: '/system', icon: '🔧', sublabel: 'Health & status' },
     { label: 'Settings', href: '/settings', icon: '⚙️', sublabel: 'Credentials & auth' }
   ];
@@ -161,6 +163,9 @@
     ></button>
   {/if}
 </div>
+
+<!-- Toast Notifications -->
+<ToastCenter />
 
 <style>
   :global(body) {

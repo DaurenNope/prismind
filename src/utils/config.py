@@ -36,9 +36,9 @@ class Config:
             "research_api_enabled": False,
             # Automation defaults
             "auto_analyze_after_collection": True,
-            "auto_rewrite_after_analysis": True,
-            # Enable scheduling by default for ASAP posting
-            "auto_schedule_after_rewrite": True,
+            "auto_rewrite_after_analysis": False,
+            # Scheduling stays manual unless explicitly enabled
+            "auto_schedule_after_rewrite": False,
             "auto_pipeline_batch_limit": 25,
             # Keep small to move quickly
             "auto_rewrite_posts_per_profile": 3,

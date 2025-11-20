@@ -285,6 +285,70 @@ class EngagementLearner:
             logger.error(f"❌ Error getting top performing content: {e}")
             return []
 
+    def get_best_examples(
+        self,
+        persona: str,
+        content_type: Optional[str] = None,
+        limit: int = 5,
+        min_engagement_score: float = 60.0,
+    ) -> List[Dict[str, Any]]:
+        """
+        Return high-performing rewrite examples for a persona/content type.
+
+        This is a synchronous helper for the rewriter so it can seed the RAG DB
+        even when running inside an existing event loop.
+        """
+        try:
+            query = (
+                self.supabase.table("posted_content")
+                .select("*")
+                .eq("persona_key", persona)
+            )
+
+            if content_type:
+                query = query.eq("content_type", content_type)
+
+            # Fetch more rows than needed, we'll filter in Python
+            response = query.order("posted_at", desc=True).limit(limit * 4).execute()
+            posts = response.data or []
+
+            scored_examples: List[Dict[str, Any]] = []
+            for post in posts:
+                content = (post.get("content") or "").strip()
+                if not content:
+                    continue
+
+                engagement_json = post.get("engagement_json", {})
+                score = (
+                    self.calculate_engagement_score(engagement_json)
+                    if isinstance(engagement_json, dict)
+                    else 0
+                )
+
+                if score < min_engagement_score:
+                    continue
+
+                scored_examples.append(
+                    {
+                        "id": post.get("id"),
+                        "content": content,
+                        "platform": post.get("platform"),
+                        "persona": post.get("persona_key"),
+                        "content_type": post.get("content_type"),
+                        "engagement_score": score,
+                        "posted_at": post.get("posted_at"),
+                        "metadata": post.get("metadata") or {},
+                        "source": "engagement_top_post",
+                    }
+                )
+
+            scored_examples.sort(key=lambda ex: ex["engagement_score"], reverse=True)
+            return scored_examples[:limit]
+
+        except Exception as exc:
+            logger.warning(f"⚠️ Could not fetch best-performing examples: {exc}")
+            return []
+
     async def learn_successful_patterns(
         self, persona: str, platform: Optional[str] = None
     ) -> Dict[str, Any]:

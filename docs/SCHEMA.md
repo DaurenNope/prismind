@@ -213,3 +213,4 @@ Use `DatabaseAgent().get_id_format_health()` and analyzer fill-rate metrics to m
 - **Analysis is always performed** before rewrite attempts
 - **Persona matching is built into analysis** - not a separate step
 - **Schema is versioned** via `analysis_model` and `analysis_depth` fields
+

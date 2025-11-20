@@ -1,0 +1,118 @@
+{
+  "performances": {
+    "content_1763486844.479927": {
+      "content_id": "content_1763486844.479927",
+      "persona_id": "test_persona_1",
+      "topic": "New AI startup just raised Series A funding",
+      "platform": "twitter",
+      "generated_at": "2025-11-19T00:27:24.479931",
+      "content": "Just saw the news - another AI unicorn in the making! Series A at \\M valuation for enterprise automation. The market is getting really interesting again.",
+      "quality_metrics": {
+        "voice_consistency": 0.85,
+        "authenticity_prediction": 0.78,
+        "engagement_potential": 0.92,
+        "overall_quality": 0.82
+      },
+      "likes": 45,
+      "shares": 23,
+      "comments": 8,
+      "clicks": 0,
+      "reach": 1250,
+      "engagement_rate": 0.0608,
+      "virality_score": 1.0,
+      "success_score": 0.612824,
+      "optimization_suggestions": []
+    },
+    "content_1763486844.480131": {
+      "content_id": "content_1763486844.480131",
+      "persona_id": "test_persona_1",
+      "topic": "Marketing automation trends for 2024",
+      "platform": "linkedin",
+      "generated_at": "2025-11-19T00:27:24.480134",
+      "content": "Marketing automation continues to evolve rapidly. Personalization at scale, AI-driven segmentation, and multi-channel orchestration are becoming table stakes for serious marketers.",
+      "quality_metrics": {
+        "voice_consistency": 0.72,
+        "authenticity_prediction": 0.65,
+        "engagement_potential": 0.58,
+        "overall_quality": 0.68
+      },
+      "likes": 28,
+      "shares": 15,
+      "comments": 12,
+      "clicks": 0,
+      "reach": 890,
+      "engagement_rate": 0.06179775280898876,
+      "virality_score": 1.0,
+      "success_score": 0.5723033707865168,
+      "optimization_suggestions": []
+    },
+    "content_1763486844.4803": {
+      "content_id": "content_1763486844.4803",
+      "persona_id": "test_persona_1",
+      "topic": "Tips for improving developer productivity",
+      "platform": "twitter",
+      "generated_at": "2025-11-19T00:27:24.480302",
+      "content": "Developer productivity hack: Use keyboard shortcuts religiously. My WPM went from 65 to 120 after 3 weeks. Time saved adds up significantly over long projects.",
+      "quality_metrics": {
+        "voice_consistency": 0.91,
+        "authenticity_prediction": 0.88,
+        "engagement_potential": 0.85,
+        "overall_quality": 0.89
+      },
+      "likes": 156,
+      "shares": 89,
+      "comments": 34,
+      "clicks": 0,
+      "reach": 3420,
+      "engagement_rate": 0.08157894736842106,
+      "virality_score": 1.0,
+      "success_score": 0.6267421052631579,
+      "optimization_suggestions": []
+    },
+    "content_1763486950.251243": {
+      "content_id": "content_1763486950.251243",
+      "persona_id": "test_persona_123",
+      "topic": "AI Marketing Trends",
+      "platform": "twitter",
+      "generated_at": "2025-11-19T00:29:10.251247",
+      "content": "Just discovered an amazing AI tool that transformed our content strategy! The results are mind-blowing 🚀",
+      "quality_metrics": {
+        "overall_quality": 0.85,
+        "authenticity_prediction": 0.78,
+        "engagement_potential": 0.92
+      },
+      "likes": 45,
+      "shares": 12,
+      "comments": 8,
+      "clicks": 23,
+      "reach": 1200,
+      "engagement_rate": 0.05416666666666667,
+      "virality_score": 0.8083333333333332,
+      "success_score": 0.5331666666666666,
+      "optimization_suggestions": []
+    },
+    "content_1763486979.706034": {
+      "content_id": "content_1763486979.706034",
+      "persona_id": "test_persona_456",
+      "topic": "Machine Learning Advances",
+      "platform": "linkedin",
+      "generated_at": "2025-11-19T00:29:39.706039",
+      "content": "Excited to share our latest ML research findings...",
+      "quality_metrics": {
+        "overall_quality": 0.89,
+        "authenticity_prediction": 0.82,
+        "engagement_potential": 0.91
+      },
+      "likes": 0,
+      "shares": 0,
+      "comments": 0,
+      "clicks": 0,
+      "reach": 0,
+      "engagement_rate": 0.0,
+      "virality_score": 0.0,
+      "success_score": 0.875,
+      "optimization_suggestions": []
+    }
+  },
+  "last_updated": "2025-11-19T00:29:39.706238"
+}

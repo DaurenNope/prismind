@@ -13,10 +13,15 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from src.database.publishing.bridge import MimesisDB
-from src.publishing.rewriter import ContentRewriter
+from src.publishing.modular_rewriter import (
+    ModularRewriter,
+    RewriteRequest,
+    build_persona_context,
+)
 from src.services.profile_content_pipeline import ProfileContentPipeline
 from src.services.profile_content_selector import ProfileContentSelector
 from src.storage.db import get_storage
+from src.utils.config import get_config
 
 logger = logging.getLogger(__name__)
 
@@ -29,12 +34,18 @@ class ProfilePublishingOrchestrator:
     1. Select posts from usable_posts (ProfileContentSelector)
     2. Route to platforms (ProfileContentPipeline)
     3. Prepare prompts (ProfileContentPipeline)
-    4. Rewrite content (ContentRewriter)
+    4. Rewrite content (ModularRewriter)
     5. Schedule for publishing (DatabaseManager)
     6. Publish (PublisherWorker - separate service)
     """
 
-    def __init__(self, profile_key: str):
+    def __init__(
+        self,
+        profile_key: str,
+        *,
+        auto_schedule: Optional[bool] = None,
+        schedule_delay_minutes: Optional[int] = None,
+    ):
         """
         Initialize orchestrator for a profile
 
@@ -44,8 +55,21 @@ class ProfilePublishingOrchestrator:
         self.profile_key = profile_key
         self.selector = ProfileContentSelector(profile_key)
         self.pipeline = ProfileContentPipeline(profile_key)
-        self.rewriter = ContentRewriter()
+        self.rewriter = ModularRewriter()
         self.db = get_storage()
+
+        config = get_config()
+        flags = getattr(config, "flags", {}) if config else {}
+        self.auto_schedule_enabled = (
+            bool(auto_schedule)
+            if auto_schedule is not None
+            else bool(flags.get("auto_schedule_after_rewrite"))
+        )
+        self.schedule_delay_minutes = int(
+            schedule_delay_minutes
+            if schedule_delay_minutes is not None
+            else flags.get("auto_schedule_delay_minutes", 90)
+        )
 
         logger.info(
             f"✅ Initialized ProfilePublishingOrchestrator for {self.pipeline.profile_name}"
@@ -146,20 +170,23 @@ class ProfilePublishingOrchestrator:
                     logger.info(
                         f"✍️  Calling rewriter with profile-specific prompt for {platform}/{prepared_content['content_type']}"
                     )
-                    result = await self.rewriter.rewrite_analyzed_post(
-                        analyzed_content=analyzed_content,
-                        persona=self.profile_key,
-                        platform=platform,
-                        custom_prompt=prepared_content.get(
-                            "prompt"
-                        ),  # ← Pass custom prompt!
-                        platform_constraints=prepared_content.get(
-                            "constraints"
-                        ),  # ← Pass constraints!
-                        target_content_type=prepared_content.get(
-                            "content_type"
-                        ),  # ← Pass content type!
+                    persona_context = build_persona_context(
+                        self.profile_key, self.pipeline.config.get("persona", {})
                     )
+                    rewrite_request = RewriteRequest(
+                        analyzed_content=analyzed_content,
+                        persona=persona_context,
+                        platform=platform,
+                        custom_prompt=prepared_content.get("prompt"),
+                        platform_constraints=prepared_content.get("constraints"),
+                        target_content_type=prepared_content.get("content_type"),
+                    )
+                    modular_result = await self.rewriter.rewrite(rewrite_request)
+                    result = modular_result.metadata.copy()
+                    result["rewritten_content"] = modular_result.rewritten_content
+                    result["quality_score"] = modular_result.quality_score
+                    result["voice_consistency_score"] = modular_result.voice_consistency_score
+                    result["fact_preservation_score"] = modular_result.fact_preservation_score
 
                     if "error" in result:
                         logger.error(
@@ -203,6 +230,13 @@ class ProfilePublishingOrchestrator:
         Returns:
             Dict with scheduling info
         """
+        if not self.auto_schedule_enabled:
+            logger.info(
+                "🛑 Auto-scheduling disabled for %s – storing rewrite only",
+                self.profile_key,
+            )
+            return {"skipped": True, "reason": "auto_schedule_disabled"}
+
         content = rewrite_result.get("rewritten_content", "")
         quality_score = rewrite_result.get("quality_score", 0) or 0
 
@@ -218,7 +252,9 @@ class ProfilePublishingOrchestrator:
 
         # Determine posting time based on relevance_window
         relevance_window = post.get("relevance_window") or "evergreen"
-        scheduled_for = self._calculate_posting_time(relevance_window, priority)
+        scheduled_for = self._calculate_posting_time(
+            relevance_window, priority, self.schedule_delay_minutes
+        )
 
         # Store in scheduled_posts table
         try:
@@ -271,7 +307,9 @@ class ProfilePublishingOrchestrator:
             logger.error(f"Error scheduling post: {e}")
             return {"error": str(e)}
 
-    def _calculate_posting_time(self, relevance_window: str, priority: int) -> datetime:
+    def _calculate_posting_time(
+        self, relevance_window: str, priority: int, override_delay: Optional[int] = None
+    ) -> datetime:
         """
         Calculate when to post based on time sensitivity and priority.
         """
@@ -288,7 +326,9 @@ class ProfilePublishingOrchestrator:
 
         min_delay, max_delay = windows.get(relevance_window, (60, 480))
 
-        if priority >= 80:
+        if override_delay is not None:
+            delay = override_delay
+        elif priority >= 80:
             delay = min_delay
         elif priority >= 50:
             delay = (min_delay + max_delay) // 2

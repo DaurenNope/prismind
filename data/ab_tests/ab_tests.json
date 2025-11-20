@@ -1,0 +1,240 @@
+{
+  "tests": {
+    "dd797ef6-63f1-4d9a-bb76-953714ebb1f7": {
+      "id": "dd797ef6-63f1-4d9a-bb76-953714ebb1f7",
+      "name": "Prompt Strategy Optimization Test",
+      "description": "Test enhanced personality-focused prompts vs current strategy",
+      "type": "TestType.PROMPT_STRATEGY",
+      "status": "TestStatus.ACTIVE",
+      "persona_id": "test-persona-ab",
+      "platform": "twitter",
+      "variants": [
+        {
+          "id": "00438132-15c6-49ef-9d88-a77d8ce1c10c",
+          "name": "Current Strategy",
+          "type": "VariantType.CONTROL",
+          "description": "Existing prompt generation approach",
+          "config": {
+            "strategy": "current",
+            "temperature": 0.8
+          },
+          "traffic_allocation": 0.5
+        },
+        {
+          "id": "748276c3-d5b4-4fd5-86a0-ed062e0dfad6",
+          "name": "Enhanced Personality Focus",
+          "type": "VariantType.TREATMENT",
+          "description": "Prompts with stronger personality emphasis",
+          "config": {
+            "strategy": "enhanced_personality",
+            "temperature": 0.7
+          },
+          "traffic_allocation": 0.5
+        }
+      ],
+      "created_at": "2025-11-19 16:18:53.248705",
+      "started_at": "2025-11-19 16:18:53.251023",
+      "ended_at": null,
+      "min_sample_size": 5,
+      "confidence_threshold": 0.8
+    },
+    "f55ab77e-d2ae-46c6-aca2-15f9813478bc": {
+      "id": "f55ab77e-d2ae-46c6-aca2-15f9813478bc",
+      "name": "Prompt Strategy Optimization",
+      "description": "Test different prompt strategies for better content quality",
+      "type": "TestType.PROMPT_STRATEGY",
+      "status": "TestStatus.DRAFT",
+      "persona_id": "predefined-test-persona",
+      "platform": "twitter",
+      "variants": [
+        {
+          "id": "20464bef-63dc-4552-85c2-cfa1289bccc6",
+          "name": "Current Strategy",
+          "type": "VariantType.CONTROL",
+          "description": "Existing prompt generation approach",
+          "config": {
+            "strategy": "current"
+          },
+          "traffic_allocation": 0.5
+        },
+        {
+          "id": "d90ea8f0-daf6-4951-8d44-f882da799f78",
+          "name": "Enhanced Personality Focus",
+          "type": "VariantType.TREATMENT",
+          "description": "Prompts with stronger personality emphasis",
+          "config": {
+            "strategy": "enhanced_personality"
+          },
+          "traffic_allocation": 0.5
+        }
+      ],
+      "created_at": "2025-11-19 16:18:59.164430",
+      "started_at": null,
+      "ended_at": null,
+      "min_sample_size": 50,
+      "confidence_threshold": 0.95
+    },
+    "a7f11e29-c35a-4046-ac23-1b7f65dbf9d5": {
+      "id": "a7f11e29-c35a-4046-ac23-1b7f65dbf9d5",
+      "name": "AI Temperature Optimization",
+      "description": "Test different AI temperature settings for creativity vs consistency",
+      "type": "TestType.TEMPERATURE_TESTING",
+      "status": "TestStatus.DRAFT",
+      "persona_id": "predefined-test-persona",
+      "platform": "twitter",
+      "variants": [
+        {
+          "id": "a15585a7-b35b-447f-b83c-052b3eb6d144",
+          "name": "Standard Temperature",
+          "type": "VariantType.CONTROL",
+          "description": "Current temperature setting",
+          "config": {
+            "temperature": 0.8
+          },
+          "traffic_allocation": 0.5
+        },
+        {
+          "id": "5a643ad9-b314-4f82-9cbb-dc92ed39534e",
+          "name": "Consistent Temperature",
+          "type": "VariantType.TREATMENT",
+          "description": "Lower temperature for more consistent output",
+          "config": {
+            "temperature": 0.6
+          },
+          "traffic_allocation": 0.5
+        }
+      ],
+      "created_at": "2025-11-19 16:18:59.165658",
+      "started_at": null,
+      "ended_at": null,
+      "min_sample_size": 30,
+      "confidence_threshold": 0.95
+    },
+    "f3f533a3-c82a-483d-9257-09bad001a3cb": {
+      "id": "f3f533a3-c82a-483d-9257-09bad001a3cb",
+      "name": "Engagement Hooks Optimization",
+      "description": "Test different engagement hook strategies",
+      "type": "TestType.ENGAGEMENT_HOOKS",
+      "status": "TestStatus.DRAFT",
+      "persona_id": "predefined-test-persona",
+      "platform": "twitter",
+      "variants": [
+        {
+          "id": "cecaea33-cd6d-483d-9316-b37125a96643",
+          "name": "Current Hooks",
+          "type": "VariantType.CONTROL",
+          "description": "Existing engagement hook strategy",
+          "config": {
+            "hooks": "current"
+          },
+          "traffic_allocation": 0.5
+        },
+        {
+          "id": "69ec9bac-73ee-438b-8e5f-726ae688c670",
+          "name": "Question-Focused",
+          "type": "VariantType.TREATMENT",
+          "description": "Emphasis on questions and direct engagement",
+          "config": {
+            "hooks": "question_focused"
+          },
+          "traffic_allocation": 0.5
+        }
+      ],
+      "created_at": "2025-11-19 16:18:59.166671",
+      "started_at": null,
+      "ended_at": null,
+      "min_sample_size": 40,
+      "confidence_threshold": 0.95
+    }
+  },
+  "metrics": {
+    "dd797ef6-63f1-4d9a-bb76-953714ebb1f7": {
+      "00438132-15c6-49ef-9d88-a77d8ce1c10c": {
+        "variant_id": "00438132-15c6-49ef-9d88-a77d8ce1c10c",
+        "total_requests": 4,
+        "successful_generations": 4,
+        "avg_quality_score": 1.0,
+        "avg_voice_consistency": 0.0,
+        "avg_personality_consistency": 0.0,
+        "avg_engagement_score": 1.0,
+        "total_engagement": 0
+      },
+      "748276c3-d5b4-4fd5-86a0-ed062e0dfad6": {
+        "variant_id": "748276c3-d5b4-4fd5-86a0-ed062e0dfad6",
+        "total_requests": 1,
+        "successful_generations": 1,
+        "avg_quality_score": 1.0,
+        "avg_voice_consistency": 0.0,
+        "avg_personality_consistency": 0.0,
+        "avg_engagement_score": 1.0,
+        "total_engagement": 0
+      }
+    },
+    "f55ab77e-d2ae-46c6-aca2-15f9813478bc": {
+      "20464bef-63dc-4552-85c2-cfa1289bccc6": {
+        "variant_id": "20464bef-63dc-4552-85c2-cfa1289bccc6",
+        "total_requests": 0,
+        "successful_generations": 0,
+        "avg_quality_score": 0.0,
+        "avg_voice_consistency": 0.0,
+        "avg_personality_consistency": 0.0,
+        "avg_engagement_score": 0.0,
+        "total_engagement": 0
+      },
+      "d90ea8f0-daf6-4951-8d44-f882da799f78": {
+        "variant_id": "d90ea8f0-daf6-4951-8d44-f882da799f78",
+        "total_requests": 0,
+        "successful_generations": 0,
+        "avg_quality_score": 0.0,
+        "avg_voice_consistency": 0.0,
+        "avg_personality_consistency": 0.0,
+        "avg_engagement_score": 0.0,
+        "total_engagement": 0
+      }
+    },
+    "a7f11e29-c35a-4046-ac23-1b7f65dbf9d5": {
+      "a15585a7-b35b-447f-b83c-052b3eb6d144": {
+        "variant_id": "a15585a7-b35b-447f-b83c-052b3eb6d144",
+        "total_requests": 0,
+        "successful_generations": 0,
+        "avg_quality_score": 0.0,
+        "avg_voice_consistency": 0.0,
+        "avg_personality_consistency": 0.0,
+        "avg_engagement_score": 0.0,
+        "total_engagement": 0
+      },
+      "5a643ad9-b314-4f82-9cbb-dc92ed39534e": {
+        "variant_id": "5a643ad9-b314-4f82-9cbb-dc92ed39534e",
+        "total_requests": 0,
+        "successful_generations": 0,
+        "avg_quality_score": 0.0,
+        "avg_voice_consistency": 0.0,
+        "avg_personality_consistency": 0.0,
+        "avg_engagement_score": 0.0,
+        "total_engagement": 0
+      }
+    },
+    "f3f533a3-c82a-483d-9257-09bad001a3cb": {
+      "cecaea33-cd6d-483d-9316-b37125a96643": {
+        "variant_id": "cecaea33-cd6d-483d-9316-b37125a96643",
+        "total_requests": 0,
+        "successful_generations": 0,
+        "avg_quality_score": 0.0,
+        "avg_voice_consistency": 0.0,
+        "avg_personality_consistency": 0.0,
+        "avg_engagement_score": 0.0,
+        "total_engagement": 0
+      },
+      "69ec9bac-73ee-438b-8e5f-726ae688c670": {
+        "variant_id": "69ec9bac-73ee-438b-8e5f-726ae688c670",
+        "total_requests": 0,
+        "successful_generations": 0,
+        "avg_quality_score": 0.0,
+        "avg_voice_consistency": 0.0,
+        "avg_personality_consistency": 0.0,
+        "avg_engagement_score": 0.0,
+        "total_engagement": 0
+      }
+    }
+  }
+}

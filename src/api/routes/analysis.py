@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
+from dateutil.parser import isoparse
 
 from src.pipeline.orchestrator import get_orchestrator
 from src.services.new_database_manager import NewDatabaseManager
@@ -34,9 +35,9 @@ def _safe_timestamp(value: Optional[str]) -> Optional[str]:
     if not value:
         return None
     try:
-        # Ensure ISO format; if parsing fails we still return original
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        return parsed.isoformat()
+        if isinstance(value, str):
+            return isoparse(value).isoformat()
+        return isoparse(str(value)).isoformat()
     except Exception as e:
         logger.warning(f"Error parsing JSON value: {e}")
         return value

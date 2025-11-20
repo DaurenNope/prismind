@@ -393,7 +393,9 @@ class DatabaseCuration:
                 f"Post {post.get('post_id')} has invalid analysis_model: {analysis_model}"
             )
 
-        relevance_window = post.get("relevance_window", "evergreen")
+        relevance_window = (post.get("relevance_window") or "evergreen").strip().lower()
+        if relevance_window in ("", "unknown", "none"):
+            relevance_window = "evergreen"
         urgency_score = float(post.get("urgency_score") or 0.0)
         time_sensitive = bool(post.get("time_sensitive", False))
         created_at = post.get("created_at")
@@ -435,56 +437,46 @@ class DatabaseCuration:
                 logger.error(f"Error: {e}")
                 pass
 
-        # STRICT AGE FILTERING: Exclude outdated posts regardless of relevance_window
+        # Normalize evergreen/time-sensitive behavior
+        TIME_SENSITIVE_WINDOWS = ("same-day", "24-72h", "this-week")
+        MONTHLY_WINDOWS = ("this-month",)
 
-        # First, apply a global max age filter (90 days = ~3 months)
-        # This prevents very old posts from entering usable_posts, even if marked evergreen
-        if age_info:
-            if age_info["days"] > 90:
-                return False, "Post is too old (>90 days)"
+        # If a time-sensitive post aged out, automatically treat it as evergreen
+        if (
+            relevance_window in TIME_SENSITIVE_WINDOWS + MONTHLY_WINDOWS
+            and age_info
+            and age_info["days"] > 7
+        ):
+            relevance_window = "evergreen"
+            post["relevance_window"] = "evergreen"
+            post["time_sensitive"] = False
+            post["urgency_score"] = 0.0
 
-        # Then apply relevance_window-specific filters
-
-        # 1. Evergreen posts - include if < 3 months old (stricter than before)
+        # Evergreen posts are now always allowed (historical backlog)
         if relevance_window == "evergreen":
-            if age_info:
-                # Exclude if too old (>= 3 months)
-                if age_info["months"] >= 3.0:
-                    return False, "Evergreen post too old (>=3 months)"
-                # Include evergreen posts of any age < 3 months
-                return True, "evergreen"
-            else:
-                # No age info - include anyway (better to include than exclude)
-                return True, "evergreen"
+            post["time_sensitive"] = False
+            post["urgency_score"] = 0.0
+            return True, "evergreen"
 
-        # 2. Time-sensitive posts - include if fresh (≤ 7 days)
-        elif relevance_window in ("same-day", "24-72h", "this-week"):
+        # Apply stricter limits for non-evergreen posts
+        if relevance_window in TIME_SENSITIVE_WINDOWS:
             if age_info:
                 if age_info["days"] <= 7:
                     return True, "fresh_time_sensitive"
-                else:
-                    # Older than 7 days - exclude
-                    return False, "Time-sensitive post too old (>7 days)"
-            else:
-                # No age info - assume fresh and include
-                return True, "fresh_time_sensitive"
+                # aged out time-sensitive post already converted above, so treat as evergreen fallback
+                return True, "evergreen_converted"
+            return True, "fresh_time_sensitive"
 
-        # 3. This-month posts - include if ≤ 30 days old
-        elif relevance_window == "this-month":
-            if age_info:
-                if age_info["days"] <= 30:
-                    return True, "time_sensitive_month"
-                else:
-                    return False, "This-month post too old (>30 days)"
-            else:
-                # No age info - assume fresh and include
-                return True, "time_sensitive_month"
+        if relevance_window in MONTHLY_WINDOWS:
+            if age_info and age_info["days"] > 30:
+                return True, "evergreen_converted"
+            return True, "time_sensitive_month"
 
-        # 4. Unknown relevance_window - apply global max age only
-        else:
-            if age_info and age_info["days"] > 90:
-                return False, "Post too old (>90 days, unknown relevance_window)"
-            return True, "unknown_relevance_window"
+        # Unknown window - enforce a softer global limit (1 year)
+        if age_info and age_info["days"] > 365:
+            return False, "Post too old (>365 days, unknown relevance_window)"
+
+        return True, "unknown_relevance_window"
 
     def _parse_array_field(self, value: Any) -> Optional[List[str]]:
         """Parse array field from various formats to Python list or None"""

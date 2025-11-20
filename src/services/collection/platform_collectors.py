@@ -26,7 +26,9 @@ from src.core.extraction.reddit_extractor import RedditExtractor
 # Core imports
 from src.core.extraction.social_extractor_base import SocialPost
 from src.core.extraction.threads_extractor import ThreadsExtractor
-from src.core.extraction.twitter import TwitterExtractorPlaywright
+from src.core.extraction.twitter_extractor_playwright import (
+    TwitterExtractorPlaywright,
+)
 from src.scrape_state_manager import ScrapeStateManager
 
 # Analysis import
@@ -58,6 +60,17 @@ async def collect_twitter_bookmarks(
         # Load collection state and auto-sync if needed
         state_manager = ScrapeStateManager()
         state_manager.sync_state_from_main_db(force=False)  # Auto-recover state
+
+        dry_run_mode = os.getenv("COLLECTION_DRY_RUN", "").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+        if dry_run_mode:
+            log(
+                "🧪 COLLECTION_DRY_RUN enabled - will NOT write to SQLite/Supabase",
+                "warning",
+            )
 
         force_full_collection = os.getenv("TWITTER_FORCE_FULL", "").lower() in (
             "1",
@@ -107,13 +120,19 @@ async def collect_twitter_bookmarks(
             else:
                 log("🆕 Full collection mode")
 
+        # Set collection limit based on mode
+        # Force full mode: limit to recent posts only (avoid processing old deprecated bookmarks)
+        # Normal mode: standard incremental limit
         if force_full_collection:
+            collection_limit = int(os.getenv("TWITTER_FORCE_FULL_LIMIT", "150"))
             log(
-                "⚠️ Force full Twitter collection enabled - ignoring existing IDs and stop_at_post_id",
+                f"⚠️ Force full Twitter collection enabled - checking last {collection_limit} bookmarks only (to avoid deprecated posts)",
                 "warning",
             )
             existing_ids.clear()
             last_collected_id = None
+        else:
+            collection_limit = 80  # Standard incremental collection limit
 
         twitter_username = os.getenv("TWITTER_USERNAME")
         twitter_password = os.getenv("TWITTER_PASSWORD")
@@ -181,11 +200,50 @@ async def collect_twitter_bookmarks(
             )
             return 0
 
-        # Collect bookmarks - pass existing IDs to extractor to skip during collection
-        log("Fetching Twitter bookmarks...")
-        bookmarks = await extractor.get_saved_posts(
-            limit=50, skip_cached_ids=existing_ids, stop_at_post_id=last_collected_id
+        prefer_api_first = os.getenv("TWITTER_API_FIRST", "true").lower() in (
+            "1",
+            "true",
+            "yes",
         )
+
+        bookmarks = []
+        dom_fallback_enabled = os.getenv("TWITTER_DOM_FALLBACK", "false").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+        if prefer_api_first:
+            log(
+                "⚙️ Attempting Twitter GraphQL bookmark fetch (API-first collector)",
+                "info",
+            )
+            try:
+                bookmarks = await extractor.get_saved_posts_api_first(
+                    limit=collection_limit, stop_at_post_id=last_collected_id
+                )
+            except Exception as api_error:
+                logger.error(f"Error: {api_error}")
+                log(
+                    f"⚠️ API-first Twitter collector failed: {api_error}; falling back to legacy scraper",
+                    "warning",
+                )
+
+        if not bookmarks and dom_fallback_enabled:
+            log(
+                "⚠️ API-first returned no tweets; using DEPRECATED DOM fallback (TWITTER_DOM_FALLBACK=true)",
+                "warning",
+            )
+            # DOM fallback uses smaller limit since it's slower
+            dom_limit = min(collection_limit, 50)
+            bookmarks = await extractor.get_saved_posts(
+                limit=dom_limit, skip_cached_ids=existing_ids, stop_at_post_id=last_collected_id
+            )
+        elif not bookmarks:
+            log(
+                "⚠️ API-first returned no tweets and DOM fallback is disabled "
+                "(set TWITTER_DOM_FALLBACK=true if you need the legacy scraper)",
+                "warning",
+            )
 
         if not bookmarks:
             # This is normal if all tweets are already saved (early-stop worked)
@@ -200,9 +258,74 @@ async def collect_twitter_bookmarks(
 
         log(f"Found {len(bookmarks)} Twitter bookmarks from extractor")
 
+        # Helper function to check if existing post has full content
+        # Cache results to avoid repeated DB queries for the same post
+        _full_content_cache = {}
+        
+        def has_full_content(post_id: str, url: str) -> bool:
+            """Check if an existing post has full (non-truncated) content."""
+            # Check cache first
+            cache_key = post_id or url
+            if cache_key in _full_content_cache:
+                return _full_content_cache[cache_key]
+            
+            try:
+                # Try to get existing post from database
+                existing_post = None
+                if db_manager:
+                    try:
+                        # Try to get by post_id first (most efficient)
+                        existing_post = db_manager.get_post_by_id(post_id)
+                    except Exception as e:
+                        logger.debug(f"Could not get post by ID {post_id}: {e}")
+                    
+                    # If not found by ID and we have URL, try querying by URL
+                    if not existing_post and url:
+                        try:
+                            # Try to get posts by platform and filter by URL
+                            twitter_posts = db_manager.get_posts_by_platform("twitter", limit=1000)
+                            for p in twitter_posts:
+                                if p.get("url") == url:
+                                    existing_post = p
+                                    break
+                        except Exception as e:
+                            logger.debug(f"Could not get post by URL {url}: {e}")
+                
+                if not existing_post:
+                    _full_content_cache[cache_key] = False
+                    return False
+                
+                content = (existing_post.get("content") or "").strip()
+                if not content:
+                    _full_content_cache[cache_key] = False
+                    return False
+                
+                # Check for truncation markers
+                truncation_markers = ["[", "...", "…", "Read more", "Show more"]
+                content_lower = content.lower()
+                ends_with_marker = any(
+                    content.rstrip().endswith(marker) or content_lower.endswith(marker.lower())
+                    for marker in truncation_markers
+                )
+                
+                # Consider it full if:
+                # 1. Length > 500 chars (reasonable threshold for full tweets)
+                # 2. Doesn't end with truncation markers
+                is_full = len(content) > 500 and not ends_with_marker
+                
+                # Cache the result
+                _full_content_cache[cache_key] = is_full
+                return is_full
+            except Exception as e:
+                logger.debug(f"Error checking full content for {post_id}: {e}")
+                # On error, assume not full (allow re-collection to be safe)
+                _full_content_cache[cache_key] = False
+                return False
+
         # Filter out existing posts (double-check)
         new_posts = []
-        duplicates_skipped = 0
+        full_content_skipped = 0
+        truncated_to_update = 0
         reached_last_collected = False
 
         for bookmark in bookmarks:
@@ -234,7 +357,7 @@ async def collect_twitter_bookmarks(
                 break
 
             # Double-check: Check if post already exists
-            if post_id in existing_ids:
+            if post_id in existing_ids or (existing_urls and url in existing_urls):
                 # CRITICAL: Check if this duplicate is the stop post
                 # If so, we should stop collection (even though it's a duplicate)
                 if last_collected_id and (
@@ -247,24 +370,29 @@ async def collect_twitter_bookmarks(
                     reached_last_collected = True
                     break
 
-                duplicates_skipped += 1
-                log(f"Skipping duplicate post ID: {post_id}")
-                continue
-
-            if existing_urls and url in existing_urls:
-                duplicates_skipped += 1
-                log(f"Skipping duplicate post URL: {url}")
-                continue
+                # Check if post has full content - if truncated, re-collect to update it
+                if has_full_content(post_id, url):
+                    full_content_skipped += 1
+                    log(f"⏭️ Skipping post with full content: {post_id}")
+                    continue
+                else:
+                    # Post exists but is truncated - allow re-collection to update it
+                    truncated_to_update += 1
+                    log(f"🔄 Re-collecting truncated post: {post_id} (will update with full content)")
+                    # Don't skip - allow it to be processed
 
             new_posts.append(bookmark)
 
-        if duplicates_skipped > 0:
-            log(
-                f"📊 Filtered {duplicates_skipped} duplicates, {len(new_posts)} new posts to process"
-            )
-        log(f"Processing {len(new_posts)} new Twitter posts")
+        if full_content_skipped > 0 or truncated_to_update > 0:
+            skip_msg = f"📊 Filtered {full_content_skipped} posts with full content (already analyzed)"
+            if truncated_to_update > 0:
+                skip_msg += f", {truncated_to_update} truncated posts to update (may already have analysis)"
+            skip_msg += f", {len(new_posts)} truly new posts to process"
+            log(skip_msg)
+        log(f"Processing {len(new_posts)} Twitter posts ({len(new_posts) - truncated_to_update} new, {truncated_to_update} updates)")
 
         successful_count = 0
+        dry_run_count = 0
         last_post_id = None
         last_post_url = None
 
@@ -341,6 +469,14 @@ async def collect_twitter_bookmarks(
                     "post_type": post_data.post_type or "post",
                 }
 
+                if dry_run_mode:
+                    dry_run_count += 1
+                    log(
+                        f"[DRY RUN] Would store Twitter post {post_id} ({post_dict.get('url','')})",
+                        "info",
+                    )
+                    continue
+
                 # Store without AI analysis first
                 local_stored = db_manager.add_post(post_dict)
                 if local_stored:
@@ -377,6 +513,13 @@ async def collect_twitter_bookmarks(
                 continue
 
         # Update scrape state
+        if dry_run_mode:
+            log(
+                f"🧪 DRY RUN complete - {dry_run_count} Twitter posts would have been stored",
+                "info",
+            )
+            return dry_run_count
+
         if successful_count:
             state_manager.update_scrape_state(
                 platform="twitter",
@@ -390,7 +533,14 @@ async def collect_twitter_bookmarks(
                 platform="twitter", posts_scraped=0, success=True
             )
 
-        log(f"Twitter collection completed: {successful_count} new posts", "success")
+        # Calculate breakdown for better logging
+        truly_new = successful_count - truncated_to_update
+        update_msg = f"Twitter collection completed: {successful_count} posts processed"
+        if truncated_to_update > 0:
+            update_msg += f" ({truly_new} new, {truncated_to_update} updated)"
+        if full_content_skipped > 0:
+            update_msg += f" | {full_content_skipped} skipped (already have full content + analysis)"
+        log(update_msg, "success")
 
         return successful_count
 
@@ -897,6 +1047,17 @@ async def collect_threads_bookmarks(
         state_manager = ScrapeStateManager()
         state_manager.sync_state_from_main_db(force=False)  # Auto-recover state
 
+        dry_run_mode = os.getenv("COLLECTION_DRY_RUN", "").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+        if dry_run_mode:
+            log(
+                "🧪 COLLECTION_DRY_RUN enabled - Threads posts will NOT be written",
+                "warning",
+            )
+
         threads_force_full = os.getenv("THREADS_FORCE_FULL", "").lower() in (
             "1",
             "true",
@@ -934,10 +1095,13 @@ async def collect_threads_bookmarks(
 
         # Authenticate if credentials provided
         if threads_username and threads_password:
-            # Use the most recent cookie file
-            cookies_file = threads_cookies_file or "config/threads_cookies.json"
+            # Use environment variable for cookie file path
+            cookies_file = threads_cookies_file or os.getenv("THREADS_COOKIES_PATH", "config/threads_cookies.json")
+
+            # Check if file exists
             if not Path(cookies_file).exists():
-                cookies_file = "cookies/threads_cookies.json"
+                logger.warning(f"Threads cookies file not found at: {cookies_file}")
+                cookies_file = None
 
             auth_success = await extractor.authenticate(
                 username=threads_username,
@@ -950,6 +1114,10 @@ async def collect_threads_bookmarks(
                     platform="threads", posts_scraped=0, success=False
                 )
                 return 0
+
+        normalized_threads_handle = (
+            str(threads_username or "").strip().lstrip("@").lower()
+        )
 
         # Collect saved posts
         log("Fetching Threads saved posts...")
@@ -1020,6 +1188,7 @@ async def collect_threads_bookmarks(
 
         # Process and store new posts
         successful_count = 0
+        dry_run_count = 0
         last_post_id = None
         last_post_url = None
 
@@ -1051,6 +1220,23 @@ async def collect_threads_bookmarks(
             try:
                 post_id = str(post_data.post_id or "")
                 content = post_data.content or ""
+                author_handle = (
+                    str(getattr(post_data, "author_handle", "") or "")
+                    .strip()
+                    .lstrip("@")
+                    .lower()
+                )
+
+                if (
+                    normalized_threads_handle
+                    and author_handle
+                    and author_handle == normalized_threads_handle
+                ):
+                    log(
+                        f"⏭️ Skipping self-authored Threads post {post_id} (@{author_handle})",
+                        "info",
+                    )
+                    continue
 
                 # Normalize post ID
                 normalized_id = state_manager.normalize_post_id(post_id, "threads")
@@ -1074,6 +1260,14 @@ async def collect_threads_bookmarks(
                     "post_type": getattr(post_data, "post_type", "post"),
                     "is_saved": True,
                 }
+
+                if dry_run_mode:
+                    dry_run_count += 1
+                    log(
+                        f"[DRY RUN] Would store Threads post {post_id} ({post_dict.get('url','')})",
+                        "info",
+                    )
+                    continue
 
                 # Remove any keys with None or empty dict values to keep payload clean
                 post_dict = {
@@ -1158,6 +1352,13 @@ async def collect_threads_bookmarks(
                     f"Threads post processing error for {post_id}:\n{traceback.format_exc()}"
                 )
                 continue
+
+        if dry_run_mode:
+            log(
+                f"🧪 DRY RUN complete - {dry_run_count} Threads posts would have been stored",
+                "info",
+            )
+            return dry_run_count
 
         if successful_count:
             state_manager.update_scrape_state(

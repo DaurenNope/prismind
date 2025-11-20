@@ -221,7 +221,7 @@ class DatabaseValidation:
         analyzed_at = post.get("analyzed_at")
         if created_at and analyzed_at:
             try:
-                from datetime import timezone
+                from datetime import timezone, timedelta
 
                 from dateutil.parser import parse
 
@@ -234,7 +234,11 @@ class DatabaseValidation:
                 if analyzed.tzinfo is None:
                     analyzed = analyzed.replace(tzinfo=timezone.utc)
 
-                if analyzed < created:
+                # Only flag as an issue if analyzed_at is significantly before created_at
+                # (more than 1 hour difference to account for timezone/clock drift)
+                # This prevents false positives from minor timestamp mismatches
+                time_diff = analyzed - created
+                if time_diff < timedelta(hours=-1):
                     issues.append("analyzed_at is before created_at (impossible)")
             except Exception as e:
                 # Don't log as error - datetime parsing failures are expected for malformed data

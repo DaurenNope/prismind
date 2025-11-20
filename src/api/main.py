@@ -27,7 +27,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-# Rate limiting - make optional
+# Rate limiting - make optional (non-fatal if missing)
 try:
     from slowapi import Limiter, _rate_limit_exceeded_handler
     from slowapi.errors import RateLimitExceeded
@@ -35,7 +35,8 @@ try:
 
     SLOWAPI_AVAILABLE = True
 except ImportError as e:
-    logger.warning(f"⚠️ slowapi not installed - rate limiting disabled: {e}")
+    # Demote to info so it doesn't spam scary warnings in dev
+    logger.info(f"slowapi not installed - rate limiting disabled (this is fine in dev): {e}")
     SLOWAPI_AVAILABLE = False
 
     # Create dummy limiter if slowapi not available
@@ -65,6 +66,7 @@ from src.api.routes import (
     collection,
     dashboard,
     observability,
+    persona_studio,
     profiles,
     publishing,
     settings,
@@ -119,7 +121,7 @@ if SLOWAPI_AVAILABLE:
     limiter = Limiter(key_func=get_remote_address)
 else:
     limiter = Limiter()  # Dummy limiter
-    logger.warning("⚠️ slowapi not installed - rate limiting disabled")
+    # Don't log again here; the import block above already explained this once
 security = HTTPBearer()
 
 # Graceful shutdown helpers
@@ -338,7 +340,7 @@ app.add_middleware(
         "http://localhost:3000",
     ],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
 )
 
@@ -832,9 +834,9 @@ async def get_posts(
 @app.post("/api/collection/start")
 @limiter.limit("10/minute")
 async def start_collection(
-    request: CollectionRequest,
+    payload: CollectionRequest,
     background_tasks: BackgroundTasks,
-    request_obj: Request = None,
+    request: Request,
 ):
     """Start collection for a platform or all platforms - runs in background"""
     try:
@@ -842,35 +844,35 @@ async def start_collection(
 
         orch = get_orchestrator()
 
-        if request.platform:
+        if payload.platform:
             # Collect single platform in background
             async def collect_platform_task():
                 try:
                     logger.info(f"\n{'='*60}")
-                    logger.info(f"🚀 Starting {request.platform} collection...")
+                    logger.info(f"🚀 Starting {payload.platform} collection...")
                     logger.info(f"{'='*60}\n")
-                    logger.info(f"Starting {request.platform} collection")
-                    count = await orch.collect_platform(request.platform)
+                    logger.info(f"Starting {payload.platform} collection")
+                    count = await orch.collect_platform(payload.platform)
                     logger.info(f"\n{'='*60}")
                     logger.info(
-                        f"✅ {request.platform} collection complete: {count} posts"
+                        f"✅ {payload.platform} collection complete: {count} posts"
                     )
                     logger.info(f"{'='*60}\n")
                     logger.info(
-                        f"{request.platform} collection complete: {count} posts"
+                        f"{payload.platform} collection complete: {count} posts"
                     )
                 except Exception as e:
-                    logger.error(f"\n❌ Error collecting {request.platform}: {e}\n")
+                    logger.error(f"\n❌ Error collecting {payload.platform}: {e}\n")
                     logger.error(
-                        f"Error collecting {request.platform}: {e}", exc_info=True
+                        f"Error collecting {payload.platform}: {e}", exc_info=True
                     )
 
             background_tasks.add_task(collect_platform_task)
             return {
                 "success": True,
                 "collected": 0,  # Will be updated when task completes
-                "platform": request.platform,
-                "message": f"Collection started for {request.platform}",
+                "platform": payload.platform,
+                "message": f"Collection started for {payload.platform}",
             }
         else:
             # Collect all platforms in parallel (in background)
@@ -928,6 +930,7 @@ app.include_router(settings.router)
 app.include_router(observability.router)
 app.include_router(system.router)
 app.include_router(profiles.router)
+app.include_router(persona_studio.router)
 
 
 if __name__ == "__main__":

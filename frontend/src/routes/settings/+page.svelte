@@ -368,5 +368,5 @@
 </div>
 
 {#if toast}
-  <Toast message={toast.message} type={toast.type} />
+  <Toast message={toast.message} tone={toast.type} />
 {/if}

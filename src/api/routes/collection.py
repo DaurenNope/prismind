@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
+from dateutil.parser import isoparse
 
 logger = logging.getLogger(__name__)
 
@@ -34,11 +35,7 @@ def _safe_iso(value: Optional[str]) -> Optional[str]:
     if not value:
         return None
     try:
-        return (
-            datetime.fromisoformat(value.replace("Z", "+00:00"))
-            .astimezone(timezone.utc)
-            .isoformat()
-        )
+        return isoparse(value).astimezone(timezone.utc).isoformat()
     except Exception as e:
         logger.error(f"Error: {e}")
         return value
@@ -52,17 +49,27 @@ async def get_collection_status() -> Dict[str, Any]:
     try:
         client = _make_supabase_client()
 
-        # Query with timeout protection
+        # Query with timeout protection (10s max)
         try:
-            # Use limit to prevent large queries
-            response = (
-                client.table("collection_metrics")
-                .select("*")
-                .order("updated_at", desc=True)
-                .limit(20)  # Limit to prevent slow queries
-                .execute()
+            # Run Supabase query in executor to avoid blocking
+            loop = asyncio.get_event_loop()
+            response = await asyncio.wait_for(
+                loop.run_in_executor(
+                    None,
+                    lambda: (
+                        client.table("collection_metrics")
+                        .select("*")
+                        .order("updated_at", desc=True)
+                        .limit(20)  # Limit to prevent slow queries
+                        .execute()
+                    ),
+                ),
+                timeout=10.0,
             )
             rows = getattr(response, "data", []) or []
+        except asyncio.TimeoutError:
+            logger.warning("Collection status query timed out after 10s")
+            return {"collectors": []}
         except Exception as e:
             logger.error(f"Error: {e}")
             # If table doesn't exist or query fails, return empty
@@ -72,19 +79,29 @@ async def get_collection_status() -> Dict[str, Any]:
         if rows:
             try:
                 # Optimize: only get latest log per platform (limit to 10 platforms max)
-                log_resp = (
-                    client.table("collection_logs")
-                    .select(
-                        "platform,message,status,started_at,finished_at,posts_collected"
-                    )
-                    .order("started_at", desc=True)
-                    .limit(30)  # Limit to prevent slow queries
-                    .execute()
+                loop = asyncio.get_event_loop()
+                log_resp = await asyncio.wait_for(
+                    loop.run_in_executor(
+                        None,
+                        lambda: (
+                            client.table("collection_logs")
+                            .select(
+                                "platform,message,status,started_at,finished_at,posts_collected"
+                            )
+                            .order("started_at", desc=True)
+                            .limit(30)  # Limit to prevent slow queries
+                            .execute()
+                        ),
+                    ),
+                    timeout=10.0,
                 )
                 for entry in getattr(log_resp, "data", []) or []:
                     platform = entry.get("platform")
                     if platform and platform not in latest_logs:
                         latest_logs[str(platform).lower()] = entry
+            except asyncio.TimeoutError:
+                logger.warning("Collection logs query timed out after 10s")
+                latest_logs = {}
             except Exception as e:
                 logger.error(f"Error: {e}")
                 latest_logs = {}
@@ -130,19 +147,29 @@ async def get_collection_status() -> Dict[str, Any]:
 
 @router.get("/logs")
 async def get_collection_logs(limit: int = 20) -> Dict[str, Any]:
-    """Get collection logs - optimized with error handling"""
+    """Get collection logs - optimized with error handling and timeout protection"""
+    import asyncio
+    
     try:
         client = _make_supabase_client()
 
         # Cap limit to prevent slow queries
         limit = min(limit, 50)
 
-        response = (
-            client.table("collection_logs")
-            .select("*")
-            .order("started_at", desc=True)
-            .limit(limit)
-            .execute()
+        # Run Supabase query in executor with timeout (10s max)
+        loop = asyncio.get_event_loop()
+        response = await asyncio.wait_for(
+            loop.run_in_executor(
+                None,
+                lambda: (
+                    client.table("collection_logs")
+                    .select("*")
+                    .order("started_at", desc=True)
+                    .limit(limit)
+                    .execute()
+                ),
+            ),
+            timeout=10.0,
         )
 
         rows = getattr(response, "data", []) or []
@@ -161,6 +188,9 @@ async def get_collection_logs(limit: int = 20) -> Dict[str, Any]:
             )
 
         return {"logs": logs}
+    except asyncio.TimeoutError:
+        logger.warning("Collection logs query timed out after 10s")
+        return {"logs": [], "error": "Query timeout"}
     except Exception as exc:
         logger.error(f"Error: {exc}")
         # Return empty instead of raising - prevents UI from breaking

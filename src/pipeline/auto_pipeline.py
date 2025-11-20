@@ -175,7 +175,9 @@ class AutoPipeline:
                 ProfilePublishingOrchestrator,
             )
 
-            orchestrator = ProfilePublishingOrchestrator(profile_key)
+            orchestrator = ProfilePublishingOrchestrator(
+                profile_key, auto_schedule=schedule
+            )
             result = await orchestrator.process_post(post, dry_run=not schedule)
             rewrites = result.get("rewrites") or {}
 
@@ -238,8 +240,11 @@ class AutoPipeline:
         if not posts:
             return {}
 
-        orchestrator = ProfilePublishingOrchestrator(profile_key)
-        dry_run = not self.config.flags.get("auto_schedule_after_rewrite", False)
+        schedule_enabled = self.config.flags.get("auto_schedule_after_rewrite", False)
+        orchestrator = ProfilePublishingOrchestrator(
+            profile_key, auto_schedule=schedule_enabled
+        )
+        dry_run = not schedule_enabled
 
         stored = 0
         scheduled = 0

@@ -1,0 +1,28 @@
+# Frontend API Dependencies for Beyondlines Persona Studio
+
+# Core Backend
+fastapi==0.115.0
+uvicorn[standard]==0.30.1
+pydantic==2.9.1
+
+# AI and Machine Learning
+sentence-transformers==2.2.2
+numpy==1.26.4
+
+# Vector Database and RAG
+faiss-cpu==1.7.4
+
+# HTTP Client
+httpx==0.27.0
+
+# Logging and Utilities
+python-multipart==0.0.6
+
+# Development
+pytest==8.3.3
+pytest-asyncio==0.21.1
+black==24.8.0
+
+# Optional: For production deployment
+# gunicorn==21.2.0
+# supervisor==4.2.5

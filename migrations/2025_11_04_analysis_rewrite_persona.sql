@@ -30,3 +30,4 @@ alter table if exists posts
   add column if not exists best_persona_key text,
   add column if not exists best_persona_score numeric,
   add column if not exists best_persona_reasons text[];
+

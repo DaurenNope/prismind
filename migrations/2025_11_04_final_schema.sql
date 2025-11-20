@@ -47,3 +47,4 @@ WHERE table_name = 'posts'
     'analysis_depth', 'needs_deep_analysis'
   )
 ORDER BY column_name;
+

@@ -23,7 +23,6 @@ from dotenv import load_dotenv
 
 from src.database.manager import SupabaseManager
 from src.database.publishing.bridge import MimesisDB
-from src.publishing.rewriter import ContentRewriter
 from src.publishing.scheduler import PublishingScheduler
 from src.services.profile_publishing_orchestrator import ProfilePublishingOrchestrator
 
@@ -111,7 +110,9 @@ async def batch_rewrite_usable_posts(
             "errors": 0,
         }
 
-        orchestrator = ProfilePublishingOrchestrator(persona_key)
+        orchestrator = ProfilePublishingOrchestrator(
+            persona_key, auto_schedule=(schedule_immediately and not dry_run)
+        )
 
         for i, post in enumerate(posts, 1):
             post_id = post.get("post_id", "unknown")
@@ -168,7 +169,9 @@ async def batch_rewrite_usable_posts(
                     1:
                 ]:  # Skip first (already processed)
                     logger.info(f"   🎭 Also processing for {other_persona}")
-                    other_orchestrator = ProfilePublishingOrchestrator(other_persona)
+                    other_orchestrator = ProfilePublishingOrchestrator(
+                        other_persona, auto_schedule=(schedule_immediately and not dry_run)
+                    )
                     other_result = await other_orchestrator.process_post(
                         post, dry_run=dry_run
                     )

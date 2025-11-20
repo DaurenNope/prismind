@@ -247,7 +247,7 @@
       <span class="text-[11px] font-semibold uppercase tracking-[0.32em] text-[rgba(93,242,193,0.85)]">{overview ? 'Live' : 'Syncing'}</span>
     </div>
 
-    <div class="grid gap-4 md:grid-cols-3">
+    <div class="grid gap-4 md:grid-cols-4">
       <div class="rounded-3xl border border-white/10 bg-[rgba(15,29,46,0.92)] px-5 py-4 space-y-3">
         <div class="inline-flex items-center gap-2 rounded-full border border-[rgba(78,192,255,0.4)] bg-[rgba(78,192,255,0.16)] px-3 py-1 text-[11px] uppercase tracking-[0.28em] text-[rgba(78,192,255,0.9)]">Rewrites</div>
         {#if overview}
@@ -285,6 +285,22 @@
           <p class="text-sm font-semibold text-[color:var(--text-primary)]">Learning telemetry syncing…</p>
           <p class="text-xs text-[rgba(245,182,120,0.75)]">Engagement insights will populate shortly.</p>
         {/if}
+      </div>
+      <div class="rounded-3xl border border-white/10 bg-[rgba(15,29,46,0.92)] px-5 py-4 space-y-3">
+        <a href="/persona-studio" class="block group">
+          <div class="inline-flex items-center gap-2 rounded-full border border-[rgba(168,119,255,0.45)] bg-[rgba(168,119,255,0.16)] px-3 py-1 text-[11px] uppercase tracking-[0.28em] text-[rgba(168,119,255,0.85)] group-hover:bg-[rgba(168,119,255,0.24)] transition-colors">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+            Persona Studio
+          </div>
+          <p class="text-sm font-semibold text-[color:var(--text-primary)] group-hover:text-[rgba(168,119,255,0.95)] transition-colors">
+            Create AI personas and generate authentic content
+          </p>
+          <p class="text-xs text-[rgba(168,119,255,0.8)]">
+            Advanced voice pattern analysis and quality scoring →
+          </p>
+        </a>
       </div>
     </div>
   </section>

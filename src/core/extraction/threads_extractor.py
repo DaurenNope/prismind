@@ -8,11 +8,11 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.parse import parse_qs, urlencode, urlparse
 
 import jmespath
 from parsel import Selector
 from playwright.async_api import async_playwright
-from playwright.sync_api import sync_playwright
 
 from .social_extractor_base import SocialExtractorBase, SocialPost
 
@@ -189,6 +189,67 @@ class ThreadsExtractor(SocialExtractorBase):
 
             logging.error(f"❌ Full traceback: {traceback.format_exc()}")
             return False
+
+    async def _ensure_authenticated(
+        self,
+        username: Optional[str],
+        password: Optional[str],
+        cookies_path: str,
+    ) -> bool:
+        """Ensure we have an authenticated page session before scraping."""
+        if hasattr(self, "page") and self.page:
+            return True
+
+        if not username or not password:
+            logging.error(
+                "Threads extractor requires credentials for first-time authentication"
+            )
+            return False
+
+        return await self.authenticate(username, password, cookies_path)
+
+    @staticmethod
+    def _normalize_threads_post_id(value: Optional[str]) -> str:
+        if not value:
+            return ""
+        text = str(value).strip()
+        if text.lower().startswith("threads_"):
+            return text.split("_", 1)[1]
+        return text
+
+    @staticmethod
+    def _extract_threads_code_from_url(url: Optional[str]) -> Optional[str]:
+        if not url:
+            return None
+        parts = url.rstrip("/").split("/")
+        return parts[-1] if parts else None
+
+    def _extract_social_posts_from_payload(self, payload: Dict[str, Any]) -> List[SocialPost]:
+        """Traverse a Threads GraphQL payload and convert post nodes into SocialPost entries."""
+        posts: List[SocialPost] = []
+        seen_ids: set[str] = set()
+
+        def walk(node: Any):
+            if isinstance(node, dict):
+                if "post" in node and isinstance(node["post"], dict):
+                    try:
+                        social = self._parse_thread_data(node)
+                    except Exception as err:  # pragma: no cover - defensive
+                        logging.debug(f"Threads payload parse error: {err}")
+                        social = None
+                    if social:
+                        normalized = self._normalize_threads_post_id(social.post_id)
+                        if normalized and normalized not in seen_ids:
+                            seen_ids.add(normalized)
+                            posts.append(social)
+                for value in node.values():
+                    walk(value)
+            elif isinstance(node, list):
+                for item in node:
+                    walk(item)
+
+        walk(payload)
+        return posts
 
     async def _authenticate_with_cookies(self, cookies_path: str) -> bool:
         """Authenticates using cookies - SIMPLIFIED to match working test."""
@@ -619,6 +680,724 @@ class ThreadsExtractor(SocialExtractorBase):
             return False
 
     async def get_saved_posts(
+        self,
+        username: str = None,
+        password: str = None,
+        limit: int = 50,
+        cookies_path: str = "cookies/threads_cookies.json",
+        stop_at_post_id: Optional[str] = None,
+        existing_ids: Optional[set] = None,
+    ) -> List[SocialPost]:
+        """
+        Public entry point for fetching saved/bookmarked Threads posts.
+        Uses the GraphQL/API path exclusively. DOM scraping is deprecated and disabled
+        unless THREADS_DOM_FALLBACK=true is explicitly set.
+        """
+        normalized_existing = set(existing_ids or [])
+
+        posts = await self._collect_saved_posts_via_api(
+            username=username,
+            password=password,
+            limit=limit,
+            cookies_path=cookies_path,
+            stop_at_post_id=stop_at_post_id,
+            existing_ids=normalized_existing,
+        )
+        if posts:
+            logging.info(
+                f"✅ Threads API-first collector returned {len(posts)} posts (limit={limit})"
+            )
+            return posts
+
+        if os.getenv("THREADS_DOM_FALLBACK", "false").lower() in ("1", "true", "yes"):
+            logging.warning("⚠️ GraphQL collector returned no posts, using DOM fallback (deprecated)")
+            return await self._collect_saved_posts_via_ui(
+                username=username,
+                password=password,
+                limit=limit,
+                cookies_path=cookies_path,
+                stop_at_post_id=stop_at_post_id,
+                existing_ids=normalized_existing,
+            )
+
+        logging.warning(
+            "⚠️ GraphQL collector returned no posts and DOM fallback is disabled "
+            "(set THREADS_DOM_FALLBACK=true to re-enable)"
+        )
+        return []
+
+    async def _collect_saved_posts_via_api(
+        self,
+        username: Optional[str],
+        password: Optional[str],
+        limit: int,
+        cookies_path: str,
+        stop_at_post_id: Optional[str],
+        existing_ids: Optional[set],
+    ) -> List[SocialPost]:
+        """Capture Threads saved posts by scraping the underlying GraphQL responses."""
+        logging.info("⚙️ Threads: attempting API-first saved-post collection")
+
+        if not await self._ensure_authenticated(username, password, cookies_path):
+            return []
+
+        if not hasattr(self, "page") or not self.page:
+            logging.error("Threads API collector has no active page/session")
+            return []
+
+        page = self.page
+        response_promises: List[tuple[str, Any, Optional[str]]] = []
+        saved_ajax_responses: List[tuple[str, Any]] = []
+        saved_event = asyncio.Event()
+        request_snapshot: Dict[str, Any] = {
+            "headers": None,
+            "base_url": None,
+            "query_params": None,
+            "method": None,
+            "body_raw": None,
+        }
+        saved_ajax_snapshot: Dict[str, Any] = {
+            "headers": None,
+            "base_url": None,
+            "query_params": None,
+            "method": None,
+            "body_raw": None,
+        }
+        request_captured = asyncio.Event()
+        raw_request_log: List[Dict[str, Any]] = []
+
+        async def handle_response(response):
+            try:
+                url = response.url
+            except Exception:
+                return
+
+            lower = url.lower()
+            if (
+                "threads.net" not in lower
+                and "threads.com" not in lower
+                and "instagram.com" not in lower
+            ):
+                return
+            is_graphql = "/graphql" in lower or "/api/graphql" in lower
+            is_saved_ajax = "/ajax/bz" in lower and "barcelonasaved" in lower
+            if not is_graphql and not is_saved_ajax:
+                return
+            if response.status != 200:
+                return
+
+            req = response.request
+            if is_saved_ajax:
+                saved_ajax_responses.append((url, response))
+                if req:
+                    if not saved_ajax_snapshot["headers"]:
+                        try:
+                            saved_ajax_snapshot["headers"] = req.headers
+                        except Exception:
+                            pass
+                    if not saved_ajax_snapshot.get("method"):
+                        try:
+                            saved_ajax_snapshot["method"] = req.method
+                        except Exception:
+                            pass
+                if not saved_ajax_snapshot["base_url"]:
+                    try:
+                        parsed = urlparse(url)
+                        saved_ajax_snapshot["base_url"] = (
+                            f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+                        )
+                        saved_ajax_snapshot["query_params"] = parse_qs(parsed.query)
+                    except Exception:
+                        pass
+                if not saved_event.is_set():
+                    saved_event.set()
+                return
+
+            friendly_name = None
+            if req:
+                try:
+                    friendly_name = req.headers.get("x-fb-friendly-name")
+                except Exception:
+                    friendly_name = None
+            logging.debug(
+                "Threads response %s (friendly=%s)", url, friendly_name or "n/a"
+            )
+            friendly_lower = (friendly_name or "").lower()
+            prioritize_saved_query = "saved" in friendly_lower or "bookmark" in friendly_lower
+            response_promises.append((url, response, friendly_name))
+            if req:
+                if prioritize_saved_query or not request_snapshot["headers"]:
+                    try:
+                        request_snapshot["headers"] = req.headers
+                    except Exception:
+                        pass
+                if prioritize_saved_query or not request_snapshot.get("method"):
+                    try:
+                        request_snapshot["method"] = req.method
+                    except Exception:
+                        pass
+                if prioritize_saved_query or not request_snapshot.get("body_raw"):
+                    try:
+                        body = req.post_data or req.post_data_json
+                    except Exception:
+                        body = None
+                    if body:
+                        request_snapshot["body_raw"] = body
+            if prioritize_saved_query or not request_snapshot["base_url"]:
+                try:
+                    parsed = urlparse(url)
+                    request_snapshot["base_url"] = (
+                        f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+                    )
+                    request_snapshot["query_params"] = parse_qs(parsed.query)
+                except Exception:
+                    pass
+
+            if not saved_event.is_set():
+                saved_event.set()
+
+        def handle_request(request):
+            try:
+                url = request.url
+            except Exception:
+                return
+            lower = url.lower()
+            if (
+                "threads.net" not in lower
+                and "threads.com" not in lower
+                and "instagram.com" not in lower
+            ):
+                return
+            is_graphql = "/graphql" in lower or "/api/graphql" in lower
+            is_saved_ajax = "/ajax/bz" in lower and "barcelonasaved" in lower
+            if not is_graphql and not is_saved_ajax:
+                # Still log a few non-GraphQL requests for debugging visibility
+                if len(raw_request_log) < 40:
+                    try:
+                        raw_request_log.append(
+                            {
+                                "url": url,
+                                "method": request.method,
+                                "headers": request.headers,
+                            }
+                        )
+                    except Exception:
+                        pass
+                return
+            try:
+                friendly = request.headers.get("x-fb-friendly-name")
+            except Exception:
+                friendly = None
+            logging.debug(
+                f"Threads request observed: {url} "
+                f"(friendly={friendly or 'n/a'})"
+            )
+            if not request_snapshot["headers"] and is_graphql:
+                try:
+                    request_snapshot["headers"] = request.headers
+                except Exception:
+                    pass
+            if not request_snapshot.get("method") and is_graphql:
+                try:
+                    request_snapshot["method"] = request.method
+                except Exception:
+                    pass
+            if not request_snapshot.get("body_raw") and is_graphql:
+                try:
+                    body = request.post_data or request.post_data_json
+                except Exception:
+                    body = None
+                if body:
+                        request_snapshot["body_raw"] = body
+            if is_graphql and not request_snapshot["base_url"]:
+                try:
+                    parsed = urlparse(url)
+                    request_snapshot["base_url"] = (
+                        f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+                    )
+                    request_snapshot["query_params"] = parse_qs(parsed.query)
+                except Exception:
+                    pass
+            if is_saved_ajax:
+                if not saved_ajax_snapshot["headers"]:
+                    try:
+                        saved_ajax_snapshot["headers"] = request.headers
+                    except Exception:
+                        pass
+                if not saved_ajax_snapshot.get("method"):
+                    try:
+                        saved_ajax_snapshot["method"] = request.method
+                    except Exception:
+                        pass
+                if not saved_ajax_snapshot["base_url"]:
+                    try:
+                        parsed = urlparse(url)
+                        saved_ajax_snapshot["base_url"] = (
+                            f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+                        )
+                        saved_ajax_snapshot["query_params"] = parse_qs(parsed.query)
+                    except Exception:
+                        pass
+                if not saved_ajax_snapshot.get("body_raw"):
+                    try:
+                        saved_ajax_snapshot["body_raw"] = request.post_data
+                    except Exception:
+                        pass
+            if not request_captured.is_set():
+                request_captured.set()
+
+        page.on("response", handle_response)
+        page.on("request", handle_request)
+
+        saved_url = os.getenv("THREADS_SAVED_URL", "https://www.threads.com/saved")
+        try:
+            await page.goto(saved_url, wait_until="domcontentloaded", timeout=30000)
+            try:
+                await asyncio.wait_for(saved_event.wait(), timeout=15)
+            except asyncio.TimeoutError:
+                logging.warning(
+                    "⚠️ Threads API collector did not capture any saved responses within timeout"
+                )
+            await page.wait_for_timeout(1000)
+            # Trigger additional network traffic by scrolling
+            try:
+                for _ in range(3):
+                    await page.mouse.wheel(0, 2000)
+                    await page.wait_for_timeout(400)
+                # Continue deeper scrolling to surface saved feed data
+                for _ in range(10):
+                    await page.mouse.wheel(0, 3500)
+                    await page.wait_for_timeout(600)
+                await page.wait_for_timeout(2000)
+            except Exception as scroll_err:
+                logging.debug(f"Threads API scroll warm-up skipped: {scroll_err}")
+        finally:
+            try:
+                page.off("response", handle_response)
+            except Exception:
+                pass
+            try:
+                page.off("request", handle_request)
+            except Exception:
+                pass
+
+        if raw_request_log:
+            try:
+                logs_dir = Path("logs")
+                logs_dir.mkdir(exist_ok=True)
+                trace_file = logs_dir / "threads_network_trace.json"
+                with trace_file.open("w", encoding="utf-8") as fh:
+                    json.dump(raw_request_log, fh, ensure_ascii=False, indent=2)
+            except Exception as trace_err:
+                logging.debug(f"Threads network trace persist skipped: {trace_err}")
+
+        if not response_promises:
+            logging.info("ℹ️ Threads API collector captured 0 responses")
+            return []
+        logging.info(
+            f"📡 Threads API collector captured {len(response_promises)} responses"
+        )
+
+        def parse_json_value(raw: Any) -> Dict[str, Any]:
+            if not raw:
+                return {}
+            data = raw
+            if isinstance(raw, list):
+                data = raw[0] if raw else None
+            if isinstance(data, bytes):
+                data = data.decode("utf-8", errors="ignore")
+            if isinstance(data, str):
+                try:
+                    return json.loads(data)
+                except Exception:
+                    return {}
+            if isinstance(data, dict):
+                return data
+            return {}
+
+        def _ensure_dict(value: Any) -> Dict[str, Any]:
+            if not value:
+                return {}
+            if isinstance(value, dict):
+                return value
+            if isinstance(value, str):
+                try:
+                    return json.loads(value)
+                except Exception:
+                    return {}
+            return {}
+
+        def parse_request_body(raw_body: Any) -> Dict[str, Any]:
+            if raw_body is None:
+                return {}
+            # If the payload was already parsed, reuse it
+            if isinstance(raw_body, dict):
+                return raw_body
+            data: Optional[str]
+            if isinstance(raw_body, (bytes, bytearray)):
+                data = raw_body.decode("utf-8", errors="ignore")
+            else:
+                data = str(raw_body)
+            if not data:
+                return {}
+            try:
+                return json.loads(data)
+            except Exception:
+                try:
+                    form = parse_qs(data)
+                    normalized = {
+                        key: value[0] if isinstance(value, list) and value else value
+                        for key, value in form.items()
+                    }
+                    return normalized
+                except Exception:
+                    return {"raw": data}
+
+        body_template = parse_request_body(request_snapshot.get("body_raw"))
+        query_params = request_snapshot.get("query_params") or {}
+        query_variables = parse_json_value(query_params.get("variables"))
+        query_features = parse_json_value(query_params.get("features"))
+        query_toggles = parse_json_value(query_params.get("fieldToggles"))
+
+        base_request_payload = {
+            "base_url": request_snapshot.get("base_url"),
+            "headers": request_snapshot.get("headers") or {},
+            "method": (request_snapshot.get("method") or "GET").upper(),
+            "body_template": body_template,
+            "variables": _ensure_dict(body_template.get("variables") or query_variables),
+            "features": body_template.get("features")
+            or body_template.get("extensions", {}).get("features")
+            or query_features,
+            "field_toggles": body_template.get("fieldToggles") or query_toggles,
+        }
+
+        # Persist snapshot for debugging / manual replay
+        try:
+            logs_dir = Path("logs")
+            logs_dir.mkdir(exist_ok=True)
+            snapshot_file = logs_dir / "threads_graphql_request.json"
+            snapshot_payload = {
+                "base_url": base_request_payload["base_url"],
+                "method": base_request_payload["method"],
+                "headers": base_request_payload["headers"],
+                "variables": base_request_payload["variables"],
+                "features": base_request_payload["features"],
+                "field_toggles": base_request_payload["field_toggles"],
+                "body": base_request_payload.get("body_template"),
+            }
+            with snapshot_file.open("w", encoding="utf-8") as fh:
+                json.dump(snapshot_payload, fh, indent=2)
+            logging.info(f"💾 Saved Threads GraphQL request snapshot to {snapshot_file}")
+        except Exception as snapshot_err:
+            logging.debug(f"Unable to persist Threads GraphQL snapshot: {snapshot_err}")
+
+        # Persist ajax saved request snapshot (non-GraphQL)
+        if saved_ajax_snapshot.get("base_url"):
+            try:
+                logs_dir = Path("logs")
+                logs_dir.mkdir(exist_ok=True)
+                ajax_snapshot_file = logs_dir / "threads_ajax_saved_request.json"
+                with ajax_snapshot_file.open("w", encoding="utf-8") as fh:
+                    json.dump(
+                        {
+                            "base_url": saved_ajax_snapshot.get("base_url"),
+                            "method": saved_ajax_snapshot.get("method"),
+                            "headers": saved_ajax_snapshot.get("headers"),
+                            "query_params": saved_ajax_snapshot.get("query_params"),
+                            "body": saved_ajax_snapshot.get("body_raw"),
+                        },
+                        fh,
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+                logging.info(
+                    f"💾 Saved Threads ajax request snapshot to {ajax_snapshot_file}"
+                )
+            except Exception as ajax_err:
+                logging.debug(f"Unable to persist Threads ajax snapshot: {ajax_err}")
+
+        def build_graphql_url(base_url: str, variables: dict, features: dict, toggles: dict):
+            params = {
+                "variables": json.dumps(variables or {}, separators=(",", ":")),
+                "features": json.dumps(features or {}, separators=(",", ":")),
+            }
+            if toggles:
+                params["fieldToggles"] = json.dumps(toggles, separators=(",", ":"))
+            return f"{base_url}?{urlencode(params)}"
+
+        normalized_existing = {
+            self._normalize_threads_post_id(post_id) for post_id in (existing_ids or [])
+        }
+        normalized_stop = self._normalize_threads_post_id(stop_at_post_id)
+        seen_ids: set[str] = set()
+        collected: List[SocialPost] = []
+
+        def hit_stop_condition(post: SocialPost) -> bool:
+            if not normalized_stop:
+                return False
+            post_id_norm = self._normalize_threads_post_id(post.post_id)
+            if post_id_norm == normalized_stop:
+                return True
+            code = self._extract_threads_code_from_url(post.url)
+            if code and self._normalize_threads_post_id(code) == normalized_stop:
+                return True
+            return False
+
+        # Attempt HTTP replay (GraphQL) using captured snapshot
+        replay_posts = []
+        replay_supported = (
+            base_request_payload.get("base_url")
+            and base_request_payload.get("headers")
+            and base_request_payload.get("body_template")
+            and self.context
+        )
+        if replay_supported:
+            replay_posts = await self._collect_saved_posts_via_replay(
+                base_request_payload,
+                normalized_existing=normalized_existing,
+                normalized_stop=normalized_stop,
+                limit=limit,
+            )
+            if replay_posts:
+                return replay_posts
+
+        for idx, (url, response, friendly_name) in enumerate(response_promises):
+            try:
+                body_text = await response.text()
+            except Exception as exc:
+                logging.debug(f"Threads API collector could not read response: {exc}")
+                continue
+
+            if not body_text or not body_text.strip().startswith("{"):
+                continue
+
+            try:
+                payload = json.loads(body_text)
+            except json.JSONDecodeError as err:
+                logging.debug(f"Threads API collector JSON error for {url}: {err}")
+                continue
+
+            should_dump = idx < 5
+            if friendly_name and "saved" in friendly_name.lower():
+                should_dump = True
+            if should_dump:
+                try:
+                    logs_dir = Path("logs")
+                    logs_dir.mkdir(exist_ok=True)
+                    safe_name = (
+                        friendly_name.replace(" ", "_") if friendly_name else f"resp_{idx}"
+                    )
+                    safe_name = "".join(
+                        ch if ch.isalnum() or ch == "_" else "_"
+                        for ch in safe_name
+                    )[:80]
+                    debug_file = logs_dir / f"threads_graphql_response_{safe_name}.json"
+                    with debug_file.open("w", encoding="utf-8") as fh:
+                        json.dump(payload, fh, ensure_ascii=False, indent=2)
+                except Exception as dump_err:
+                    logging.debug(f"Threads response dump skipped: {dump_err}")
+
+            social_posts = self._extract_social_posts_from_payload(payload)
+            if not social_posts:
+                continue
+
+            for post in social_posts:
+                normalized_id = self._normalize_threads_post_id(post.post_id)
+                if not normalized_id:
+                    continue
+                if normalized_id in normalized_existing or normalized_id in seen_ids:
+                    continue
+                if hit_stop_condition(post):
+                    logging.info(
+                        f"🛑 Threads API collector reached stop_id {stop_at_post_id}"
+                    )
+                    return collected
+
+                seen_ids.add(normalized_id)
+                normalized_existing.add(normalized_id)
+                collected.append(post)
+
+                if len(collected) >= limit:
+                    logging.info(
+                        f"📥 Threads API collector reached limit ({limit} posts)"
+                    )
+                    return collected
+
+        if saved_ajax_responses:
+            logging.info(
+                f"ℹ️ Threads ajax collector captured {len(saved_ajax_responses)} saved responses"
+            )
+            try:
+                logs_dir = Path("logs")
+                logs_dir.mkdir(exist_ok=True)
+            except Exception:
+                logs_dir = None
+            for idx, (url, response) in enumerate(saved_ajax_responses):
+                try:
+                    body_text = await response.text()
+                except Exception as exc:
+                    logging.debug(f"Threads ajax read failed: {exc}")
+                    continue
+                if not body_text:
+                    continue
+                cleaned = body_text.strip()
+                if cleaned.startswith("for (;;);"):
+                    cleaned = cleaned[9:].strip()
+                saved_payload = None
+                try:
+                    saved_payload = json.loads(cleaned)
+                except Exception as ajax_err:
+                    logging.debug(f"Threads ajax JSON error for {url}: {ajax_err}")
+                    continue
+                if logs_dir:
+                    try:
+                        ajax_resp_file = logs_dir / f"threads_ajax_saved_response_{idx}.json"
+                        with ajax_resp_file.open("w", encoding="utf-8") as fh:
+                            json.dump(saved_payload, fh, ensure_ascii=False, indent=2)
+                    except Exception as dump_err:
+                        logging.debug(f"Threads ajax response dump skipped: {dump_err}")
+                # TODO: parse saved_payload for posts (future step)
+
+        if collected and hasattr(self, "context") and self.context:
+            try:
+                await self.context.storage_state(path=cookies_path)
+                logging.info("💾 Threads API collector refreshed cookie state")
+            except Exception as save_err:
+                logging.debug(f"Threads cookie save skipped: {save_err}")
+
+        return collected
+
+    async def _collect_saved_posts_via_replay(
+        self,
+        base_request_payload: Dict[str, Any],
+        normalized_existing: set,
+        normalized_stop: Optional[str],
+        limit: int,
+    ) -> List[SocialPost]:
+        """Replay captured GraphQL request to page through saved posts."""
+        if not self.context:
+            return []
+
+        collected: List[SocialPost] = []
+        seen_ids: set[str] = set()
+        seen_cursors: set[str] = set()
+
+        variables = dict(base_request_payload.get("variables") or {})
+        cursor = variables.pop("after", None)
+        if cursor:
+            seen_cursors.add(cursor)
+
+        while len(collected) < limit:
+            page_data = await self._replay_saved_graphql_page(
+                base_request_payload, variables
+            )
+            if not page_data:
+                break
+
+            social_posts = self._extract_social_posts_from_payload(page_data)
+            if not social_posts:
+                break
+
+            for post in social_posts:
+                normalized_id = self._normalize_threads_post_id(post.post_id)
+                if not normalized_id:
+                    continue
+                if normalized_id in normalized_existing or normalized_id in seen_ids:
+                    continue
+                if normalized_stop and normalized_id == normalized_stop:
+                    logging.info(
+                        f"🛑 Threads replay collector reached stop_id {normalized_stop}"
+                    )
+                    return collected
+                seen_ids.add(normalized_id)
+                normalized_existing.add(normalized_id)
+                collected.append(post)
+                if len(collected) >= limit:
+                    return collected
+
+            page_info = (
+                page_data.get("data", {})
+                .get("xdt_text_app_viewer", {})
+                .get("saved_media", {})
+                .get("page_info", {})
+            )
+            has_next = page_info.get("has_next_page")
+            end_cursor = page_info.get("end_cursor")
+            if not has_next or not end_cursor or end_cursor in seen_cursors:
+                break
+            seen_cursors.add(end_cursor)
+            variables["after"] = end_cursor
+
+        return collected
+
+    async def _replay_saved_graphql_page(
+        self, base_request_payload: Dict[str, Any], variables: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """Execute a saved GraphQL request snapshot with updated cursor."""
+        if not self.context or not base_request_payload.get("base_url"):
+            return None
+
+        headers = {
+            k: v
+            for k, v in (base_request_payload.get("headers") or {}).items()
+            if not k.lower().startswith(":")
+        }
+        headers.pop("content-length", None)
+
+        method = base_request_payload.get("method", "POST").upper()
+        if method != "POST":
+            logging.debug("Threads replay only supports POST; got %s", method)
+            return None
+
+        body_template = dict(base_request_payload.get("body_template") or {})
+        serialized_vars = json.dumps(variables, separators=(",", ":"))
+        body_template["variables"] = serialized_vars
+
+        def _normalize_form(form_dict: Dict[str, Any]) -> Dict[str, str]:
+            normalized = {}
+            for key, value in (form_dict or {}).items():
+                if isinstance(value, (dict, list)):
+                    normalized[key] = json.dumps(value, separators=(",", ":"))
+                else:
+                    normalized[key] = "" if value is None else str(value)
+            return normalized
+
+        normalized_form = _normalize_form(body_template)
+        encoded_body = urlencode(normalized_form)
+
+        try:
+            response = await self.context.request.post(
+                base_request_payload["base_url"],
+                headers=headers,
+                data=encoded_body,
+                timeout=30000,
+            )
+        except Exception as exc:
+            logging.debug(f"Threads replay request failed: {exc}")
+            return None
+
+        if not response or not response.ok:
+            logging.debug(
+                f"Threads replay request status {getattr(response, 'status', 'unknown')}"
+            )
+            return None
+
+        try:
+            text = await response.text()
+        except Exception as exc:
+            logging.debug(f"Threads replay read failed: {exc}")
+            return None
+
+        if text.startswith("for (;;);"):
+            text = text[9:]
+
+        try:
+            return json.loads(text)
+        except Exception as exc:
+            logging.debug(f"Threads replay JSON decode failed: {exc}")
+            return None
+
+    async def _collect_saved_posts_via_ui(
         self,
         username: str = None,
         password: str = None,
@@ -1341,120 +2120,38 @@ class ThreadsExtractor(SocialExtractorBase):
         self, urls: List[str], max_retries: int = 3
     ) -> List[SocialPost]:
         """
-        Scrapes multiple Threads posts from a given list of URLs with retries.
-        Updated with isolated page instances, better error handling, and batching.
+        Sync wrapper for async scrape_posts_from_urls_async method.
+        This provides backward compatibility while using async implementation internally.
         """
-        posts = []
-        seen_post_ids = set()  # Track post IDs to avoid duplicates
+        # Import asyncio here to avoid import issues at module level
+        import asyncio
 
-        # Process URLs in smaller batches to avoid overwhelming the server
-        batch_size = 5  # Process 5 URLs at a time
-        url_batches = [
-            urls[i : i + batch_size] for i in range(0, len(urls), batch_size)
-        ]
+        # Check if we're already in an async context
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # We're in an async context, we can't use run()
+                # Create a new event loop in a thread
+                import concurrent.futures
+                import threading
 
-        with sync_playwright() as pw:
-            browser = pw.chromium.launch()
-            context = browser.new_context(viewport={"width": 1920, "height": 1080})
+                def run_async():
+                    new_loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(new_loop)
+                    try:
+                        return new_loop.run_until_complete(self.scrape_posts_from_urls_async(urls, max_retries))
+                    finally:
+                        new_loop.close()
 
-            # Process each batch with connection pooling
-            for batch_idx, batch in enumerate(url_batches):
-                logging.info(
-                    f"Processing batch {batch_idx + 1}/{len(url_batches)} with {len(batch)} URLs"
-                )
-
-                # Process URLs in the batch sequentially (sync version)
-                for url in batch:
-                    post = None
-                    for attempt in range(max_retries):
-                        page = None
-                        try:
-                            logging.info(
-                                f"Scraping thread: {url} (Attempt {attempt + 1}/{max_retries})"
-                            )
-
-                            # Create a fresh page for each attempt
-                            page = context.new_page()
-
-                            # Set reasonable timeouts with longer values for reliability
-                            page.set_default_timeout(45000)  # 45 seconds
-                            page.set_default_navigation_timeout(60000)  # 60 seconds
-
-                            try:
-                                post = self._scrape_thread_data(url, page)
-                                if post:
-                                    # Check for duplicates by post_id
-                                    post_id = getattr(post, "post_id", None)
-                                    if post_id and post_id not in seen_post_ids:
-                                        seen_post_ids.add(post_id)
-                                        posts.append(post)
-                                        logging.debug(f"Added new post: {post_id}")
-                                    elif post_id:
-                                        logging.debug(
-                                            f"Skipping duplicate post: {post_id}"
-                                        )
-                                    break  # Success, move to next URL
-                            except Exception as scrape_error:
-                                error_msg = str(scrape_error)
-                                logging.error(
-                                    f"Failed to scrape {url} on attempt {attempt + 1}: {error_msg}"
-                                )
-
-                                # Check for specific context/browser errors
-                                is_context_error = any(
-                                    phrase in error_msg.lower()
-                                    for phrase in [
-                                        "target page, context or browser has been closed",
-                                        "connection closed while reading from driver",
-                                        "context has been closed",
-                                        "browser has been closed",
-                                        "connection closed",
-                                        "page.goto: target closed",
-                                        "page.goto: timeout",
-                                    ]
-                                )
-
-                                if attempt >= max_retries - 1:
-                                    logging.error(
-                                        f"All retries failed for {url}. Final error: {error_msg}"
-                                    )
-                                    try:
-                                        if page:
-                                            page.screenshot(
-                                                path=f"debug_scrape_failed_{url.split('/')[-1]}.png"
-                                            )
-                                    except Exception as screenshot_error:
-                                        logging.error(
-                                            f"Failed to save screenshot: {screenshot_error}"
-                                        )
-                                else:
-                                    # For context errors, wait longer before retry
-                                    if is_context_error:
-                                        wait_time = 5 * (
-                                            attempt + 1
-                                        )  # Longer backoff for context issues
-                                        logging.info(
-                                            f"Context error detected, waiting {wait_time}s before retry..."
-                                        )
-                                        time.sleep(wait_time)
-                                    else:
-                                        time.sleep(
-                                            3 * (attempt + 1)
-                                        )  # Standard exponential backoff
-                        finally:
-                            # Always close the page to prevent resource leaks
-                            if page:
-                                try:
-                                    page.close()
-                                except Exception as close_error:
-                                    logging.debug(f"Error closing page: {close_error}")
-
-                # Add delay between batches to avoid rate limiting
-                if batch_idx < len(url_batches) - 1:
-                    time.sleep(2)  # 2 second delay between batches
-
-            browser.close()
-        return posts
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(run_async)
+                    return future.result()
+            else:
+                # We're not in an async context, safe to use run()
+                return loop.run_until_complete(self.scrape_posts_from_urls_async(urls, max_retries))
+        except RuntimeError:
+            # No event loop available, create one
+            return asyncio.run(self.scrape_posts_from_urls_async(urls, max_retries))
 
     async def get_liked_posts(self, limit: int = 100) -> List[SocialPost]:
         """
@@ -2140,7 +2837,9 @@ class ThreadsExtractor(SocialExtractorBase):
                                             )
                                             article_content = " ".join(article_texts)
                                             # Check for pagination markers (1/5, 1/4, 1/3, etc.)
-                                            pagination_pattern = r"\b\d+\s*/\s*\d+\b"
+                                            pagination_pattern = (
+                                                r"(?:\(|^|\s)\d+\s*[\\/／]\s*\d+(?:\)|\b)"
+                                            )
                                             has_pagination = bool(
                                                 re.search(
                                                     pagination_pattern, article_content

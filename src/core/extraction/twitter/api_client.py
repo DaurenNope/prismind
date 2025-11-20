@@ -1,21 +1,16 @@
 import logging
+import json
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 """Twitter API client - direct GraphQL API calls (bypasses browser automation detection)"""
 
-import json
-import re
-from datetime import datetime
-from pathlib import Path
-from typing import Any, Dict, List, Optional
-
 try:
-    from dateutil import parser
-except ImportError:
-    logger.error(f"Error: {e}")
-    import datetime as dt
-
-    parser = dt
+    from dateutil import parser as date_parser
+except Exception:
+    date_parser = None
 
 from ..social_extractor_base import SocialPost
 
@@ -29,13 +24,17 @@ class TwitterAPIClient:
         self.ct0 = ct0
         self.base_url = "https://x.com/i/api/graphql"
 
-    async def get_bookmarks(self, limit: int = 50) -> List[SocialPost]:
+    async def get_bookmarks(
+        self, limit: int = 50, cursor: Optional[str] = None
+    ) -> Tuple[List[SocialPost], Optional[str]]:
         """Get bookmarks via GraphQL API"""
         import aiohttp
 
         # GraphQL query for bookmarks
         query_id = "Hf9iRaMf0HtJB6bdLmrJAg"
         variables = {"count": limit, "includePromotedContent": True}
+        if cursor:
+            variables["cursor"] = cursor
         features = {
             "rweb_video_screen_enabled": False,
             "payments_enabled": False,
@@ -114,14 +113,19 @@ class TwitterAPIClient:
                 data = await response.json()
                 return self._parse_bookmarks_response(data)
 
-    def _parse_bookmarks_response(self, data: Dict[str, Any]) -> List[SocialPost]:
+    def _parse_bookmarks_response(
+        self, data: Dict[str, Any]
+    ) -> Tuple[List[SocialPost], Optional[str]]:
         """Parse GraphQL response into SocialPost objects"""
         posts = []
+        next_cursor = None
 
         try:
             # Navigate through GraphQL response structure
+            bookmark_data = data.get("data", {})
             timeline = (
-                data.get("data", {}).get("bookmark_timeline", {}).get("timeline", {})
+                bookmark_data.get("bookmark_timeline_v2", {}).get("timeline", {})
+                or bookmark_data.get("bookmark_timeline", {}).get("timeline", {})
             )
             instructions = timeline.get("instructions", [])
 
@@ -133,79 +137,132 @@ class TwitterAPIClient:
                 with open("logs/twitter_api_response.json", "w") as f:
                     json.dump(data, f, indent=2)
                 logger.info("   Saved full response to logs/twitter_api_response.json")
-                return []
+                return [], None
 
             for instruction in instructions:
-                if instruction.get("type") != "TimelineAddEntries":
-                    continue
+                if instruction.get("type") == "TimelineAddEntries":
+                    entries = instruction.get("entries", [])
+                    for entry in entries:
+                        content = entry.get("content", {})
+                        entry_type = content.get("entryType")
 
-                entries = instruction.get("entries", [])
-                for entry in entries:
-                    content = entry.get("content", {})
-                    entry_type = content.get("entryType")
+                        if entry_type == "TimelineTimelineItem":
+                            item_content = content.get("itemContent", {})
+                            tweet_results = item_content.get("tweet_results", {})
+                            result = tweet_results.get("result", {})
 
-                    if entry_type != "TimelineTimelineItem":
-                        continue
+                            if not result:
+                                continue
 
-                    item_content = content.get("itemContent", {})
-                    tweet_results = item_content.get("tweet_results", {})
-                    result = tweet_results.get("result", {})
+                            if result.get("__typename") == "TweetWithVisibilityResults":
+                                result = result.get("tweet", {})
 
-                    if not result:
-                        continue
+                            legacy = result.get("legacy", {})
+                            core = result.get("core", {})
+                            user_results = core.get("user_results", {}) if core else {}
+                            user_result = user_results.get("result", {})
+                            user_legacy = (
+                                user_result.get("legacy", {}) if user_result else {}
+                            )
 
-                    # Handle different result types (Tweet, TweetWithVisibilityResults, etc.)
-                    if result.get("__typename") == "TweetWithVisibilityResults":
-                        result = result.get("tweet", {})
+                            tweet_id = result.get("rest_id") or legacy.get("id_str")
+                            if not tweet_id:
+                                continue
 
-                    # Extract tweet data
-                    legacy = result.get("legacy", {})
-                    core = result.get("core", {})
-                    user_results = core.get("user_results", {}) if core else {}
-                    user_result = user_results.get("result", {})
-                    user_legacy = user_result.get("legacy", {}) if user_result else {}
+                            user_core = user_result.get("core", {}) if user_result else {}
+                            author = (
+                                user_legacy.get("name")
+                                or user_core.get("name")
+                                or "Unknown"
+                            )
+                            author_handle = (
+                                user_legacy.get("screen_name")
+                                or user_core.get("screen_name")
+                                or ""
+                            )
+                            
+                            # Check for note tweet (long-form content) first
+                            content_text = ""
+                            note_tweet = result.get("note_tweet", {})
+                            if note_tweet:
+                                note_results = note_tweet.get("note_tweet_results", {})
+                                note_result = note_results.get("result", {})
+                                if note_result:
+                                    # Full text is in note_tweet for long posts
+                                    content_text = note_result.get("text", "")
+                            
+                            # Fallback to legacy full_text if note_tweet not available
+                            if not content_text:
+                                content_text = legacy.get("full_text", "")
 
-                    tweet_id = result.get("rest_id") or legacy.get("id_str")
-                    if not tweet_id:
-                        continue
+                            def _sanitize_tweet_text(text: str) -> str:
+                                """Remove trailing t.co placeholders and collapse whitespace."""
+                                if not text:
+                                    return text
+                                import re
 
-                    author = user_legacy.get("name", "Unknown")
-                    author_handle = user_legacy.get("screen_name", "")
-                    content_text = legacy.get("full_text", "")
-                    created_at_str = legacy.get("created_at", "")
+                                # Remove any trailing t.co URLs (often media placeholders)
+                                text = re.sub(r"(https://t\.co/\w+)+\s*$", "", text).rstrip()
+                                # Remove standalone t.co links inside text (optional)
+                                text = re.sub(r"\s+https://t\.co/\w+\b", "", text)
+                                # Collapse extra whitespace
+                                text = re.sub(r"\s{2,}", " ", text)
+                                return text.strip()
 
-                    # Parse date
-                    created_at = datetime.now()
-                    if created_at_str:
-                        try:
-                            created_at = parser.parse(created_at_str)
-                        except Exception as e:
-                            logger.error(f"Error: {e}")
-                            pass
+                            content_text = _sanitize_tweet_text(content_text)
+                            
+                            created_at_str = legacy.get("created_at", "")
 
-                    # Build URL
-                    url = (
-                        f"https://x.com/{author_handle}/status/{tweet_id}"
-                        if author_handle
-                        else f"https://x.com/i/web/status/{tweet_id}"
-                    )
+                            created_at = datetime.now()
+                            if created_at_str:
+                                if date_parser:
+                                    try:
+                                        created_at = date_parser.parse(created_at_str)
+                                    except Exception:
+                                        pass
+                                else:
+                                    try:
+                                        created_at = datetime.strptime(
+                                            created_at_str, "%a %b %d %H:%M:%S %z %Y"
+                                        )
+                                    except Exception:
+                                        pass
 
-                    post = SocialPost(
-                        platform="twitter",
-                        author=author,
-                        author_handle=author_handle,
-                        content=content_text,
-                        created_at=created_at,
-                        url=url,
-                        post_type="tweet",
-                        is_saved=True,
-                        post_id=f"twitter_{tweet_id}",
-                    )
+                            url = (
+                                f"https://x.com/{author_handle}/status/{tweet_id}"
+                                if author_handle
+                                else f"https://x.com/i/web/status/{tweet_id}"
+                            )
 
-                    posts.append(post)
-                    logger.info(
-                        f"   ✅ Extracted: @{author_handle} - {content_text[:50]}..."
-                    )
+                            post = SocialPost(
+                                platform="twitter",
+                                author=author,
+                                author_handle=author_handle,
+                                content=content_text,
+                                created_at=created_at,
+                                url=url,
+                                post_type="tweet",
+                                is_saved=True,
+                                post_id=f"twitter_{tweet_id}",
+                            )
+
+                            posts.append(post)
+                        elif entry_type == "TimelineTimelineCursor":
+                            cursor_type = (
+                                content.get("cursorType")
+                                or content.get("value")
+                                or content.get("cursor")
+                            )
+                            if (
+                                cursor_type
+                                and "Bottom" in cursor_type
+                                and not next_cursor
+                            ):
+                                next_cursor = (
+                                    content.get("value")
+                                    or content.get("cursorValue")
+                                    or content.get("text")
+                                )
 
         except Exception as e:
             logger.error(f"⚠️ Error parsing API response: {e}")
@@ -226,4 +283,4 @@ class TwitterAPIClient:
                 logger.error(f"Error: {e}")
                 pass
 
-        return posts
+        return posts, next_cursor
