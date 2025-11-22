@@ -300,18 +300,62 @@ async def collect_twitter_bookmarks(
                     _full_content_cache[cache_key] = False
                     return False
                 
-                # Check for truncation markers
-                truncation_markers = ["[", "...", "…", "Read more", "Show more"]
+                content_length = len(content)
                 content_lower = content.lower()
-                ends_with_marker = any(
-                    content.rstrip().endswith(marker) or content_lower.endswith(marker.lower())
-                    for marker in truncation_markers
-                )
+                content_rstrip = content.rstrip()
+                
+                # Smart truncation detection - only flag if we're confident it's actually truncated
+                # Don't assume posts ending with "..." or "…" are truncated - they might be natural
+                
+                is_truncated = False
+                
+                # STRONG indicators of truncation (high confidence - these are definitely truncated)
+                if (
+                    # Explicit truncation text
+                    content_rstrip.endswith("Read more") or
+                    content_rstrip.endswith("Show more") or
+                    content_rstrip.endswith("Continue reading") or
+                    content_lower.endswith("read more") or
+                    content_lower.endswith("show more") or
+                    # Bracket truncation markers
+                    content_rstrip.endswith("[...]") or
+                    content_rstrip.endswith("...]") or
+                    # Very short content with ellipsis (almost certainly truncated)
+                    (content_length < 100 and (content_rstrip.endswith("...") or content_rstrip.endswith("…")))
+                ):
+                    is_truncated = True
+                
+                # MEDIUM indicators - only flag if content is suspiciously short
+                # If content is long (> 300 chars), ending with "..." is likely natural
+                elif content_length < 300:
+                    ends_with_ellipsis = content_rstrip.endswith("...") or content_rstrip.endswith("…")
+                    
+                    if ends_with_ellipsis:
+                        # Check if ellipsis appears after proper punctuation (natural usage)
+                        # Natural ellipsis often follows sentence-ending punctuation
+                        text_before_ellipsis = content_rstrip[:-3] if content_rstrip.endswith("...") else content_rstrip[:-1]
+                        
+                        # If there's no sentence-ending punctuation before ellipsis, might be truncated
+                        # But only if content is also suspiciously short
+                        has_sentence_end = any(text_before_ellipsis.rstrip().endswith(p) 
+                                             for p in ['.', '!', '?', ')', ']', '}', '"', "'"])
+                        
+                        # Flag as truncated only if:
+                        # - Content is short (< 300 chars)
+                        # - Ends with ellipsis
+                        # - No sentence-ending punctuation before ellipsis
+                        # - Content doesn't look complete
+                        if not has_sentence_end and content_length < 250:
+                            # Additional check: if last "word" before ellipsis is very short, likely truncated
+                            last_word = text_before_ellipsis.split()[-1] if text_before_ellipsis.split() else ""
+                            if len(last_word) < 3:  # Very short last word suggests truncation
+                                is_truncated = True
                 
                 # Consider it full if:
-                # 1. Length > 500 chars (reasonable threshold for full tweets)
-                # 2. Doesn't end with truncation markers
-                is_full = len(content) > 500 and not ends_with_marker
+                # 1. Length > 500 chars (definitely full)
+                # 2. OR length > 200 chars AND not flagged as truncated
+                # 3. OR length > 300 chars (even with ellipsis, likely complete)
+                is_full = (content_length > 500) or (content_length > 300) or (content_length > 200 and not is_truncated)
                 
                 # Cache the result
                 _full_content_cache[cache_key] = is_full
