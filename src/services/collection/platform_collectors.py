@@ -310,13 +310,21 @@ async def collect_twitter_bookmarks(
                 is_truncated = False
                 
                 # STRONG indicators of truncation (high confidence - these are definitely truncated)
+                # Check for explicit truncation markers (case-insensitive, with or without ellipsis)
+                truncation_phrases = [
+                    "read more", "show more", "continue reading", 
+                    "read more...", "show more...", "continue reading...",
+                    "read more…", "show more…", "continue reading…",
+                ]
+                
+                ends_with_truncation_phrase = any(
+                    content_lower.endswith(phrase) or content_lower.rstrip().endswith(phrase)
+                    for phrase in truncation_phrases
+                )
+                
                 if (
-                    # Explicit truncation text
-                    content_rstrip.endswith("Read more") or
-                    content_rstrip.endswith("Show more") or
-                    content_rstrip.endswith("Continue reading") or
-                    content_lower.endswith("read more") or
-                    content_lower.endswith("show more") or
+                    # Explicit truncation text (definitely truncated)
+                    ends_with_truncation_phrase or
                     # Bracket truncation markers
                     content_rstrip.endswith("[...]") or
                     content_rstrip.endswith("...]") or
