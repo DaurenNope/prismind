@@ -76,7 +76,15 @@ async def recollect_latest_posts():
     print("Collection Results:")
     print("=" * 60)
     
-    for platform, count in results.items():
+    for platform, result in results.items():
+        # Handle both dict and int results
+        if isinstance(result, dict):
+            count = result.get("count", 0) if isinstance(result.get("count"), int) else 0
+        elif isinstance(result, (int, float)):
+            count = int(result)
+        else:
+            count = 0
+        
         status = "✅" if count > 0 else "⚠️"
         print(f"{status} {platform}: {count} posts collected/updated")
     
