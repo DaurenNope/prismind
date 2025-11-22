@@ -10,7 +10,7 @@ from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
-from src.services.content_rewriter import get_rewriter
+from src.publishing.rewriter import get_rewriter
 from src.agents.github_research_agent import get_github_agent
 from src.agents.librarian_book_agent import get_librarian
 from src.services.new_database_manager import get_database_manager

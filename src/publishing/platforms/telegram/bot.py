@@ -28,7 +28,7 @@ from src.core.discovery.deep_discovery import DeepDiscovery
 # Local imports
 from src.scrape_state_manager import state_manager
 from src.services.automation import IntelligenceAutomation
-from src.services.content_rewriter import get_rewriter
+from src.publishing.rewriter import get_rewriter
 from src.services.digest import DigestGenerator
 from src.services.health import get_health_monitor
 from src.services.new_database_manager import get_database_manager

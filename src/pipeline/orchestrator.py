@@ -508,6 +508,17 @@ class Orchestrator:
         raise ValueError(f"Unsupported platform: {platform}")
 
     async def autonomous_discover(self) -> Dict[str, Any]:
+        """
+        DEPRECATED: This method uses deprecated AutonomousDiscovery.
+        Consider using collect_discovery() or implementing discovery directly here.
+        """
+        import warnings
+        warnings.warn(
+            "autonomous_discover() uses deprecated AutonomousDiscovery. "
+            "This will be replaced with direct orchestrator methods.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         from src.services.discovery import AutonomousDiscovery
 
         engine = AutonomousDiscovery()
