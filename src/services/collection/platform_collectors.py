@@ -1096,7 +1096,8 @@ async def collect_threads_bookmarks(
         # Authenticate if credentials provided
         if threads_username and threads_password:
             # Use environment variable for cookie file path
-            cookies_file = threads_cookies_file or os.getenv("THREADS_COOKIES_PATH", "config/threads_cookies.json")
+            # Default to cookies/threads_cookies.json (where the file actually exists)
+            cookies_file = threads_cookies_file or os.getenv("THREADS_COOKIES_PATH", "cookies/threads_cookies.json")
 
             # Check if file exists
             if not Path(cookies_file).exists():

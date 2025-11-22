@@ -43,7 +43,7 @@ async def post_to_threads_playwright(
         # Get credentials
         username = os.getenv("THREADS_USERNAME")
         password = os.getenv("THREADS_PASSWORD")
-        cookie_file = os.getenv("THREADS_COOKIES_FILE") or "config/threads_cookies.json"
+        cookie_file = os.getenv("THREADS_COOKIES_FILE") or "cookies/threads_cookies.json"
 
         if not username:
             return {"success": False, "error": "THREADS_USERNAME not set"}

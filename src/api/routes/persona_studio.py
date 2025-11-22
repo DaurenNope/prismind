@@ -21,7 +21,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from src.database.manager import SupabaseManager
-from src.database.publishing.bridge import MimesisDB
+from src.database.publishing.bridge import MimesisDB, PersonaDraftsDB
 from src.publishing.rag_system import ExampleVectorDatabase
 from src.publishing.modular_rewriter import (
     ModularRewriter,
@@ -68,6 +68,8 @@ router = APIRouter(prefix="/api/persona-studio", tags=["persona-studio"])
 
 PERSONA_DIR = Path(__file__).resolve().parents[3] / "config" / "personas"
 EXAMPLES_SUFFIX = "_examples.json"
+drafts_db = PersonaDraftsDB()
+studio_rewriter = ModularRewriter()
 
 
 class PersonaCreateRequest(BaseModel):
@@ -94,12 +96,175 @@ class GenerateRequest(BaseModel):
     key_concepts: List[str] = Field(default_factory=list)
 
 
+class PersonaDraftCreateRequest(BaseModel):
+    platform: str = Field("twitter", description="Destination platform")
+    content: str = Field(..., description="Human-authored draft body")
+    notes: Optional[str] = Field(None, description="Additional context or instructions")
+    created_by: Optional[str] = Field(None, description="Who submitted the draft")
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class PersonaDraftStatusRequest(BaseModel):
+    status: str = Field(
+        ..., description="New status value (e.g., submitted, approved, rejected)"
+    )
+    approved_by: Optional[str] = Field(None, description="Reviewer identifier")
+    review_notes: Optional[str] = Field(None, description="Optional reviewer notes")
+
+
+class PersonaDraftResponse(BaseModel):
+    id: str
+    persona_key: str
+    platform: str
+    content: str
+    notes: Optional[str] = None
+    status: str
+    created_by: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    approved_by: Optional[str] = None
+    approved_at: Optional[datetime] = None
+    last_generated_at: Optional[datetime] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    rewrite_content: Optional[str] = None
+    rewrite_quality: Optional[float] = None
+    rewrite_voice_score: Optional[float] = None
+    rewrite_fact_score: Optional[float] = None
+    rewrite_metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class PersonaDraftGenerationResponse(BaseModel):
+    draft: PersonaDraftResponse
+    rewrite: Dict[str, Any]
+
+
+class VoiceExamplePayload(BaseModel):
+    id: Optional[str] = None
+    platform: str = Field("threads", description="Source platform of the example")
+    content: str = Field(..., description="Example post content")
+    notes: Optional[str] = None
+    content_type: Optional[str] = None
+    structure: Optional[str] = None
+    why_good_example: Optional[str] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class VoiceLibraryPayload(BaseModel):
+    persona: str
+    description: Optional[str] = None
+    purpose: Optional[str] = None
+    voice_patterns_to_capture: List[str] = Field(default_factory=list)
+    examples: List[VoiceExamplePayload] = Field(default_factory=list)
+
+
 def _persona_config_path(persona_key: str) -> Path:
     return PERSONA_DIR / f"{persona_key}.json"
 
 
 def _persona_examples_path(persona_key: str) -> Path:
     return PERSONA_DIR / f"{persona_key}{EXAMPLES_SUFFIX}"
+
+
+def _load_voice_library(persona_key: str) -> VoiceLibraryPayload:
+    path = _persona_examples_path(persona_key)
+    if not path.exists():
+        return VoiceLibraryPayload(persona=persona_key, examples=[])
+
+    try:
+        with path.open("r", encoding="utf-8") as fp:
+            data = json.load(fp)
+    except Exception as exc:  # pragma: no cover
+        logger.error("Failed to read voice library for %s: %s", persona_key, exc)
+        raise HTTPException(status_code=500, detail="Invalid voice library file")
+
+    normalized_examples: List[VoiceExamplePayload] = []
+    for idx, example in enumerate(data.get("examples") or []):
+        if isinstance(example, dict):
+            normalized_examples.append(
+                VoiceExamplePayload(
+                    id=str(example.get("id") or f"{persona_key}_example_{idx}"),
+                    platform=example.get("platform") or "threads",
+                    content=example.get("content") or "",
+                    notes=example.get("notes"),
+                    content_type=example.get("content_type"),
+                    structure=example.get("structure"),
+                    why_good_example=example.get("why_good_example"),
+                    metadata=example.get("metadata") or {},
+                )
+            )
+        else:
+            normalized_examples.append(
+                VoiceExamplePayload(
+                    id=f"{persona_key}_example_{idx}",
+                    platform="threads",
+                    content=str(example),
+                )
+            )
+
+    payload = VoiceLibraryPayload(
+        persona=data.get("persona") or persona_key,
+        description=data.get("description"),
+        purpose=data.get("purpose"),
+        voice_patterns_to_capture=data.get("voice_patterns_to_capture") or [],
+        examples=normalized_examples,
+    )
+
+    # Ensure each example has a stable id
+    for idx, example in enumerate(payload.examples):
+        if not example.id:
+            example.id = f"{persona_key}_example_{idx}"
+    return payload
+
+
+def _write_voice_library(persona_key: str, payload: VoiceLibraryPayload) -> VoiceLibraryPayload:
+    path = _persona_examples_path(persona_key)
+    normalized_examples: List[Dict[str, Any]] = []
+    for idx, example in enumerate(payload.examples):
+        example_id = example.id or f"{persona_key}_example_{idx}"
+        normalized_examples.append(
+            {
+                "id": example_id,
+                "platform": example.platform,
+                "content": example.content,
+                "notes": example.notes,
+                "content_type": example.content_type,
+                "structure": example.structure,
+                "why_good_example": example.why_good_example,
+                "metadata": example.metadata,
+            }
+        )
+
+    file_payload = {
+        "persona": persona_key,
+        "description": payload.description,
+        "purpose": payload.purpose,
+        "voice_patterns_to_capture": payload.voice_patterns_to_capture,
+        "examples": normalized_examples,
+    }
+
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8") as fp:
+            json.dump(file_payload, fp, indent=2, ensure_ascii=False)
+    except Exception as exc:  # pragma: no cover
+        logger.error("Failed to write voice library for %s: %s", persona_key, exc)
+        raise HTTPException(status_code=500, detail="Failed to save voice library")
+
+    # Refresh vector DB with latest examples
+    vector_db = _vector_db()
+    vector_db.delete_persona_examples(persona_key)
+    for example in normalized_examples:
+        content = (example.get("content") or "").strip()
+        if content:
+            vector_db.add_example(persona_id=persona_key, content=content, metadata=example)
+
+    return VoiceLibraryPayload(
+        persona=persona_key,
+        description=file_payload["description"],
+        purpose=file_payload.get("purpose"),
+        voice_patterns_to_capture=file_payload.get("voice_patterns_to_capture") or [],
+        examples=[VoiceExamplePayload(**ex) for ex in normalized_examples],
+    )
 
 
 def _load_persona_config(persona_key: str) -> Dict[str, Any]:
@@ -115,30 +280,34 @@ def _load_persona_config(persona_key: str) -> Dict[str, Any]:
 
 
 def _load_persona_examples(persona_key: str) -> List[Dict[str, Any]]:
-    path = _persona_examples_path(persona_key)
-    if not path.exists():
-        return []
-    try:
-        with path.open("r", encoding="utf-8") as fp:
-            payload = json.load(fp)
-        examples = payload.get("examples") or []
-        # Normalize to dicts with id/content
-        normalized: List[Dict[str, Any]] = []
-        for idx, item in enumerate(examples):
-            if isinstance(item, str):
-                normalized.append(
-                    {
-                        "id": f"{persona_key}_{idx}",
-                        "content": item,
-                        "platform": "threads",
-                    }
-                )
-            elif isinstance(item, dict):
-                normalized.append(item)
-        return normalized
-    except Exception as exc:  # pragma: no cover
-        logger.error("Failed to read examples for %s: %s", persona_key, exc)
-        raise HTTPException(status_code=500, detail="Invalid persona examples file")
+    payload = _load_voice_library(persona_key)
+    return [
+        example.dict()
+        for example in payload.examples
+    ]
+
+
+def _serialize_draft(row: Dict[str, Any]) -> PersonaDraftResponse:
+    return PersonaDraftResponse(
+        id=row.get("id"),
+        persona_key=row.get("persona_key"),
+        platform=row.get("platform", "twitter"),
+        content=row.get("content", ""),
+        notes=row.get("notes"),
+        status=row.get("status", "submitted"),
+        created_by=row.get("created_by"),
+        created_at=row.get("created_at"),
+        updated_at=row.get("updated_at"),
+        approved_by=row.get("approved_by"),
+        approved_at=row.get("approved_at"),
+        last_generated_at=row.get("last_generated_at"),
+        metadata=row.get("metadata") or {},
+        rewrite_content=row.get("rewrite_content"),
+        rewrite_quality=row.get("rewrite_quality"),
+        rewrite_voice_score=row.get("rewrite_voice_score"),
+        rewrite_fact_score=row.get("rewrite_fact_score"),
+        rewrite_metadata=row.get("rewrite_metadata") or {},
+    )
 
 
 def _ensure_supabase_client():
@@ -415,6 +584,29 @@ async def get_persona_examples(persona_key: str) -> Dict[str, Any]:
     return {"persona": persona_key, "examples": examples, "count": len(examples)}
 
 
+@router.get(
+    "/personas/{persona_key}/voice-library", response_model=VoiceLibraryPayload
+)
+async def get_voice_library(persona_key: str) -> VoiceLibraryPayload:
+    _load_persona_config(persona_key)
+    return _load_voice_library(persona_key)
+
+
+@router.put(
+    "/personas/{persona_key}/voice-library", response_model=VoiceLibraryPayload
+)
+async def update_voice_library(
+    persona_key: str, payload: VoiceLibraryPayload
+) -> VoiceLibraryPayload:
+    _load_persona_config(persona_key)
+    if payload.persona and payload.persona != persona_key:
+        raise HTTPException(
+            status_code=400, detail="Persona key mismatch in voice library payload"
+        )
+    payload.persona = persona_key
+    return _write_voice_library(persona_key, payload)
+
+
 @router.get("/personas/{persona_key}/rewrites")
 async def get_persona_rewrites(persona_key: str, limit: int = 10) -> Dict[str, Any]:
     db = MimesisDB()
@@ -489,12 +681,147 @@ async def create_persona(request: PersonaCreateRequest) -> Dict[str, Any]:
     return {"success": True, "persona": config}
 
 
+@router.post(
+    "/personas/{persona_key}/drafts", response_model=PersonaDraftResponse
+)
+async def create_persona_draft(
+    persona_key: str, request: PersonaDraftCreateRequest
+) -> PersonaDraftResponse:
+    _load_persona_config(persona_key)
+    row = drafts_db.create(
+        persona_key=persona_key,
+        content=request.content,
+        platform=request.platform,
+        notes=request.notes,
+        created_by=request.created_by,
+        metadata=request.metadata,
+    )
+    return _serialize_draft(row)
+
+
+@router.get(
+    "/personas/{persona_key}/drafts", response_model=List[PersonaDraftResponse]
+)
+async def list_persona_drafts(
+    persona_key: str, status: Optional[str] = None, limit: int = 50
+) -> List[PersonaDraftResponse]:
+    _load_persona_config(persona_key)
+    rows = drafts_db.list(persona_key=persona_key, status=status, limit=limit)
+    return [_serialize_draft(row) for row in rows]
+
+
+@router.post(
+    "/personas/{persona_key}/drafts/{draft_id}/status",
+    response_model=PersonaDraftResponse,
+)
+async def update_persona_draft_status(
+    persona_key: str, draft_id: str, request: PersonaDraftStatusRequest
+) -> PersonaDraftResponse:
+    draft = drafts_db.get(draft_id)
+    if not draft or draft.get("persona_key") != persona_key:
+        raise HTTPException(status_code=404, detail="Draft not found")
+
+    fields: Dict[str, Any] = {"status": request.status}
+    if request.approved_by is not None:
+        fields["approved_by"] = request.approved_by
+
+    if request.status.lower() == "approved":
+        fields["approved_at"] = datetime.now(timezone.utc).isoformat()
+    else:
+        fields["approved_at"] = None
+
+    if request.review_notes:
+        metadata = draft.get("metadata") or {}
+        metadata["review_notes"] = request.review_notes
+        fields["metadata"] = metadata
+
+    updated = drafts_db.update(draft_id, fields)
+    return _serialize_draft(updated)
+
+
+@router.post(
+    "/personas/{persona_key}/drafts/{draft_id}/generate",
+    response_model=PersonaDraftGenerationResponse,
+)
+async def generate_persona_draft(
+    persona_key: str, draft_id: str
+) -> PersonaDraftGenerationResponse:
+    draft = drafts_db.get(draft_id)
+    if not draft or draft.get("persona_key") != persona_key:
+        raise HTTPException(status_code=404, detail="Draft not found")
+
+    config = _load_persona_config(persona_key)
+    persona_context = build_persona_context(persona_key, config)
+
+    draft_body = (draft.get("content") or "").strip()
+    if not draft_body:
+        raise HTTPException(
+            status_code=400,
+            detail="Draft content is empty. Provide text before requesting a rewrite.",
+        )
+
+    draft_notes = (draft.get("notes") or "").strip()
+    metadata = draft.get("metadata") or {}
+
+    analyzed_payload = {
+        "post_id": f"draft_{draft_id}",
+        "platform": draft.get("platform", "twitter"),
+        "content": draft_body,
+        "summary": draft_notes or draft_body,
+        "ai_summary": draft_notes or draft_body,
+        "human_draft": draft_body,
+        "human_notes": draft_notes,
+        "category": metadata.get("category", "human_draft"),
+        "topics": metadata.get("topics") or [],
+        "key_concepts": metadata.get("key_concepts") or [],
+        "rewrite_angles": metadata.get("rewrite_angles") or [],
+    }
+
+    rewrite_request = RewriteRequest(
+        analyzed_content=analyzed_payload,
+        persona=persona_context,
+        platform=draft.get("platform", "twitter"),
+        metadata={
+            "draft_id": draft_id,
+            "human_draft": draft_body,
+            "human_notes": draft_notes,
+            "from_human_draft": True,
+            **metadata,
+        },
+    )
+
+    modular_result = await studio_rewriter.rewrite(rewrite_request)
+    rewrite_metadata = modular_result.metadata or {}
+    updated = drafts_db.update_rewrite(
+        draft_id,
+        content=modular_result.rewritten_content,
+        quality_score=modular_result.quality_score,
+        voice_score=modular_result.voice_consistency_score,
+        fact_score=modular_result.fact_preservation_score,
+        metadata=rewrite_metadata,
+    )
+
+    rewrite_payload = {
+        "content": modular_result.rewritten_content,
+        "quality_metrics": {
+            "quality_score": modular_result.quality_score,
+            "voice_consistency": modular_result.voice_consistency_score,
+            "fact_preservation": modular_result.fact_preservation_score,
+        },
+        "metadata": rewrite_metadata,
+    }
+
+    return PersonaDraftGenerationResponse(
+        draft=_serialize_draft(updated),
+        rewrite=rewrite_payload,
+    )
+
+
 @router.post("/personas/{persona_key}/generate")
 async def generate_persona_content(
     persona_key: str, request: GenerateRequest
 ) -> Dict[str, Any]:
     config = _load_persona_config(persona_key)
-    rewriter = ModularRewriter()
 
     analyzed_content = {
         "post_id": f"manual_{uuid.uuid4()}",
@@ -532,7 +859,7 @@ async def generate_persona_content(
         persona=persona_context,
         platform=request.platform,
     )
-    result = await rewriter.rewrite(rewrite_request)
+    result = await studio_rewriter.rewrite(rewrite_request)
 
     return {
         "success": True,
@@ -678,4 +1005,119 @@ async def get_quality_trends() -> Dict[str, Any]:
         "persona_breakdown": breakdown,
         "quality_distribution": quality_distribution,
     }
+
+
+# Prompt Management Endpoints
+class PromptTemplateRequest(BaseModel):
+    platform: str
+    template: str
+    metadata: Optional[Dict[str, Any]] = None
+
+
+@router.get("/personas/{persona_key}/prompts")
+async def get_persona_prompts(persona_key: str) -> Dict[str, Any]:
+    """Get all prompt templates for a persona"""
+    try:
+        config = _load_persona_config(persona_key)
+        if not config:
+            raise HTTPException(status_code=404, detail=f"Persona {persona_key} not found")
+        
+        # Load prompt templates from config file
+        prompts_dir = Path("config/personas/prompts")
+        prompts_dir.mkdir(parents=True, exist_ok=True)
+        prompts_file = prompts_dir / f"{persona_key}_prompts.json"
+        
+        templates = {}
+        if prompts_file.exists():
+            with open(prompts_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                templates = data.get("templates", data)  # Support both formats
+        else:
+            # Generate default prompts from PromptBuilder so user can see/edit them
+            from src.publishing.modular_rewriter.prompt_builder import PromptBuilder
+            from src.publishing.modular_rewriter.schemas import RewriteRequest
+            from src.publishing.modular_rewriter.content_planner import RewritePlan
+            
+            persona_context = build_persona_context(persona_key, config)
+            builder = PromptBuilder()
+            
+            # Create sample request/plan to generate default prompts
+            sample_request = RewriteRequest(
+                persona=persona_context,
+                platform="twitter",
+                analyzed_content={
+                    "ai_summary": "Sample content summary",
+                    "content": "Sample content for preview"
+                },
+            )
+            sample_plan = RewritePlan(
+                hook="Sample hook",
+                angle="Sample angle",
+                call_to_action="Sample CTA",
+                human_draft="Sample human draft"
+            )
+            
+            templates = {
+                "twitter": builder._build_twitter_prompt(sample_request, sample_plan),
+                "threads": builder._build_threads_prompt(sample_request, sample_plan),
+                "telegram": builder._build_telegram_prompt(sample_request, sample_plan),
+            }
+        
+        return {
+            "persona_key": persona_key,
+            "templates": templates,
+            "platforms": list(templates.keys()),
+            "has_custom": prompts_file.exists(),
+        }
+    except Exception as e:
+        logger.error(f"Failed to get prompts for {persona_key}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/personas/{persona_key}/prompts/{platform}")
+async def update_persona_prompt(
+    persona_key: str,
+    platform: str,
+    request: PromptTemplateRequest,
+) -> Dict[str, Any]:
+    """Update a prompt template for a persona/platform"""
+    try:
+        config = _load_persona_config(persona_key)
+        if not config:
+            raise HTTPException(status_code=404, detail=f"Persona {persona_key} not found")
+        
+        if request.platform != platform:
+            raise HTTPException(status_code=400, detail="Platform mismatch")
+        
+        # Load existing templates
+        prompts_dir = Path("config/personas/prompts")
+        prompts_dir.mkdir(parents=True, exist_ok=True)
+        prompts_file = prompts_dir / f"{persona_key}_prompts.json"
+        
+        templates = {}
+        if prompts_file.exists():
+            with open(prompts_file, 'r', encoding='utf-8') as f:
+                templates = json.load(f)
+        
+        # Update the template
+        if "templates" not in templates:
+            templates = {"templates": templates}
+        templates["templates"][platform] = request.template
+        if request.metadata:
+            templates.setdefault("metadata", {})[platform] = request.metadata
+        
+        # Save
+        with open(prompts_file, 'w', encoding='utf-8') as f:
+            json.dump(templates, f, indent=2, ensure_ascii=False)
+        
+        logger.info(f"Updated prompt template for {persona_key}/{platform}")
+        
+        return {
+            "persona_key": persona_key,
+            "platform": platform,
+            "status": "updated",
+        }
+    except Exception as e:
+        logger.error(f"Failed to update prompt for {persona_key}/{platform}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 

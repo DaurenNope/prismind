@@ -513,6 +513,11 @@ class ContentRewriter:
                 "hook": metadata.get("hook"),
                 "source": "rewriter_output",
                 "time_sensitivity": metadata.get("time_sensitivity"),
+                "voice_valid": validations.get("voice_valid", True),
+                "fact_valid": validations.get("fact_valid", True),
+                "fact_report": validations.get("fact_report"),
+                "voice_report": validations.get("voice_report"),
+                "validator_scores": validations.get("scores"),
             }
             self.vector_db.add_example(
                 persona_id=persona,
@@ -2356,45 +2361,37 @@ Write directly - no explanations:"""
             # Apply max_length constraint with smart thread splitting
             max_length = platform_constraints.get("max_length")
             if max_length and len(result) > max_length:
-                # For Twitter, use thread splitting instead of truncation
+                # For Twitter, use thread splitting instead of truncation when allowed
                 if platform == "twitter" and allow_threads:
                     logger.info(
-                        f"📝 Content exceeds {max_length} chars, splitting into thread..."
+                        f"📝 Content exceeds {max_length} chars, attempting thread split..."
                     )
                     thread_result = self.thread_splitter.split_into_thread(
                         result, platform=platform
                     )
 
                     if thread_result["is_thread"]:
-                        # Use threaded version
                         result = "\n\n".join(thread_result["tweets"])
                         logger.info(
                             f"✂️ Split into {thread_result['tweet_count']} tweets"
                         )
-
-                        # Log any warnings
                         for warning in thread_result["warnings"]:
                             logger.warning(f"⚠️ Thread: {warning}")
                     else:
-                        # Fallback to truncation
-                        logger.warning(f"⚠️ Could not split into thread, truncating...")
-                        sentences = result[:max_length].split(".")
-                        if len(sentences) > 1:
-                            result = ".".join(sentences[:-1]) + "."
-                        else:
-                            result = result[:max_length].rstrip() + "..."
+                        logger.warning(
+                            "⚠️ Could not split into thread, truncating to single tweet"
+                        )
+                        result = self._truncate_to_length(result, max_length)
                 elif platform == "twitter":
                     logger.info(
                         f"✂️ Enforcing single-tweet limit ({max_length} chars) without threading"
                     )
                     result = self._truncate_to_length(result, max_length)
                 else:
-                    # For non-Twitter platforms, truncate at sentence boundary
-                    logger.warning(
-                        f"⚠️ Content exceeds max_length ({len(result)} > {max_length}), truncating..."
+                    logger.info(
+                        f"✂️ Truncating content from {len(result)} to {max_length} chars for {platform}"
                     )
                     result = self._truncate_to_length(result, max_length)
-                    logger.info(f"✂️ Truncated to {len(result)} chars")
 
             # Apply line break constraints
             use_line_breaks = platform_constraints.get("use_line_breaks")
@@ -2587,6 +2584,13 @@ Write directly - no explanations:"""
             validations={
                 "fact_valid": fact_validation["valid"],
                 "voice_valid": voice_validation["is_consistent"],
+                "fact_report": fact_validation,
+                "voice_report": voice_validation,
+                "scores": {
+                    "quality": quality_score["score"],
+                    "voice": voice_validation.get("score"),
+                    "fact": fact_validation.get("preservation_score"),
+                },
             },
         )
 

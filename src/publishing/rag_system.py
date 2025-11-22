@@ -379,21 +379,32 @@ class ExampleVectorDatabase:
                 scores, indices = self.index.search(query_normalized.reshape(1, -1),
                                                   min(k * 2, len(candidates)))
 
+                # Build reverse mapping: FAISS index -> example_id
+                index_to_example_id = {idx: ex_id for ex_id, idx in self.id_to_index.items()}
+                persona_candidate_ids = {ex.example_id for ex in candidates}
+                
                 results = []
                 for score, idx in zip(scores[0], indices[0]):
-                    if score < threshold or idx >= len(candidates):
+                    if score < threshold:
                         continue
-
-                    # Find example by index
-                    for example in candidates:
-                        if self.id_to_index.get(example.example_id) == idx:
-                            results.append({
-                                'example': example,
-                                'score': float(score),
-                                'content': example.content,
-                                'metadata': example.metadata
-                            })
-                            break
+                    
+                    # Map FAISS index to example_id
+                    example_id = index_to_example_id.get(idx)
+                    if not example_id:
+                        continue
+                    
+                    # Verify this example belongs to the requested persona
+                    example = self.examples.get(example_id)
+                    if example and example.persona_id == persona_id and example_id in persona_candidate_ids:
+                        results.append({
+                            'example': example,
+                            'score': float(score),
+                            'content': example.content,
+                            'metadata': example.metadata
+                        })
+                    
+                    if len(results) >= k:
+                        break
 
                     if len(results) >= k:
                         break
@@ -427,6 +438,52 @@ class ExampleVectorDatabase:
         except Exception as e:
             logger.error(f"Search failed: {e}")
             return []
+
+    def purge_low_quality(self,
+                          min_quality: float = 75.0,
+                          require_validators: bool = True) -> int:
+        """
+        Remove legacy/low quality examples from storage.
+
+        Returns number of examples removed.
+        """
+        if not self.examples:
+            return 0
+
+        removed = 0
+        threshold = max(0.0, float(min_quality))
+
+        with self._file_lock():
+            for example_id, example in list(self.examples.items()):
+                metadata = example.metadata or {}
+                quality_score = float(metadata.get("quality_score") or metadata.get("quality") or 0)
+                fact_valid = metadata.get("fact_valid", True)
+                voice_valid = metadata.get("voice_valid", True)
+
+                should_drop = quality_score < threshold
+                if require_validators and (not fact_valid or not voice_valid):
+                    should_drop = True
+
+                if should_drop:
+                    removed += 1
+                    persona_key = example.persona_id or "default"
+                    content_hash = metadata.get("content_hash") or self._content_hash(example.content)
+                    self.examples.pop(example_id, None)
+                    self._persona_hashes[persona_key].discard(content_hash)
+                    self.id_to_index.pop(example_id, None)
+
+            if removed:
+                if FAISS_AVAILABLE and self.examples:
+                    self._rebuild_index()
+                self._write_examples()
+
+        if removed:
+            logger.info(
+                "Purged %s low-quality RAG examples (quality >= %.1f required)",
+                removed,
+                threshold,
+            )
+        return removed
 
     def get_persona_examples(self, persona_id: str) -> List[VectorExample]:
         """Get all examples for a specific persona"""

@@ -88,3 +88,6 @@ COMMENT ON TABLE usable_posts IS 'Curated table containing only high-quality, ev
 COMMENT ON COLUMN usable_posts.inclusion_reason IS 'Reason for inclusion: truly_evergreen, fresh_time_sensitive, or commentary_worthy';
 COMMENT ON COLUMN usable_posts.commentary_worthy IS 'Manual flag for old posts that are still valuable for commentary/rewriting';
 
+
+
+

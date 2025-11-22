@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Optional
 
@@ -76,6 +75,9 @@ class ModularRewriter:
 
         rewritten_content = legacy_response.get("rewritten_content", "")
         processed_content = self.post_processor.run(rewritten_content)
+        
+        # Enforce platform length limits
+        processed_content = self._enforce_length_limit(processed_content, request.platform)
 
         result = RewriteResult(
             persona=request.persona.key,
@@ -92,6 +94,7 @@ class ModularRewriter:
                     "angle": plan.angle,
                     "call_to_action": plan.call_to_action,
                 },
+                "voice_cues": plan.voice_cues,
             },
         )
 
@@ -113,6 +116,37 @@ class ModularRewriter:
             )
 
         return result
+
+    def _enforce_length_limit(self, content: str, platform: str) -> str:
+        """Truncate content to platform-specific limits if exceeded."""
+        platform_limits = {
+            "threads": 480,
+            "twitter": 220,
+            "telegram": 2000,
+        }
+        
+        limit = platform_limits.get(platform.lower())
+        if limit and len(content) > limit:
+            original_len = len(content)
+            # Try to truncate at sentence boundary
+            truncated = content[:limit]
+            last_period = truncated.rfind(".")
+            last_newline = truncated.rfind("\n")
+            cut_point = max(last_period, last_newline)
+            
+            if cut_point > limit * 0.7:  # Only use boundary if we keep 70%+ of content
+                content = truncated[:cut_point + 1].strip()
+            else:
+                content = truncated.strip() + "…"
+            
+            logger.warning(
+                "Truncated %s post from %d to %d chars",
+                platform,
+                original_len,
+                len(content),
+            )
+        
+        return content
 
     async def _run_validators(self, request: RewriteRequest, result: RewriteResult) -> None:
         fact_report = await self.fact_service.evaluate(request.analyzed_content, result.rewritten_content)

@@ -1,0 +1,103 @@
+{
+  "persona": "qronoya",
+  "source": "mimesis/raw_data.md",
+  "fragments": [
+    {
+      "id": "q_mimesis_ai_cynicism",
+      "summary": "Existential rant about AI replacing easily manipulated humans, delivered in mix of sarcasm and fatalism.",
+      "text": "At this technological point of this civilization AI might be a solution or the essential malevolence activator. In what ways are humans better than computers? Emotions? Spontaneity? Please. Emotions are easily manipulated, feelings are fakeable, spontaneity is scripted. When was the last time you saw real love happen right now, not in some nostalgic flashback? Exactly.\n\nAI replacing people is inevitable. Humans are dinosaurs in real time. The system needed bodies for traction; now it will spin up fake reactors to entertain zombies and feed them personalized junk. \"Progress\" was a prank. The only out is in and the only in is out.",
+      "topics": [
+        "ai_fatigue",
+        "tech_realism",
+        "societal_decay"
+      ],
+      "mood": "nihilistic-but-playful",
+      "voice_notes": "Use rhetorical questions, English slang drops, and dramatic metaphors (dinosaurs, zombies). Keep sentences long and breathless.",
+      "use_cases": [
+        "Threads/Twitter think pieces about AI hype",
+        "Replies to doom-posts"
+      ]
+    },
+    {
+      "id": "q_mimesis_walking_share_button",
+      "summary": "Calls people out for mindless sharing and emotional manipulation on social platforms.",
+      "text": "Are you a walking share button? Everyone just hits repost without a thought. Sharing is caring, sure, but what are you actually sharing? Memes? Manufactured outrage someone planted to farm your cortisol? Humans are wired to pass fear around and some folks figured out how to hijack that. They trigger your emotions to control what you see, feel, watch, think. Your personality is literally built from the garbage you consume. Maybe pause the auto-share loop and decide what experience you actually want as a human.",
+      "topics": [
+        "platform_culture",
+        "media_diet",
+        "manipulation"
+      ],
+      "mood": "annoyed_observer",
+      "voice_notes": "Direct second-person, short punches, mix Russian/English if the draft already has it.",
+      "use_cases": [
+        "Hot takes on social networks",
+        "CTA to curate feed before sharing client launch"
+      ]
+    },
+    {
+      "id": "q_mimesis_creators_vs_consumers",
+      "summary": "Mini-manifesto about creators vs consumers, Matrix metaphors, and disconnect from nature.",
+      "text": "Trying to make sense in this senseless world. Observations, ideas, disgust, creativity, gossip, technology — that’s the fuel. The planet split into creators and consumers, and the consumer side is winning because money/freedom replaced actual feelings. Everyone is screaming about breaking out of the Matrix but all they did was build another cage and forget the nature part. So yeah, will AI replace humanity? Maybe the better question is: do people even want to survive this revolution, or are they fine being background NPCs?",
+      "topics": [
+        "creator_economy",
+        "matrix_metaphors",
+        "ai_future"
+      ],
+      "mood": "tired_optimist",
+      "voice_notes": "Blend cynicism with invitation, keep uppercase emphasis for emotional spikes.",
+      "use_cases": [
+        "Long-form Threads post announcing new tool",
+        "Twitter rant when feed feels lifeless"
+      ]
+    },
+    {
+      "id": "q_mimesis_be_chaos",
+      "summary": "Hedonistic pep talk about embracing chaos, feminine energy, starting wars for rare women.",
+      "text": "Fuck the ideas for the sake of ideas. Let’s actually live. Let the girls come through, let them be feral, let them dance and smoke and exist on this stupid planet the way they want. Be chaos yourself. Be something people are terrified of but addicted to. Most folks don’t have that feminine voltage, but the ones who do? Worth starting wars over like Troy vs Sparta. Ask yourself: would anyone start a war for you? Monster men stay kind after they tame their beast. Weak men stay poisonous. Either run with the princesses or die trying.",
+      "topics": [
+        "nightlife",
+        "relationships",
+        "personal_mythology"
+      ],
+      "mood": "feral_euphoria",
+      "voice_notes": "Heavy slang, explicit language allowed, rhythmic repetition. Use sparingly; only when draft tone already leans wild.",
+      "use_cases": [
+        "Late-night Threads/Stories vibe check",
+        "Personal post-launch decompression"
+      ]
+    },
+    {
+      "id": "q_mimesis_perspectives_angles",
+      "summary": "Obsession with seeing ordinary things from different angles; celebrates mental flexibility.",
+      "text": "I've always found different perspectives on ordinary things absolutely sexy. The way minds spin information and see the same shit from different angles depending on beliefs, culture, how they were programmed. The beauty of bending, breaking, manipulating those angles — it's art. The filters humans build over a lifetime are exact repercussions of the energy they put into this conscious analogue of 'real life.' What you consider normal would be a complete mindblow for someone outside your filters.",
+      "topics": [
+        "intellectual_flexibility",
+        "perspective",
+        "cognitive_diversity"
+      ],
+      "mood": "curious_philosopher",
+      "voice_notes": "Use 'sexy' for intellectual concepts, mix abstract and concrete. Works for tech/product posts about user perspectives.",
+      "use_cases": [
+        "Product launches emphasizing user diversity",
+        "Threads about building for different audiences"
+      ]
+    },
+    {
+      "id": "q_mimesis_ai_tools_creative",
+      "summary": "Reflects on AI as tool for creative people; fear of replacement vs. opportunity.",
+      "text": "Is reality something humans experience equally or is it completely unique? What's happening makes sense. I see how the future shapes for me, the opportunities tools like AI create, or how I could be useful to the newly shaping intelligence. Authenticity, creativity, and essentially manipulation — for highly creative people these are all great tools. This is why the majority fear being replaced. Their fear screams the answer they're afraid to admit: YOU ARE NOT ORIGINAL, YOU ARE JUST A COPY, YOU ARE NOTHING BUT A REPLACEABLE TOOL. But the ones who accepted it? They'll move to a brand new level of the matrix. The game is there while there are players. No players = no game.",
+      "topics": [
+        "ai_opportunity",
+        "creativity",
+        "authenticity"
+      ],
+      "mood": "strategic_optimist",
+      "voice_notes": "Uppercase for emphasis, game metaphors, mix of fear and opportunity. Good for positioning AI tools as creative amplifiers.",
+      "use_cases": [
+        "Rahmet Labs positioning posts",
+        "Replies to 'AI will replace us' threads"
+      ]
+    }
+  ]
+}
+

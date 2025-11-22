@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from src.database.manager import SupabaseManager
@@ -40,7 +41,6 @@ class MimesisDB:
                 return []
 
             import socket
-            from datetime import datetime, timezone
 
             now_iso = datetime.now(timezone.utc).isoformat()
             q = (
@@ -323,3 +323,89 @@ class MimesisDB:
             self.update_transformation(tid, {"ready_for_posting": True})
             approved.append(created)
         return approved
+
+
+class PersonaDraftsDB:
+    """Adapter for the persona_drafts table."""
+
+    def __init__(self, manager: Optional[SupabaseManager] = None) -> None:
+        self.sb = manager or SupabaseManager()
+
+    def create(
+        self,
+        persona_key: str,
+        content: str,
+        *,
+        platform: str = "twitter",
+        notes: Optional[str] = None,
+        created_by: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        payload = {
+            "persona_key": persona_key,
+            "platform": platform,
+            "content": content,
+            "notes": notes,
+            "created_by": created_by,
+            "metadata": metadata or {},
+        }
+        result = self.sb.client.table("persona_drafts").insert(payload).execute()
+        return result.data[0] if result.data else payload
+
+    def list(
+        self,
+        persona_key: Optional[str] = None,
+        status: Optional[str] = None,
+        limit: int = 50,
+    ) -> List[Dict[str, Any]]:
+        q = self.sb.client.table("persona_drafts").select("*")
+        if persona_key:
+            q = q.eq("persona_key", persona_key)
+        if status:
+            q = q.eq("status", status)
+        return q.order("updated_at", desc=True).limit(limit).execute().data
+
+    def get(self, draft_id: str) -> Optional[Dict[str, Any]]:
+        result = (
+            self.sb.client.table("persona_drafts")
+            .select("*")
+            .eq("id", draft_id)
+            .limit(1)
+            .execute()
+        )
+        return result.data[0] if result.data else None
+
+    def update(self, draft_id: str, fields: Dict[str, Any]) -> Dict[str, Any]:
+        fields = {**fields, "updated_at": datetime.now(timezone.utc).isoformat()}
+        result = (
+            self.sb.client.table("persona_drafts")
+            .update(fields)
+            .eq("id", draft_id)
+            .execute()
+        )
+        if not result.data:
+            raise ValueError(f"Draft {draft_id} not found")
+        return result.data[0]
+
+    def update_rewrite(
+        self,
+        draft_id: str,
+        *,
+        content: str,
+        quality_score: Optional[float] = None,
+        voice_score: Optional[float] = None,
+        fact_score: Optional[float] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Persist the latest rewrite output for a draft.
+        """
+        fields: Dict[str, Any] = {
+            "rewrite_content": content,
+            "rewrite_quality": quality_score,
+            "rewrite_voice_score": voice_score,
+            "rewrite_fact_score": fact_score,
+            "rewrite_metadata": metadata or {},
+            "last_generated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        return self.update(draft_id, fields)

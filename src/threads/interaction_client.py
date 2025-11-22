@@ -54,7 +54,7 @@ class ThreadsInteractionClient:
         self.browser = None
         self.context = None
         self.page = None
-        self.cookies_file = cookies_file or "config/threads_cookies.json"
+        self.cookies_file = cookies_file or "cookies/threads_cookies.json"
         self.last_check: Optional[datetime] = None
         self.processed_posts: set = set()
 

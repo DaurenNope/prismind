@@ -155,7 +155,7 @@ class ThreadsExtractor(SocialExtractorBase):
         self,
         username: str,
         password: str,
-        cookies_path: str = "cookies/threads_cookies.json",
+        cookies_path: Optional[str] = "cookies/threads_cookies.json",
     ) -> bool:
         """Authenticates the user by trying cookies first, then falling back to login."""
         try:
@@ -165,7 +165,8 @@ class ThreadsExtractor(SocialExtractorBase):
             logging.info(f"🔑 Password provided: {'Yes' if password else 'No'}")
             self._register_allowed_handle(username)
 
-            if Path(cookies_path).exists():
+            # Check if cookies_path is provided and file exists
+            if cookies_path and Path(cookies_path).exists():
                 logging.info(f"🍪 Cookie file exists, attempting cookie authentication")
                 file_size = Path(cookies_path).stat().st_size
                 logging.info(f"📊 Cookie file size: {file_size} bytes")
@@ -178,10 +179,15 @@ class ThreadsExtractor(SocialExtractorBase):
                 else:
                     logging.warning("❌ Cookie authentication failed")
             else:
-                logging.warning(f"🍪 Cookie file not found at {cookies_path}")
+                if cookies_path:
+                    logging.warning(f"🍪 Cookie file not found at {cookies_path}")
+                else:
+                    logging.info("🍪 No cookie file path provided, skipping cookie authentication")
 
             logging.info("🔄 Falling back to username/password login")
-            return await self._authenticate_with_login(username, password, cookies_path)
+            # Use default path if cookies_path is None
+            final_cookies_path = cookies_path or "cookies/threads_cookies.json"
+            return await self._authenticate_with_login(username, password, final_cookies_path)
         except Exception as e:
             logging.error(f"❌ Authentication process failed with exception: {e}")
             logging.error(f"❌ Exception type: {type(e).__name__}")
@@ -194,7 +200,7 @@ class ThreadsExtractor(SocialExtractorBase):
         self,
         username: Optional[str],
         password: Optional[str],
-        cookies_path: str,
+        cookies_path: Optional[str],
     ) -> bool:
         """Ensure we have an authenticated page session before scraping."""
         if hasattr(self, "page") and self.page:
@@ -206,7 +212,9 @@ class ThreadsExtractor(SocialExtractorBase):
             )
             return False
 
-        return await self.authenticate(username, password, cookies_path)
+        # Use default path if cookies_path is None
+        final_cookies_path = cookies_path or "cookies/threads_cookies.json"
+        return await self.authenticate(username, password, final_cookies_path)
 
     @staticmethod
     def _normalize_threads_post_id(value: Optional[str]) -> str:
@@ -458,7 +466,7 @@ class ThreadsExtractor(SocialExtractorBase):
             return False
 
     async def _authenticate_with_login(
-        self, username: str, password: str, cookies_path: str
+        self, username: str, password: str, cookies_path: Optional[str]
     ) -> bool:
         """Authenticates by logging directly into Threads.net."""
         try:
@@ -652,8 +660,10 @@ class ThreadsExtractor(SocialExtractorBase):
             logging.info("Successfully logged into Threads.")
 
             # Save the authentication state to the cookies file
-            await self.context.storage_state(path=cookies_path)
-            logging.info(f"Authentication state saved to {cookies_path}")
+            # Use default path if cookies_path is None
+            final_cookies_path = cookies_path or "cookies/threads_cookies.json"
+            await self.context.storage_state(path=final_cookies_path)
+            logging.info(f"Authentication state saved to {final_cookies_path}")
             # Also mirror to legacy path for compatibility
             legacy_path = "config/threads_cookies.json"
             try:
@@ -684,7 +694,7 @@ class ThreadsExtractor(SocialExtractorBase):
         username: str = None,
         password: str = None,
         limit: int = 50,
-        cookies_path: str = "cookies/threads_cookies.json",
+        cookies_path: Optional[str] = "cookies/threads_cookies.json",
         stop_at_post_id: Optional[str] = None,
         existing_ids: Optional[set] = None,
     ) -> List[SocialPost]:
@@ -731,7 +741,7 @@ class ThreadsExtractor(SocialExtractorBase):
         username: Optional[str],
         password: Optional[str],
         limit: int,
-        cookies_path: str,
+        cookies_path: Optional[str],
         stop_at_post_id: Optional[str],
         existing_ids: Optional[set],
     ) -> List[SocialPost]:
@@ -1402,7 +1412,7 @@ class ThreadsExtractor(SocialExtractorBase):
         username: str = None,
         password: str = None,
         limit: int = 50,
-        cookies_path: str = "cookies/threads_cookies.json",
+        cookies_path: Optional[str] = "cookies/threads_cookies.json",
         stop_at_post_id: Optional[str] = None,
         existing_ids: Optional[set] = None,
     ) -> List[SocialPost]:

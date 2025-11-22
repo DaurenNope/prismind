@@ -115,3 +115,6 @@ The current logic is **mostly correct** but might be **too permissive**. We shou
 3. Add content analysis to verify posts are truly evergreen
 4. Test with stricter criteria to ensure only truly reusable content is included
 
+
+
+

@@ -214,3 +214,6 @@ Use `DatabaseAgent().get_id_format_health()` and analyzer fill-rate metrics to m
 - **Persona matching is built into analysis** - not a separate step
 - **Schema is versioned** via `analysis_model` and `analysis_depth` fields
 
+
+
+

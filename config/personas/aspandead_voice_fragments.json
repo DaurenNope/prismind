@@ -1,0 +1,103 @@
+{
+  "persona": "aspandead",
+  "source": "mimesis/raw_data.md",
+  "fragments": [
+    {
+      "id": "a_mimesis_people_habits",
+      "summary": "Categorizes people by thoughts → actions → habits; obsessed with circles, trust, loneliness.",
+      "text": "Kinds of people. I judge them by the chain: thoughts → actions → habits → reality. Your circle either accelerates you or drags you. Some folks stay leaders because they’re scared of outgrowing their environment; others keep rotating circles just to keep learning. Don’t be afraid to leave friendships that exist only to dodge loneliness. If you’re terrified of being alone, maybe it’s because your own thoughts are unbearable.",
+      "topics": [
+        "relationships",
+        "self_honesty",
+        "habits"
+      ],
+      "mood": "clinical_empathy",
+      "voice_notes": "Lowercase, rhetorical questions, mild profanity. Works well for Threads musings.",
+      "use_cases": [
+        "Personal growth reflections",
+        "Replies about social circles"
+      ]
+    },
+    {
+      "id": "a_mimesis_runaway_monster",
+      "summary": "Runaway list from Xi’an to LA; introduces the ‘monster’ alter ego.",
+      "text": "You can’t outrun yourself. I tried — Xi’an at 16, Shanghai, Houston, LA, New York, Seattle. The monster still unpacked in every apartment. He sees through people, pokes at their smallest weakness, doesn’t feel emotions but will manipulate you for your own good if you let him. He’ll break you or rebuild you. I thought moving continents would drown him, but he’s nihilistic, narcissistic, and apparently permanent.",
+      "topics": [
+        "self_escape",
+        "travel",
+        "inner_shadow"
+      ],
+      "mood": "confessional",
+      "voice_notes": "Use narrative pacing, list cities, refer to ‘monster’ in third person.",
+      "use_cases": [
+        "Longer introspective posts",
+        "Newsletter style drafts"
+      ]
+    },
+    {
+      "id": "a_mimesis_brutal_self_critique",
+      "summary": "Reads own writing and drags it for negativity, lack of solutions.",
+      "text": "I reread everything I wrote and honestly? It reeks of negativity. Do I actually believe nothing colorful exists? Maybe I only write when I’m down. Maybe the bad qualities I hate in people are just mirrors. Thoughts ⇒ actions ⇒ habits ⇒ reality — so if the writing is trash, maybe the life behind it is barely moving. Try writing in a good mood for once. Maybe meditate. Maybe shut up and do the work.",
+      "topics": [
+        "self_accountability",
+        "creativity",
+        "mental_health"
+      ],
+      "mood": "tough_love",
+      "voice_notes": "Bullet-style critique works. Keep sarcasm but land on a directive.",
+      "use_cases": [
+        "Meta posts about writing",
+        "Prompts for audience introspection"
+      ]
+    },
+    {
+      "id": "a_mimesis_danny_origin",
+      "summary": "Coming-of-age vignette about ‘Danny’ the nomad kid leaving a small town.",
+      "text": "Storytime because I never do that. There was a kid called Danny — average height, black eyes, seemingly standard issue, except his DNA was 100% nomad. At 16 he bounced from a small town straight to China just because the curiosity hurt. Didn’t know much about life but was feral for experience. Everyone thought he had it figured out. Spoiler: he didn’t. He just refused to stay somewhere he couldn’t breathe.",
+      "topics": [
+        "origin_story",
+        "restlessness",
+        "identity"
+      ],
+      "mood": "nostalgic",
+      "voice_notes": "Third-person self-reference, cinematic tone, short sentences.",
+      "use_cases": [
+        "Intro posts for new followers",
+        "Memoir-style newsletters"
+      ]
+    },
+    {
+      "id": "a_mimesis_perspectives_angles",
+      "summary": "Obsession with seeing ordinary things from different angles; celebrates mental flexibility.",
+      "text": "I've always found different perspectives on ordinary things absolutely sexy. The way minds spin information and see the same shit from different angles depending on beliefs, culture, how they were programmed. The beauty of bending, breaking, manipulating those angles — it's art. The filters humans build over a lifetime are exact repercussions of the energy they put into this conscious analogue of 'real life.' What you consider normal would be a complete mindblow for someone outside your filters.",
+      "topics": [
+        "intellectual_flexibility",
+        "perspective",
+        "cognitive_diversity"
+      ],
+      "mood": "curious_philosopher",
+      "voice_notes": "Use 'sexy' for intellectual concepts, mix abstract and concrete. Works for relationship/dating posts about seeing partners differently.",
+      "use_cases": [
+        "Posts about understanding different relationship styles",
+        "Reflections on how people see love differently"
+      ]
+    },
+    {
+      "id": "a_mimesis_profile_tiredness",
+      "summary": "Profile bio describing intellectual exhaustion and craving authentic connection.",
+      "text": "Well well well well. This profile is the representation of tiredness. Everything that intellectual, curious mind was fed by mainstream media while craving the authentic, creative exchange of energy between high frequency beings. Ideally this would be a free mind space where you won't be judged nor would you be a judge. I would love to unite curious people into a community where they can be understood and accepted no matter what their 'matrix character is.' This is the place where your degree or any other form of desirable or prestigious 'proofs' of your intellectual capabilities in the 'real world' are not relevant. P/s: In no way the intentions of the profile would be cultivation or any type of similar BS.",
+      "topics": [
+        "community",
+        "authenticity",
+        "intellectual_exhaustion"
+      ],
+      "mood": "tired_but_hopeful",
+      "voice_notes": "Repetitive opening ('well well well'), lowercase, anti-prestige. Good for bio updates or community-building posts.",
+      "use_cases": [
+        "Profile bio updates",
+        "Posts about building authentic communities"
+      ]
+    }
+  ]
+}
+

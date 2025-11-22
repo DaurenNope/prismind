@@ -9,7 +9,7 @@ without losing functionality.
 """
 
 from .schemas import RewriteRequest, RewriteResult
-from .orchestrator import ModularRewriter
+from .orchestrator import ModularRewriter, build_persona_context
 
-__all__ = ["RewriteRequest", "RewriteResult", "ModularRewriter"]
+__all__ = ["RewriteRequest", "RewriteResult", "ModularRewriter", "build_persona_context"]
 
