@@ -240,6 +240,17 @@ class DatabaseValidation:
                 time_diff = analyzed - created
                 if time_diff < timedelta(hours=-1):
                     issues.append("analyzed_at is before created_at (impossible)")
+                    # Auto-fix: set analyzed_at to created_at (or current time if later)
+                    # This ensures data integrity
+                    from datetime import datetime
+                    now = datetime.now(timezone.utc)
+                    fixed_analyzed_at = max(created, now).isoformat()
+                    # Update the post dict so the fix is applied
+                    post["analyzed_at"] = fixed_analyzed_at
+                    logger.info(
+                        f"Auto-fixed analyzed_at for post {post.get('post_id', 'unknown')}: "
+                        f"was {analyzed_at}, now {fixed_analyzed_at}"
+                    )
             except Exception as e:
                 # Don't log as error - datetime parsing failures are expected for malformed data
                 logger.debug(f"Datetime comparison skipped: {e}")
@@ -491,6 +502,35 @@ class DatabaseValidation:
         else:
             # Missing analyzed_at - set to current timestamp
             normalized["analyzed_at"] = datetime.utcnow().isoformat()
+
+        # Ensure analyzed_at is not before created_at (data integrity fix)
+        created_at = normalized.get("created_at")
+        if created_at and normalized.get("analyzed_at"):
+            try:
+                from datetime import timezone
+                from dateutil.parser import parse
+                
+                created = parse(str(created_at))
+                analyzed = parse(str(normalized["analyzed_at"]))
+                
+                # Normalize timezones
+                if created.tzinfo is None:
+                    created = created.replace(tzinfo=timezone.utc)
+                if analyzed.tzinfo is None:
+                    analyzed = analyzed.replace(tzinfo=timezone.utc)
+                
+                # If analyzed_at is before created_at, fix it
+                if analyzed < created:
+                    # Set analyzed_at to created_at (or current time if later)
+                    now = datetime.now(timezone.utc)
+                    fixed_analyzed_at = max(created, now).isoformat()
+                    normalized["analyzed_at"] = fixed_analyzed_at
+                    logger.debug(
+                        f"Fixed analyzed_at < created_at: set to {fixed_analyzed_at}"
+                    )
+            except Exception as e:
+                # Don't fail on datetime parsing errors
+                logger.debug(f"Could not validate analyzed_at vs created_at: {e}")
 
         # Check if post is deprecated (old time-sensitive content)
         # Also check if currently deprecated post should NOT be deprecated (evergreen content)
