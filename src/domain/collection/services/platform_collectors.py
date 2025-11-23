@@ -1254,7 +1254,19 @@ async def collect_threads_bookmarks(
             consecutive_seen = 0
             new_posts.append(post)
 
-        log(f"📋 Processing {len(new_posts)} new Threads posts")
+        log(f"📋 Processing {len(new_posts)} new Threads posts (after filtering {len(saved_posts) - len(new_posts)} duplicates/existing)")
+        
+        # Diagnostic: if we had posts but all were filtered, log why
+        if saved_posts and not new_posts:
+            log(
+                f"⚠️ All {len(saved_posts)} saved posts were filtered out. "
+                f"This could mean:\n"
+                f"  - All posts already exist in database\n"
+                f"  - All posts were self-authored (your own posts)\n"
+                f"  - Reached last_collected_id (incremental mode)\n"
+                f"  - Duplicate detection is too aggressive",
+                "warning"
+            )
 
         # Process and store new posts
         successful_count = 0
