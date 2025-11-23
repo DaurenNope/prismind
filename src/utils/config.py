@@ -65,7 +65,7 @@ class Config:
         self.threads_cookies_path = self.cookies_dir / "threads.json"
 
         # Load JSON config if present
-        self._load_json_config(project_root / "config" / "collection.json")
+        self._load_json_config(project_root / "config" / "collection" / "collection.json")
 
         # Environment overrides
         self._apply_env_overrides()

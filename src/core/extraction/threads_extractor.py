@@ -745,7 +745,12 @@ class ThreadsExtractor(SocialExtractorBase):
         """Capture Threads saved posts by scraping the underlying GraphQL responses."""
         logging.info("⚙️ Threads: attempting API-first saved-post collection")
 
-        if not await self._ensure_authenticated(username, password, cookies_path):
+        auth_result = await self._ensure_authenticated(username, password, cookies_path)
+        if not auth_result:
+            logging.warning(
+                "⚠️ Threads API collector: Authentication failed. "
+                "Check THREADS_USERNAME and THREADS_PASSWORD, or cookies file."
+            )
             return []
 
         if not hasattr(self, "page") or not self.page:
@@ -999,7 +1004,14 @@ class ThreadsExtractor(SocialExtractorBase):
                 logging.debug(f"Threads network trace persist skipped: {trace_err}")
 
         if not response_promises:
-            logging.info("ℹ️ Threads API collector captured 0 responses")
+            logging.warning(
+                "⚠️ Threads API collector captured 0 GraphQL/AJAX responses. "
+                "This could mean:\n"
+                "  1. Threads changed their API endpoints\n"
+                "  2. The saved page didn't load properly\n"
+                "  3. Authentication failed silently\n"
+                "Try setting THREADS_DOM_FALLBACK=true to use DOM scraping instead."
+            )
             return []
         logging.info(
             f"📡 Threads API collector captured {len(response_promises)} responses"

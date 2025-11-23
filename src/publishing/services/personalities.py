@@ -15,9 +15,10 @@ def load_personalities() -> List[Dict[str, str]]:
     Returns a list of dicts with at least a 'key' and optional 'name'. If the
     file is missing or invalid, returns an empty list.
     """
-    # Try config path (now in main config directory)
+    # Try config path (now in personas subdirectory)
     candidates = [
-        Path("config/personalities.json"),
+        Path("config/personas/personalities.json"),
+        Path("config/personalities.json"),  # Fallback for backward compatibility
         Path("/Users/mac/Documents/Development/beyondlines/config/personalities.json"),
     ]
     for p in candidates:

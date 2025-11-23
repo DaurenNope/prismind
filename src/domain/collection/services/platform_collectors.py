@@ -1197,6 +1197,12 @@ async def collect_threads_bookmarks(
 
         if not saved_posts:
             log("No Threads saved posts found", "info")
+            # Diagnostic: check if it's an authentication issue
+            if not threads_username:
+                log("⚠️ THREADS_USERNAME not set - authentication may have failed", "warning")
+            # Suggest enabling DOM fallback if API method failed
+            if os.getenv("THREADS_DOM_FALLBACK", "false").lower() not in ("1", "true", "yes"):
+                log("💡 Tip: If you have saved posts but none were found, try setting THREADS_DOM_FALLBACK=true", "info")
             return 0
 
         log(f"Found {len(saved_posts)} Threads saved posts")

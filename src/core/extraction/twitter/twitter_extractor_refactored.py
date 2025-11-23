@@ -21,7 +21,7 @@ def load_collection_config():
     import json
     from pathlib import Path
 
-    config_path = Path("config/collection.json")
+    config_path = Path("config/collection/collection.json")
     if config_path.exists():
         with open(config_path, "r") as f:
             return json.load(f)

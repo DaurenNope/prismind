@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 def load_collection_config():
     """Load collection configuration from config file"""
-    config_path = Path("config/collection.json")
+    config_path = Path("config/collection/collection.json")
     if config_path.exists():
         with open(config_path, "r") as f:
             return json.load(f)
