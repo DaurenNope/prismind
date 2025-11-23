@@ -7,7 +7,7 @@ from typing import Iterable, Optional
 
 from src.pipeline.auto_pipeline import AutoPipeline
 from src.pipeline.orchestrator import get_orchestrator
-from src.scrape_state_manager import ScrapeStateManager
+from src.infrastructure.database.scrape_state_manager import ScrapeStateManager
 
 
 async def _collect(platform: str) -> int:
