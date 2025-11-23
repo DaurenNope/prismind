@@ -29,7 +29,7 @@ from src.core.extraction.threads_extractor import ThreadsExtractor
 from src.core.extraction.twitter_extractor_playwright import (
     TwitterExtractorPlaywright,
 )
-from src.scrape_state_manager import ScrapeStateManager
+from src.infrastructure.database.scrape_state_manager import ScrapeStateManager
 
 # Analysis import
 from src.services.analysis.post_analyzer import analyze_and_store_post, log

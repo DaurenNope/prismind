@@ -187,14 +187,18 @@ def require_api_key(
     # Check if running in production
     is_prod = _is_production()
     
-    # In development mode, if no API key is configured, allow anonymous access
-    if credentials is None and not is_prod and not expected_key:
-        logger.debug(
-            "⚠️ Development mode: No API key configured, allowing anonymous access"
-        )
-        return "anonymous"
+    # If no API key is configured in environment, allow anonymous access (dev mode)
+    # This allows development to work without API keys even if Supabase is configured
+    if not expected_key:
+        if credentials is None:
+            logger.debug(
+                "⚠️ Development mode: No API key configured, allowing anonymous access"
+            )
+            return "anonymous"
+        # If credentials provided but no expected key, verify it anyway (will fail, but allow graceful handling)
+        # Or if we want to allow any key in dev mode, we could return "anonymous" here too
     
-    # Otherwise, require authentication
+    # If API key is configured, require authentication
     if credentials is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

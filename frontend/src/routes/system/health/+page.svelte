@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import {
     fetchSystemHealth,
+    subscribeToSystemHealth,
     type SystemHealth
   } from '$lib/services/systemHealth';
   import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
@@ -11,6 +12,8 @@
   let error: string | null = null;
   let autoRefresh = true;
   let refreshInterval: ReturnType<typeof setInterval> | null = null;
+  let connected = false;
+  let unsubscribe: (() => void) | null = null;
 
   const loadData = async () => {
     try {
@@ -55,18 +58,44 @@
   onMount(() => {
     loadData();
     
-    // Auto-refresh every 30 seconds
-    refreshInterval = setInterval(() => {
-      if (autoRefresh) {
-        loadData();
+    // Subscribe to real-time updates
+    unsubscribe = subscribeToSystemHealth(
+      (data) => {
+        health = data;
+        connected = true;
+        loading = false;
+      },
+      (err) => {
+        console.error('SSE error:', err);
+        connected = false;
+        // Fallback to polling if SSE fails
+        if (autoRefresh && !refreshInterval) {
+          refreshInterval = setInterval(() => {
+            if (autoRefresh) {
+              loadData();
+            }
+          }, 30000);
+        }
       }
-    }, 30000);
+    );
     
-    return () => {
-      if (refreshInterval) {
-        clearInterval(refreshInterval);
-      }
-    };
+    // Fallback polling if SSE not available
+    if (!refreshInterval) {
+      refreshInterval = setInterval(() => {
+        if (autoRefresh && !connected) {
+          loadData();
+        }
+      }, 30000);
+    }
+  });
+
+  onDestroy(() => {
+    if (unsubscribe) {
+      unsubscribe();
+    }
+    if (refreshInterval) {
+      clearInterval(refreshInterval);
+    }
   });
 </script>
 
@@ -81,6 +110,10 @@
       <p class="text-gray-600">Monitor overall system health and component status</p>
     </div>
     <div class="flex items-center gap-2">
+      <div class="flex items-center gap-2">
+        <div class={`w-2 h-2 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'}`}></div>
+        <span class="text-sm text-gray-600">{connected ? 'Live' : 'Polling'}</span>
+      </div>
       <label class="flex items-center gap-2 cursor-pointer">
         <input
           type="checkbox"
@@ -221,7 +254,7 @@
     <div class="mb-6">
       <h2 class="text-xl font-semibold mb-4">Performance Metrics</h2>
       <div class="bg-white rounded-lg shadow p-4">
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
           <div>
             <div class="text-sm text-gray-600 mb-1">API Response Time</div>
             <div class="text-2xl font-bold">{health.metrics.api_response_time_avg.toFixed(0)}ms</div>
@@ -233,6 +266,10 @@
           <div>
             <div class="text-sm text-gray-600 mb-1">Analysis Rate</div>
             <div class="text-2xl font-bold">{health.metrics.analysis_rate.toFixed(1)}/hr</div>
+          </div>
+          <div>
+            <div class="text-sm text-gray-600 mb-1">Posting Rate</div>
+            <div class="text-2xl font-bold">{(health.metrics.posting_rate || 0).toFixed(1)}/hr</div>
           </div>
           <div>
             <div class="text-sm text-gray-600 mb-1">Error Rate</div>

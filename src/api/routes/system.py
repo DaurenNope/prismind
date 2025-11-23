@@ -302,7 +302,7 @@ async def get_health_metrics(request: Request):
         from src.services.system_health import SystemHealthService
         
         health_service = SystemHealthService()
-        metrics = health_service._get_performance_metrics()
+        metrics = await health_service._get_performance_metrics()
         resources = health_service._get_resource_usage()
         
         return {
@@ -313,3 +313,39 @@ async def get_health_metrics(request: Request):
     except Exception as e:
         logger.error(f"Error getting health metrics: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/health/stream")
+async def stream_system_health(request: Request):
+    """Stream real-time system health updates via Server-Sent Events"""
+    import json
+    import asyncio
+    from fastapi.responses import StreamingResponse
+    from src.services.system_health import SystemHealthService
+    
+    async def event_generator():
+        health_service = SystemHealthService()
+        
+        while True:
+            try:
+                health = await health_service.get_comprehensive_health()
+                
+                yield f"event: health\n"
+                yield f"data: {json.dumps(health)}\n\n"
+                
+                await asyncio.sleep(10)  # Update every 10 seconds
+            except Exception as e:
+                logger.error(f"Error in health stream: {e}")
+                yield f"event: error\n"
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+                await asyncio.sleep(10)
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )

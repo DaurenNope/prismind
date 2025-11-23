@@ -27,7 +27,7 @@ from src.resilience.circuit_breaker import (
     CircuitBreakerConfig,
     circuit_breaker_registry,
 )
-from src.scrape_state_manager import ScrapeStateManager
+from src.infrastructure.database.scrape_state_manager import ScrapeStateManager
 from src.storage.db import get_storage
 from src.utils.config import get_config
 from src.utils.logging_config import get_logger

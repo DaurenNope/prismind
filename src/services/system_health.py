@@ -31,7 +31,7 @@ class SystemHealthService:
             components = await self._check_all_components()
             
             # Get performance metrics
-            metrics = self._get_performance_metrics()
+            metrics = await self._get_performance_metrics()
             
             # Get error rates
             errors = await self._get_error_rates()
@@ -155,11 +155,36 @@ class SystemHealthService:
         """Check collection services health"""
         try:
             # Check if collection has run recently (last 24 hours)
-            # This is a simple check - in production you'd check actual service status
-            return {
-                "status": "healthy",
-                "message": "Collection services available"
-            }
+            from src.services.new_database_manager import get_database_manager
+            
+            db = get_database_manager()
+            posts = db.get_posts(limit=1000)
+            
+            # Check for recent posts (last 24 hours)
+            one_day_ago = datetime.now(timezone.utc) - timedelta(days=1)
+            recent_posts = 0
+            
+            for post in posts:
+                if hasattr(post, "created_at"):
+                    try:
+                        post_time = datetime.fromisoformat(str(post.created_at).replace("Z", "+00:00"))
+                        if post_time > one_day_ago:
+                            recent_posts += 1
+                    except (ValueError, TypeError, AttributeError):
+                        pass
+            
+            if recent_posts > 0:
+                return {
+                    "status": "healthy",
+                    "message": f"Collection active ({recent_posts} posts in last 24h)",
+                    "recent_posts": recent_posts
+                }
+            else:
+                return {
+                    "status": "degraded",
+                    "message": "No recent collection activity (last 24h)",
+                    "recent_posts": 0
+                }
         except Exception as e:
             return {
                 "status": "degraded",
@@ -169,46 +194,95 @@ class SystemHealthService:
     async def _check_publishing_worker(self) -> Dict[str, Any]:
         """Check publishing worker health"""
         try:
-            # Check if publishing worker is active
-            # In production, you'd check if the worker process is running
-            return {
-                "status": "healthy",
-                "message": "Publishing worker available"
-            }
+            # Check scheduled posts and recent publishing activity
+            from src.infrastructure.database.manager import SupabaseManager
+            
+            supabase = SupabaseManager()
+            
+            # Check for scheduled posts
+            scheduled_result = (
+                supabase.client.table("scheduled_posts")
+                .select("id", count="exact")
+                .in_("status", ["pending", "scheduled"])
+                .execute()
+            )
+            scheduled_count = getattr(scheduled_result, "count", 0) or 0
+            
+            # Check for recent posts (last 24 hours)
+            one_day_ago = datetime.now(timezone.utc) - timedelta(days=1)
+            posted_result = (
+                supabase.client.table("posted_content")
+                .select("id", count="exact")
+                .gte("posted_at", one_day_ago.isoformat())
+                .execute()
+            )
+            recent_posts = getattr(posted_result, "count", 0) or 0
+            
+            if scheduled_count > 0 or recent_posts > 0:
+                return {
+                    "status": "healthy",
+                    "message": f"Worker active ({scheduled_count} scheduled, {recent_posts} posted in 24h)",
+                    "scheduled_count": scheduled_count,
+                    "recent_posts": recent_posts
+                }
+            else:
+                return {
+                    "status": "healthy",
+                    "message": "Publishing worker available (no active posts)",
+                    "scheduled_count": 0,
+                    "recent_posts": 0
+                }
         except Exception as e:
+            logger.debug(f"Error checking publishing worker: {e}")
             return {
                 "status": "degraded",
                 "message": f"Publishing check failed: {str(e)[:100]}"
             }
     
-    def _get_performance_metrics(self) -> Dict[str, Any]:
+    async def _get_performance_metrics(self) -> Dict[str, Any]:
         """Get performance metrics"""
         health_data = self.health_monitor.get_system_health()
         perf = health_data.get("performance", {})
+        
+        # Get pipeline status for rates
+        pipeline_status = await self.pipeline_status.get_status()
+        pipeline_rates = pipeline_status.get("rates", {})
         
         # Get observability metrics
         try:
             hub = get_observability_hub()
             error_summary = hub.get_error_summary()
             
+            # Calculate error rate properly
+            total_errors = error_summary.get("total_errors", 0)
+            unique_errors = error_summary.get("unique_errors", 1)
+            error_rate = total_errors / max(1, unique_errors) if unique_errors > 0 else 0
+            
             return {
                 "api_response_time_avg": health_data.get("recent_activity", {}).get("avg_response_time", 0),
-                "collection_rate": 0,  # Would come from pipeline status
-                "analysis_rate": 0,  # Would come from pipeline status
-                "error_rate": error_summary.get("total_errors", 0) / max(1, len(error_summary.get("top_errors", []))),
+                "collection_rate": pipeline_rates.get("collection", 0),
+                "analysis_rate": pipeline_rates.get("analysis", 0),
+                "posting_rate": pipeline_rates.get("posting", 0),
+                "error_rate": error_rate,
                 "throughput": {
-                    "posts_per_hour": 0,  # Would be calculated from recent activity
-                    "analyses_per_hour": 0
+                    "posts_per_hour": pipeline_rates.get("collection", 0),
+                    "analyses_per_hour": pipeline_rates.get("analysis", 0),
+                    "posts_published_per_hour": pipeline_rates.get("posting", 0)
                 }
             }
         except Exception as e:
             logger.debug(f"Error getting observability metrics: {e}")
             return {
-                "api_response_time_avg": perf.get("cpu", {}).get("percent", 0),
-                "collection_rate": 0,
-                "analysis_rate": 0,
+                "api_response_time_avg": health_data.get("recent_activity", {}).get("avg_response_time", 0),
+                "collection_rate": pipeline_rates.get("collection", 0),
+                "analysis_rate": pipeline_rates.get("analysis", 0),
+                "posting_rate": pipeline_rates.get("posting", 0),
                 "error_rate": 0,
-                "throughput": {}
+                "throughput": {
+                    "posts_per_hour": pipeline_rates.get("collection", 0),
+                    "analyses_per_hour": pipeline_rates.get("analysis", 0),
+                    "posts_published_per_hour": pipeline_rates.get("posting", 0)
+                }
             }
     
     async def _get_error_rates(self) -> Dict[str, Any]:
@@ -307,10 +381,14 @@ class SystemHealthService:
         
         # Check resource usage
         resources = self._get_resource_usage()
-        if resources.get("memory", {}).get("percent", 0) > 90:
+        memory_percent = resources.get("memory", {}).get("percent", 0)
+        disk_percent = resources.get("disk", {}).get("percent", 0)
+        cpu_percent = resources.get("cpu", {}).get("percent", 0)
+        
+        if memory_percent > 90 or disk_percent > 95 or cpu_percent > 95:
             return "critical"
-        if resources.get("disk", {}).get("percent", 0) > 95:
-            return "critical"
+        if memory_percent > 80 or disk_percent > 90 or cpu_percent > 85:
+            return "degraded"
         
         return "healthy"
     
@@ -347,14 +425,23 @@ class SystemHealthService:
         
         # Deduct for resource issues
         resources = self._get_resource_usage()
-        if resources.get("memory", {}).get("percent", 0) > 90:
+        memory_percent = resources.get("memory", {}).get("percent", 0)
+        disk_percent = resources.get("disk", {}).get("percent", 0)
+        cpu_percent = resources.get("cpu", {}).get("percent", 0)
+        
+        if memory_percent > 90:
             score -= 15
-        elif resources.get("memory", {}).get("percent", 0) > 80:
+        elif memory_percent > 80:
             score -= 5
         
-        if resources.get("disk", {}).get("percent", 0) > 95:
+        if disk_percent > 95:
             score -= 15
-        elif resources.get("disk", {}).get("percent", 0) > 90:
+        elif disk_percent > 90:
+            score -= 5
+        
+        if cpu_percent > 90:
+            score -= 10
+        elif cpu_percent > 80:
             score -= 5
         
         return max(0, min(100, score))

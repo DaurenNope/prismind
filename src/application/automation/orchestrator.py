@@ -19,7 +19,7 @@ import warnings
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from src.scrape_state_manager import ScrapeStateManager
+from src.infrastructure.database.scrape_state_manager import ScrapeStateManager
 from src.services.analysis_lock import acquire_analysis_lock, release_analysis_lock
 from src.storage.db import get_storage
 from src.utils.config import get_config

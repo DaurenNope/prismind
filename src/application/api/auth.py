@@ -164,16 +164,38 @@ def require_api_key(
 ) -> str:
     """
     Require API key (strict authentication - no anonymous access).
+    In development mode, allows anonymous access if no API_KEY is configured.
     
     Args:
         credentials: HTTP Authorization credentials (Bearer token)
         
     Returns:
-        Authentication status string ("authenticated")
+        Authentication status string ("authenticated" or "anonymous" in dev)
         
     Raises:
         HTTPException: If API key is missing or invalid (401 Unauthorized)
     """
+    secrets = get_secrets_manager()
+    
+    # Get expected API key from secrets manager
+    expected_key = (
+        secrets.get("API_KEY")
+        or secrets.get("BEYONDLINES_API_KEY")
+        or secrets.get("BEYONDLINES_API_SECRET")
+    )
+    
+    # If no API key is configured in environment, allow anonymous access (dev mode)
+    # This allows development to work without API keys even if Supabase is configured
+    if not expected_key:
+        if credentials is None:
+            logger.debug(
+                "⚠️ Development mode: No API key configured, allowing anonymous access"
+            )
+            return "anonymous"
+        # If credentials provided but no expected key, verify it anyway (will fail, but allow graceful handling)
+        # Or if we want to allow any key in dev mode, we could return "anonymous" here too
+    
+    # If API key is configured, require authentication
     if credentials is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
