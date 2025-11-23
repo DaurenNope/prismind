@@ -11,13 +11,13 @@ from typing import Any, Dict
 
 from fastapi import APIRouter, HTTPException, Request
 
-from src.utils.circuit_breaker_wrapper import CircuitBreakerWrapper
-from src.utils.config import get_config
-from src.utils.config_validator import (
+from src.shared.utils.circuit_breaker_wrapper import CircuitBreakerWrapper
+from src.shared.utils.config import get_config
+from src.shared.utils.config_validator import (
     create_beyondlines_config_validator,
     validate_config,
 )
-from src.utils.logging_config import get_logger
+from src.shared.utils.logging_config import get_logger
 
 router = APIRouter(prefix="/api/system", tags=["system"])
 logger = get_logger(__name__)
@@ -112,7 +112,7 @@ async def get_credentials_status(request: Request):
             "password": "Set" if os.getenv("TWITTER_PASSWORD") else "Not set",
             "cookie_file": os.getenv("TWITTER_COOKIE_FILE")
             or os.getenv("TWITTER_COOKIES_FILE")
-            or "config/twitter_cookies_*.json",
+            or "config/cookies/twitter_cookies_*.json",
             "cookie_file_exists": check_file_exists(
                 os.getenv("TWITTER_COOKIE_FILE", "")
             )
@@ -192,7 +192,7 @@ async def get_configuration_status(request: Request):
 async def get_system_status(request: Request):
     """Get overall system status including circuit breakers, configuration, and observability"""
     try:
-        from src.utils.observability_hub import get_observability_hub
+        from src.shared.utils.observability_hub import get_observability_hub
 
         # Get circuit breakers
         breakers = CircuitBreakerWrapper.get_all_status()
@@ -259,4 +259,57 @@ async def get_system_status(request: Request):
         }
     except Exception as e:
         logger.error(f"Error getting system status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/health")
+async def get_system_health(request: Request):
+    """Get comprehensive system health including all components, metrics, and resources"""
+    try:
+        from src.services.system_health import SystemHealthService
+        
+        health_service = SystemHealthService()
+        health = await health_service.get_comprehensive_health()
+        
+        return health
+    except Exception as e:
+        logger.error(f"Error getting system health: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/health/components")
+async def get_component_health(request: Request):
+    """Get health status for each component"""
+    try:
+        from src.services.system_health import SystemHealthService
+        
+        health_service = SystemHealthService()
+        components = await health_service._check_all_components()
+        
+        return {
+            "components": components,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error getting component health: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/health/metrics")
+async def get_health_metrics(request: Request):
+    """Get performance metrics"""
+    try:
+        from src.services.system_health import SystemHealthService
+        
+        health_service = SystemHealthService()
+        metrics = health_service._get_performance_metrics()
+        resources = health_service._get_resource_usage()
+        
+        return {
+            "metrics": metrics,
+            "resources": resources,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error getting health metrics: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

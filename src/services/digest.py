@@ -147,7 +147,9 @@ class DigestGenerator:
             "platform_stats": dict(platform_stats),
             "top_topics": top_topics[:3],
             "highlights": highlights,
-            "tomorrow_preview": "AI & Developer Tools",  # TODO: Smart prediction
+            # Note: Tomorrow preview could be enhanced with ML-based topic prediction
+            # based on historical patterns and trending topics.
+            "tomorrow_preview": "AI & Developer Tools",  # Static preview; could be ML-predicted
         }
 
         logger.info(

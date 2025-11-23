@@ -16,6 +16,7 @@ Author: BEYONDLINES AI System
 """
 
 import asyncio
+import hashlib
 import json
 import os
 from datetime import datetime, timedelta, timezone
@@ -27,9 +28,9 @@ import requests
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 # Core imports
-from src.core.extraction.social_extractor_base import SocialPost
-from src.publishing.persona_matcher import get_persona_matcher
-from src.utils.diary_storage import DiaryStorage
+from src.domain.collection.extractors.social_extractor_base import SocialPost
+from src.domain.publishing.persona_matcher import get_persona_matcher
+from src.shared.utils.diary_storage import DiaryStorage
 
 from .scoring import (
     compute_persona_fit,
@@ -42,13 +43,68 @@ from .scoring import (
 )
 
 
+class AnalysisCache:
+    """Cache for analysis results with TTL"""
+
+    def __init__(self, ttl_hours: int = 1):
+        self.cache = {}
+        self.ttl = timedelta(hours=ttl_hours)
+
+    def get(self, content_hash: str) -> Optional[Dict[str, Any]]:
+        """Get cached analysis result if still valid"""
+        if content_hash in self.cache:
+            cached_time, result = self.cache[content_hash]
+            if datetime.now() - cached_time < self.ttl:
+                return result
+            del self.cache[content_hash]
+        return None
+
+    def set(self, content_hash: str, result: Dict[str, Any]) -> None:
+        """Store analysis result with current timestamp"""
+        self.cache[content_hash] = (datetime.now(), result)
+
+    def clear(self) -> None:
+        """Clear all cached results"""
+        self.cache.clear()
+
+
+# Global analysis cache instance
+_analysis_cache = AnalysisCache(ttl_hours=1)
+
+
 class IntelligentContentAnalyzer:
-    """The brain of BEYONDLINES - provides deep analysis of social media content"""
+    """
+    The brain of BEYONDLINES - provides deep analysis of social media content
+    
+    DEPRECATED: This class is deprecated in favor of AnalysisAgent.
+    It now redirects to AnalysisAgent internally for backward compatibility.
+    
+    Migration: Use AnalysisAgent instead:
+        from src.domain.intelligence.agents.analysis_agent import AnalysisAgent
+        agent = AnalysisAgent()
+        await agent.initialize()
+        result = agent.analyze_bookmark(post)
+    
+    See docs/agents/MIGRATION_ANALYZER.md for migration guide.
+    """
 
     def __init__(self):
-        """Initialize the intelligent analyzer with multiple AI backends"""
+        """
+        Initialize the intelligent analyzer with multiple AI backends
+        
+        NOTE: This now uses AnalysisAgent internally. The class is maintained
+        for backward compatibility only.
+        """
+        import warnings
+        
+        warnings.warn(
+            "IntelligentContentAnalyzer is deprecated. Use AnalysisAgent instead. "
+            "See docs/agents/MIGRATION_ANALYZER.md for migration guide.",
+            DeprecationWarning,
+            stacklevel=2
+        )
 
-        # Initialize sentiment analyzer
+        # Initialize sentiment analyzer (still needed for some methods)
         self.sentiment_analyzer = SentimentIntensityAnalyzer()
         # Initialize diary storage for contextual personalization
         try:
@@ -70,8 +126,14 @@ class IntelligentContentAnalyzer:
             self._min_interval_s = 2.0
         self._last_call_ts = 0.0
 
+        # Create internal AnalysisAgent instance for delegation
+        # Note: We don't initialize it here to maintain sync compatibility
+        self._agent = None
+        self._agent_initialized = False
+
         logger.info(
-            f"🧠 Intelligent Content Analyzer initialized with {len(self.ai_services)} AI services"
+            f"🧠 Intelligent Content Analyzer initialized with {len(self.ai_services)} AI services "
+            f"(DEPRECATED: Use AnalysisAgent instead)"
         )
 
     def _rate_limit_sleep(self):
@@ -293,13 +355,16 @@ class IntelligentContentAnalyzer:
             state.update({"min": window_min, "min_calls": 0, "min_tokens": 0})
         if state["day"] != window_day:
             state.update({"day": window_day, "day_calls": 0})
-        # busy-wait small sleeps if would exceed
+        # P2-1: Use asyncio.sleep() instead of time.sleep() for async-friendly rate limiting
+        # For sync context, use time.sleep() but with longer intervals to reduce CPU waste
+        import asyncio
+        sleep_interval = 0.5  # Increased from 0.25 to reduce CPU waste
         while (
             state["min_calls"] + 1 > limits["rpm"]
             or state["min_tokens"] + requested_tokens > limits["tpm"]
             or state["day_calls"] + 1 > limits["rpd"]
         ):
-            time.sleep(0.25)
+            time.sleep(sleep_interval)
             now = int(time.time())
             window_min = now // 60
             window_day = now // 86400
@@ -366,9 +431,14 @@ class IntelligentContentAnalyzer:
         include_comments: bool = True,
         include_media: bool = True,
     ) -> Dict[str, Any]:
-        """Analyze a bookmark with AI services, with timeout and error handling"""
+        """
+        Analyze a bookmark with AI services, with timeout and error handling
+        
+        DEPRECATED: This method is deprecated. Use AnalysisAgent.analyze_bookmark() instead.
+        This method is maintained for backward compatibility only.
+        """
 
-        logger.info(f"🔍 Analyzing {post.platform} post: {post.post_id}")
+        logger.info(f"🔍 Analyzing {post.platform} post: {post.post_id} (DEPRECATED: Use AnalysisAgent)")
 
         # Respect UI cancel flag
         try:
@@ -385,6 +455,22 @@ class IntelligentContentAnalyzer:
             return self._deterministic_analysis(
                 post, include_comments=include_comments, include_media=include_media
             )
+
+        # Check cache before analysis
+        # Include language in cache key to prevent cross-language cache hits
+        language = getattr(post, 'language', None) or "unknown"  # Get language from post (may not exist)
+        content_str = f"{post.content or ''}{post.url or ''}{language}"
+        content_hash = hashlib.md5(content_str.encode()).hexdigest()
+        cached_result = _analysis_cache.get(content_hash)
+        
+        if cached_result:
+            logger.debug(f"📦 Cache hit for post {post.post_id} (hash: {content_hash[:8]}...)")
+            # Update timestamp and post_id in cached result
+            cached_result = cached_result.copy()
+            cached_result["post_id"] = post.post_id
+            cached_result["platform"] = post.platform
+            cached_result["analyzed_at"] = datetime.now().isoformat()
+            return cached_result
 
         analysis = {
             "post_id": post.post_id,
@@ -614,6 +700,14 @@ class IntelligentContentAnalyzer:
         logger.info(
             f"✅ Analysis complete - Value Score: {analysis.get('intelligent_value_score', 0.0)}/10"
         )
+
+        # Store analysis result in cache (before returning)
+        if analysis and isinstance(analysis, dict):
+            # Only cache successful AI analyses (not fallback ones)
+            if analysis.get("ai_analysis_succeeded") or analysis.get("ai_summary"):
+                _analysis_cache.set(content_hash, analysis)
+                logger.debug(f"📦 Cached analysis for post {post.post_id} (hash: {content_hash[:8]}...)")
+
         return analysis
 
     def _deterministic_analysis(
@@ -958,6 +1052,7 @@ class IntelligentContentAnalyzer:
           "ai_summary": string (200-400 chars, concrete and specific),
           "tags": [string <= 8],
           "key_concepts": [string <= 8],
+          "action_items": [string <= 5] (actionable takeaways or next steps from this content),
           "topic": string (short, e.g., "AI Agents"),
           "content_type": string ("news"|"how_to"|"opinion"|"thread"|"case_study"),
           "language": string (e.g., "en"),
@@ -1018,7 +1113,7 @@ class IntelligentContentAnalyzer:
         self, prompt: str, sentiment_scores: Dict, service: Dict
     ) -> Dict[str, Any]:
         """Analyze content using Mistral AI"""
-        from src.utils.circuit_breaker_wrapper import get_circuit_breaker
+        from src.shared.utils.circuit_breaker_wrapper import get_circuit_breaker
 
         mistral_breaker = get_circuit_breaker(
             "mistral_ai", failure_threshold=3, recovery_timeout=30.0
@@ -1067,6 +1162,19 @@ class IntelligentContentAnalyzer:
                             f"Analysis result is not a dictionary: {type(analysis)}"
                         )
 
+                    # Debug logging: log the raw AI response for troubleshooting
+                    logger.debug(f"🔍 Mistral AI response parsed successfully. Keys: {list(analysis.keys())}")
+                    logger.debug(f"🔍 ai_summary present: {'ai_summary' in analysis}, length: {len(analysis.get('ai_summary', ''))}")
+                    logger.debug(f"🔍 key_concepts present: {'key_concepts' in analysis}, count: {len(analysis.get('key_concepts', []))}")
+                    logger.debug(f"🔍 tags present: {'tags' in analysis}, count: {len(analysis.get('tags', []))}")
+                    logger.debug(f"🔍 action_items present: {'action_items' in analysis}, count: {len(analysis.get('action_items', []))}")
+                    
+                    # Ensure required fields exist with defaults
+                    analysis.setdefault("ai_summary", "")
+                    analysis.setdefault("key_concepts", [])
+                    analysis.setdefault("tags", [])
+                    analysis.setdefault("action_items", [])
+
                     analysis["sentiment_scores"] = sentiment_scores
                     analysis["ai_service"] = "mistral"
 
@@ -1082,7 +1190,7 @@ class IntelligentContentAnalyzer:
         self, prompt: str, sentiment_scores: Dict, service: Dict
     ) -> Dict[str, Any]:
         """Analyze content using Ollama"""
-        from src.utils.circuit_breaker_wrapper import get_circuit_breaker
+        from src.shared.utils.circuit_breaker_wrapper import get_circuit_breaker
 
         ollama_breaker = get_circuit_breaker(
             "ollama", failure_threshold=3, recovery_timeout=30.0
@@ -1118,6 +1226,20 @@ class IntelligentContentAnalyzer:
                 # Parse the JSON response
                 try:
                     parsed = json.loads(content)
+                    
+                    # Debug logging: log the raw AI response for troubleshooting
+                    logger.debug(f"🔍 Ollama AI response parsed successfully. Keys: {list(parsed.keys())}")
+                    logger.debug(f"🔍 ai_summary present: {'ai_summary' in parsed}, length: {len(parsed.get('ai_summary', ''))}")
+                    logger.debug(f"🔍 key_concepts present: {'key_concepts' in parsed}, count: {len(parsed.get('key_concepts', []))}")
+                    logger.debug(f"🔍 tags present: {'tags' in parsed}, count: {len(parsed.get('tags', []))}")
+                    logger.debug(f"🔍 action_items present: {'action_items' in parsed}, count: {len(parsed.get('action_items', []))}")
+                    
+                    # Ensure required fields exist with defaults
+                    parsed.setdefault("ai_summary", "")
+                    parsed.setdefault("key_concepts", [])
+                    parsed.setdefault("tags", [])
+                    parsed.setdefault("action_items", [])
+                    
                     parsed["sentiment_scores"] = sentiment_scores
                     parsed["ai_service"] = "ollama"
                     return parsed
@@ -1144,7 +1266,7 @@ class IntelligentContentAnalyzer:
         self, prompt: str, sentiment_scores: Dict, service: Dict
     ) -> Dict[str, Any]:
         """Analyze content using Google Gemini"""
-        from src.utils.circuit_breaker_wrapper import get_circuit_breaker
+        from src.shared.utils.circuit_breaker_wrapper import get_circuit_breaker
 
         gemini_breaker = get_circuit_breaker(
             "gemini_ai", failure_threshold=3, recovery_timeout=30.0
@@ -1199,18 +1321,36 @@ class IntelligentContentAnalyzer:
                     raise ValueError(
                         f"Analysis result is not a dictionary: {type(analysis)}"
                     )
-            except (json.JSONDecodeError, ValueError):
+                
+                # Debug logging: log the raw AI response for troubleshooting
+                logger.debug(f"🔍 Gemini AI response parsed successfully. Keys: {list(analysis.keys())}")
+                logger.debug(f"🔍 ai_summary present: {'ai_summary' in analysis}, length: {len(analysis.get('ai_summary', ''))}")
+                logger.debug(f"🔍 key_concepts present: {'key_concepts' in analysis}, count: {len(analysis.get('key_concepts', []))}")
+                logger.debug(f"🔍 tags present: {'tags' in analysis}, count: {len(analysis.get('tags', []))}")
+                logger.debug(f"🔍 action_items present: {'action_items' in analysis}, count: {len(analysis.get('action_items', []))}")
+                
+            except (json.JSONDecodeError, ValueError) as e:
+                # Log the raw content for debugging
+                logger.error(f"❌ Failed to parse Gemini JSON response. Error: {e}")
+                logger.error(f"❌ Raw content (first 500 chars): {content[:500]}")
                 # Soft fallback: return minimal structured result
                 analysis = {
-                    "summary": "",
+                    "ai_summary": "",
                     "value_score": 0.0,
-                    "content_quality_score": 0.0,
+                    "quality_score": 0.0,
                     "sentiment": "",
                     "key_concepts": [],
                     "tags": [],
+                    "action_items": [],
                     "category": "unknown",
                 }
 
+            # Ensure required fields exist with defaults
+            analysis.setdefault("ai_summary", "")
+            analysis.setdefault("key_concepts", [])
+            analysis.setdefault("tags", [])
+            analysis.setdefault("action_items", [])
+            
             analysis["sentiment_scores"] = sentiment_scores
             analysis["ai_service"] = "gemini"
             return analysis
@@ -1240,18 +1380,60 @@ class IntelligentContentAnalyzer:
         analysis["ai_summary"] = (
             summary[:600] if summary else (post.content or "")[:400]
         )
+        
+        # Debug logging for ai_summary
+        logger.debug(f"🔍 After extraction - ai_summary length: {len(analysis['ai_summary'])}")
 
-        tags = _listize(analysis.get("tags") or post.hashtags or [])
+        # Extract tags (suggested_tags is stored as tags)
+        tags = _listize(analysis.get("tags") or analysis.get("suggested_tags") or post.hashtags or [])
         if not tags:
             safe_title = getattr(post, "title", "") or ""
             content = f"{safe_title} {post.content or ''}"
             tags = self._extract_keywords(content)[:8]
         analysis["tags"] = tags
+        # Also store as suggested_tags for compatibility
+        analysis["suggested_tags"] = tags
+        
+        # Debug logging for tags
+        logger.debug(f"🔍 After extraction - tags: {len(tags)} items")
 
+        # Extract key_concepts
         kcs = _listize(analysis.get("key_concepts"))
         if not kcs:
             kcs = self._extract_keywords(post.content or "")[:8]
         analysis["key_concepts"] = kcs
+        
+        # Debug logging for field extraction
+        logger.debug(f"🔍 After extraction - key_concepts: {len(kcs)} items")
+
+        # Extract action_items (handle both field names: action_items and actionable_items)
+        action_items = _listize(
+            analysis.get("action_items") 
+            or analysis.get("actionable_items") 
+            or []
+        )
+        # If still empty, try to generate from content
+        if not action_items and analysis.get("ai_summary"):
+            # Extract potential action items from summary
+            summary_text = analysis.get("ai_summary", "")
+            # Look for imperative verbs or action-oriented phrases
+            import re
+            action_patterns = [
+                r"([A-Z][^.!?]*?(?:should|must|can|try|use|implement|learn|explore|consider)[^.!?]*?[.!?])",
+                r"([A-Z][^.!?]*?(?:action|next step|takeaway|insight)[^.!?]*?[.!?])",
+            ]
+            for pattern in action_patterns:
+                matches = re.findall(pattern, summary_text, re.IGNORECASE)
+                if matches:
+                    action_items = [m.strip()[:100] for m in matches[:3]]
+                    break
+        
+        analysis["action_items"] = action_items
+        # Also store as actionable_items for compatibility
+        analysis["actionable_items"] = action_items
+        
+        # Debug logging for action_items
+        logger.debug(f"🔍 After extraction - action_items: {len(action_items)} items")
 
         try:
             vs = float(analysis.get("value_score") or 0)
@@ -1287,6 +1469,20 @@ class IntelligentContentAnalyzer:
         analysis["analysis_model"] = analysis.get("ai_service") or "gemini"
         # datetime is imported at top of file
         analysis["analyzed_at"] = datetime.utcnow().isoformat()
+        
+        # Final validation logging - ensure all required fields are present
+        logger.info(f"✅ Analysis complete for post {post.post_id[:20]}...")
+        logger.info(f"   ai_summary: {'✅' if analysis.get('ai_summary') else '❌'} ({len(analysis.get('ai_summary', ''))} chars)")
+        logger.info(f"   key_concepts: {'✅' if analysis.get('key_concepts') else '❌'} ({len(analysis.get('key_concepts', []))} items)")
+        logger.info(f"   tags: {'✅' if analysis.get('tags') else '❌'} ({len(analysis.get('tags', []))} items)")
+        logger.info(f"   action_items: {'✅' if analysis.get('action_items') else '❌'} ({len(analysis.get('action_items', []))} items)")
+        
+        # Final validation logging - ensure all required fields are present
+        logger.info(f"✅ Analysis complete for post {post.post_id[:20]}...")
+        logger.info(f"   ai_summary: {'✅' if analysis.get('ai_summary') else '❌'} ({len(analysis.get('ai_summary', ''))} chars)")
+        logger.info(f"   key_concepts: {'✅' if analysis.get('key_concepts') else '❌'} ({len(analysis.get('key_concepts', []))} items)")
+        logger.info(f"   tags: {'✅' if analysis.get('tags') else '❌'} ({len(analysis.get('tags', []))} items)")
+        logger.info(f"   action_items: {'✅' if analysis.get('action_items') else '❌'} ({len(analysis.get('action_items', []))} items)")
 
         # Map categories to personas (category is for discovery, best_persona_key is for rewriter)
         # Normalize category to our expected format

@@ -63,15 +63,20 @@ class SearchMethods:
                 where_clause += " AND created_at <= ?"
                 params.append(filters.end_date)
 
-            # Add limit
-            limit_clause = f" LIMIT {filters.limit}"
+            # Validate and sanitize limit to prevent SQL injection
+            limit = filters.limit
+            if not isinstance(limit, int) or limit < 1:
+                limit = 50  # Default limit
+            if limit > 1000:
+                limit = 1000  # Maximum limit to prevent DoS
+            params.append(limit)
 
-            # Execute query
+            # Execute query with parameterized LIMIT
             query_sql = f"""
                 SELECT * FROM posts
                 WHERE {where_clause}
                 ORDER BY created_at DESC
-                {limit_clause}
+                LIMIT ?
             """
 
             results = await self.database_manager.execute_query(query_sql, params)
@@ -190,15 +195,20 @@ class SearchMethods:
                 where_clause += " AND created_at <= ?"
                 params.append(filters.end_date)
 
-            # Add limit
-            limit_clause = f" LIMIT {filters.limit}"
+            # Validate and sanitize limit to prevent SQL injection
+            limit = filters.limit
+            if not isinstance(limit, int) or limit < 1:
+                limit = 50  # Default limit
+            if limit > 1000:
+                limit = 1000  # Maximum limit to prevent DoS
+            params.append(limit)
 
-            # Execute query
+            # Execute query with parameterized LIMIT
             query_sql = f"""
                 SELECT * FROM posts
                 WHERE {where_clause}
                 ORDER BY created_at DESC
-                {limit_clause}
+                LIMIT ?
             """
 
             results = await self.database_manager.execute_query(query_sql, params)
@@ -233,15 +243,20 @@ class SearchMethods:
                 where_clause += " AND created_at <= ?"
                 params.append(filters.end_date)
 
-            # Add limit
-            limit_clause = f" LIMIT {filters.limit}"
+            # Validate and sanitize limit to prevent SQL injection
+            limit = filters.limit
+            if not isinstance(limit, int) or limit < 1:
+                limit = 50  # Default limit
+            if limit > 1000:
+                limit = 1000  # Maximum limit to prevent DoS
+            params.append(limit)
 
-            # Execute query
+            # Execute query with parameterized LIMIT
             query_sql = f"""
                 SELECT * FROM posts
                 WHERE {where_clause}
                 ORDER BY created_at DESC
-                {limit_clause}
+                LIMIT ?
             """
 
             results = await self.database_manager.execute_query(query_sql, params)
@@ -270,15 +285,20 @@ class SearchMethods:
                 where_clause += " AND created_at <= ?"
                 params.append(filters.end_date)
 
-            # Add limit
-            limit_clause = f" LIMIT {filters.limit}"
+            # Validate and sanitize limit to prevent SQL injection
+            limit = filters.limit
+            if not isinstance(limit, int) or limit < 1:
+                limit = 50  # Default limit
+            if limit > 1000:
+                limit = 1000  # Maximum limit to prevent DoS
+            params.append(limit)
 
-            # Execute query
+            # Execute query with parameterized LIMIT
             query_sql = f"""
                 SELECT * FROM posts
                 WHERE {where_clause}
                 ORDER BY created_at DESC
-                {limit_clause}
+                LIMIT ?
             """
 
             results = await self.database_manager.execute_query(query_sql, params)

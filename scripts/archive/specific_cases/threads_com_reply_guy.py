@@ -19,7 +19,7 @@ async def test_threads_com_reply_guy():
     print("Forum platform reply system - NOT Instagram Threads")
 
     try:
-        from src.core.analysis.ai_service_manager import ai_service_manager
+        from src.domain.analysis.analyzers.ai_service_manager import ai_service_manager
         from src.threadscom.client import ThreadsComClient
 
         print("\n🔍 Step 1: Searching for beyondlines mentions...")

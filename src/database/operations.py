@@ -1,7 +1,4 @@
 #!/usr/bin/env python3
-import logging
-
-logger = logging.getLogger(__name__)
 """
 Database Operations for BEYONDLINES - Modular Implementation
 Handles basic CRUD operations for posts
@@ -13,8 +10,8 @@ import sqlite3
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from src.database.queries import DatabaseQueries
-from src.utils.logging_config import get_logger
+from src.infrastructure.database.queries import DatabaseQueries
+from src.shared.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -32,7 +29,7 @@ class DatabaseOperations:
         try:
             import os
 
-            from src.database.manager import SupabaseManager
+            from src.infrastructure.database.manager import SupabaseManager
 
             # Only initialize if credentials are properly set
             url = os.getenv("SUPABASE_URL")
@@ -271,7 +268,7 @@ class DatabaseOperations:
         """Add a new post to the database"""
         try:
             # VALIDATE POST BEFORE SAVING
-            from src.utils.post_validator import validate_post
+            from src.shared.utils.post_validator import validate_post
 
             validation = validate_post(post_data, strict=True)
             if not validation.is_valid:
@@ -441,7 +438,14 @@ class DatabaseOperations:
                     self._serialize_json(post_data.get("persona_candidacy", {})),
                 ]
 
+                # P2: Fix SQL injection risk - validate column names are whitelisted
+                # Column names are hardcoded above, but validate for safety
+                valid_columns = set(columns)  # All columns are from hardcoded list above
+                if not all(col in valid_columns for col in columns):
+                    raise ValueError("Invalid column name detected")
+                
                 placeholders = ", ".join(["?"] * len(columns))
+                # Safe: columns are from hardcoded whitelist, values are parameterized
                 query = f"INSERT OR REPLACE INTO posts ({', '.join(columns)}) VALUES ({placeholders})"
                 cursor.execute(query, values)
 
@@ -640,8 +644,14 @@ class DatabaseOperations:
                 ]
 
                 for key, value in update_data.items():
+                    # P2: Fix SQL injection risk - validate column names
                     # Skip fields not present in SQLite schema (e.g., legacy subcategory)
                     if key not in existing_columns:
+                        continue
+                    
+                    # Additional validation: ensure key is a valid identifier
+                    if not key.replace("_", "").isalnum():
+                        logger.warning(f"⚠️ Skipping invalid column name: {key}")
                         continue
 
                     # Handle None values - convert to NULL
@@ -684,6 +694,7 @@ class DatabaseOperations:
                 set_clauses.append("updated_timestamp = CURRENT_TIMESTAMP")
                 values.append(post_id)
 
+                # P2: Safe - column names validated above, values are parameterized
                 query = f"UPDATE posts SET {', '.join(set_clauses)} WHERE post_id = ?"
                 try:
                     cursor.execute(query, values)

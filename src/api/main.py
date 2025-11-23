@@ -7,7 +7,6 @@ FastAPI Backend for BEYONDLINES
 Extracted from Streamlit UI to provide REST API
 """
 
-import os
 import sys
 from pathlib import Path
 
@@ -17,15 +16,15 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from datetime import datetime
+from typing import Optional
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.security import HTTPBearer
 
 # Rate limiting - make optional (non-fatal if missing)
 try:
@@ -61,7 +60,7 @@ except ImportError as e:
 
 from pydantic import BaseModel, field_validator
 
-from src.api.routes import (
+from src.application.api.routes import (
     analysis,
     collection,
     dashboard,
@@ -72,24 +71,21 @@ from src.api.routes import (
     settings,
     system,
 )
-from src.utils.config import get_config
-from src.utils.config_validator import (
+from src.application.api.routes import database_health
+from src.shared.utils.config import get_config
+from src.shared.utils.config_validator import (
     create_beyondlines_config_validator,
-    validate_config,
 )
-from src.utils.error_handler import handle_errors
 
 # Import custom error handling (now path is set up)
-from src.utils.exceptions import (
+from src.shared.utils.exceptions import (
     APIError,
     AuthenticationError,
     BEYONDLINESException,
-    ConfigurationError,
     DatabaseError,
-    RateLimitError,
-    ValidationError,
 )
-from src.utils.logging_config import get_logger
+from src.application.api.auth import optional_api_key, require_api_key
+from src.shared.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -116,17 +112,29 @@ try:
 except Exception as e:
     logger.warning(f"⚠️ Configuration validation error: {e} - continuing anyway")
 
-# Initialize rate limiter (optional)
+# Initialize rate limiter - enforce in production
 if SLOWAPI_AVAILABLE:
-    limiter = Limiter(key_func=get_remote_address)
+    limiter = Limiter(key_func=get_remote_address, default_limits=["100/minute"])
 else:
-    limiter = Limiter()  # Dummy limiter
-    # Don't log again here; the import block above already explained this once
+    # Check if production - rate limiting required in production
+    is_production = (
+        os.getenv("ENVIRONMENT", "").lower() == "production"
+        or os.getenv("REQUIRE_API_AUTH", "false").lower() == "true"
+    )
+    if is_production:
+        logger.error(
+            "❌ PRODUCTION MODE: Rate limiting required but slowapi not installed. "
+            "Install slowapi: pip install slowapi"
+        )
+        raise RuntimeError(
+            "slowapi required for production deployment. Install with: pip install slowapi"
+        )
+    limiter = Limiter()  # Dummy limiter for development
+    logger.warning("⚠️ Rate limiting disabled - slowapi not installed (development mode)")
 security = HTTPBearer()
 
 # Graceful shutdown helpers
 import asyncio
-import sys
 
 _shutting_down = False
 
@@ -217,6 +225,67 @@ if SLOWAPI_AVAILABLE:
 
 # Add compression middleware
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+
+# Security headers middleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request as StarletteRequest
+from starlette.responses import Response
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Add security headers to all responses"""
+
+    async def dispatch(self, request: StarletteRequest, call_next):
+        response = await call_next(request)
+        
+        # Security headers
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        
+        # HSTS (only for HTTPS)
+        if request.url.scheme == "https":
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        
+        # Content Security Policy
+        # Allow same-origin, localhost for development, and necessary APIs
+        csp_directives = [
+            "default-src 'self'",
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval'",  # Needed for some frontend frameworks
+            "style-src 'self' 'unsafe-inline'",
+            "img-src 'self' data: https:",
+            "font-src 'self' data:",
+            "connect-src 'self' https:",
+            "frame-ancestors 'none'",
+        ]
+        
+        # Add frontend URL to CSP if configured
+        frontend_url = os.getenv("FRONTEND_URL") or os.getenv("VITE_FRONTEND_URL")
+        if frontend_url:
+            # Extract origin from frontend URL
+            try:
+                from urllib.parse import urlparse
+                parsed = urlparse(frontend_url)
+                origin = f"{parsed.scheme}://{parsed.netloc}"
+                csp_directives[0] = f"default-src 'self' {origin}"
+            except Exception:
+                pass  # Keep default if parsing fails
+        
+        response.headers["Content-Security-Policy"] = "; ".join(csp_directives)
+        
+        # Permissions Policy (formerly Feature Policy)
+        response.headers["Permissions-Policy"] = (
+            "geolocation=(), microphone=(), camera=(), "
+            "payment=(), usb=(), magnetometer=(), gyroscope=()"
+        )
+        
+        return response
+
+
+# Add security headers middleware
+app.add_middleware(SecurityHeadersMiddleware)
 
 
 # Exception handlers
@@ -332,13 +401,24 @@ async def general_exception_handler(request: Request, exc: Exception):
 
 
 # CORS middleware - secure configuration
+import os
+
+# Get allowed origins from environment or use defaults
+allowed_origins = [
+    "http://localhost:4173",  # Svelte production build
+    "http://localhost:5173",  # Svelte dev server
+    "http://127.0.0.1:5173",  # Svelte dev server (alternative)
+    "http://localhost:3000",  # React/Next.js default
+]
+
+# Add custom frontend URL from environment
+frontend_url = os.getenv("FRONTEND_URL") or os.getenv("VITE_FRONTEND_URL")
+if frontend_url and frontend_url not in allowed_origins:
+    allowed_origins.append(frontend_url)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:4173",
-        "http://localhost:5173",
-        "http://localhost:3000",
-    ],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
@@ -398,8 +478,8 @@ async def health_check(request: Request):
 @limiter.limit("30/minute")
 async def detailed_health_check(request: Request):
     """Detailed health check endpoint with system status"""
-    from src.utils.circuit_breaker_wrapper import CircuitBreakerWrapper
-    from src.utils.observability_hub import get_observability_hub
+    from src.shared.utils.circuit_breaker_wrapper import CircuitBreakerWrapper
+    from src.shared.utils.observability_hub import get_observability_hub
 
     hub = get_observability_hub()
     observability_health = hub.get_health_report()
@@ -587,7 +667,9 @@ async def readiness_check(request: Request):
 # Dashboard stats
 @app.get("/api/dashboard/stats")
 @limiter.limit("30/minute")
-async def get_dashboard_stats(request: Request):
+async def get_dashboard_stats(
+    request: Request, user: str = Depends(optional_api_key)
+):
     """Get dashboard statistics"""
     try:
         from src.services.new_database_manager import NewDatabaseManager
@@ -621,6 +703,41 @@ async def get_dashboard_stats(request: Request):
 
 
 # Posts endpoints
+def _get_posts_from_sqlite(
+    limit: int, offset: int, platform: Optional[str] = None, analyzed: Optional[bool] = None
+):
+    """Helper function to get posts from SQLite with filtering"""
+    from src.services.new_database_manager import NewDatabaseManager
+
+    db = NewDatabaseManager()
+    posts = db.get_posts(limit=limit + offset)
+    if not posts:
+        return {"posts": [], "total": 0}
+    filtered = posts
+    if platform:
+        filtered = [p for p in filtered if p.get("platform") == platform]
+    if analyzed is not None:
+        if analyzed:
+            filtered = [
+                p
+                for p in filtered
+                if p.get("ai_summary") or p.get("analyzed_at")
+            ]
+        else:
+            filtered = [
+                p
+                for p in filtered
+                if not (p.get("ai_summary") or p.get("analyzed_at"))
+            ]
+    paginated = filtered[offset : offset + limit]
+    return {
+        "posts": paginated,
+        "total": len(filtered),
+        "limit": limit,
+        "offset": offset,
+    }
+
+
 @app.get("/api/posts")
 @limiter.limit("100/minute")
 async def get_posts(
@@ -629,6 +746,7 @@ async def get_posts(
     platform: Optional[str] = None,
     analyzed: Optional[bool] = None,
     offset: int = 0,
+    user: str = Depends(optional_api_key),
 ):
     """Get posts with filtering - queries Supabase directly"""
     try:
@@ -642,37 +760,25 @@ async def get_posts(
 
         if not url or not key:
             logger.warning("Supabase credentials missing, falling back to SQLite")
-            from src.services.new_database_manager import NewDatabaseManager
+            return _get_posts_from_sqlite(limit, offset, platform, analyzed)
 
-            db = NewDatabaseManager()
-            posts = db.get_posts(limit=limit + offset)
-            if not posts:
-                return {"posts": [], "total": 0}
-            filtered = posts
-            if platform:
-                filtered = [p for p in filtered if p.get("platform") == platform]
-            if analyzed is not None:
-                if analyzed:
-                    filtered = [
-                        p
-                        for p in filtered
-                        if p.get("ai_summary") or p.get("analyzed_at")
-                    ]
-                else:
-                    filtered = [
-                        p
-                        for p in filtered
-                        if not (p.get("ai_summary") or p.get("analyzed_at"))
-                    ]
-            paginated = filtered[offset : offset + limit]
-            return {
-                "posts": paginated,
-                "total": len(filtered),
-                "limit": limit,
-                "offset": offset,
-            }
-
-        client = create_client(url, key)
+        # Try to create Supabase client, fallback to SQLite on connection errors
+        try:
+            client = create_client(url, key)
+        except Exception as supabase_error:
+            error_str = str(supabase_error)
+            # Check for DNS/connection errors (Errno 8 is typically DNS resolution failure)
+            if "nodename" in error_str.lower() or "errno 8" in error_str.lower() or "failed to resolve" in error_str.lower():
+                logger.warning(
+                    f"Supabase connection failed (DNS/connection error): {error_str}. "
+                    "Falling back to SQLite"
+                )
+            else:
+                logger.warning(
+                    f"Supabase client creation failed: {error_str}. "
+                    "Falling back to SQLite"
+                )
+            return _get_posts_from_sqlite(limit, offset, platform, analyzed)
 
         # Build query
         query = client.table("posts").select("*", count="exact")
@@ -714,8 +820,23 @@ async def get_posts(
             logger.warning(f"Error getting total post count: {e}")
             total = 0
 
-        response = query.execute()
-        posts = response.data or []
+        try:
+            response = query.execute()
+            posts = response.data or []
+        except Exception as query_error:
+            error_str = str(query_error)
+            # Check for DNS/connection errors
+            if "nodename" in error_str.lower() or "errno 8" in error_str.lower() or "failed to resolve" in error_str.lower():
+                logger.warning(
+                    f"Supabase query failed (DNS/connection error): {error_str}. "
+                    "Falling back to SQLite"
+                )
+            else:
+                logger.warning(
+                    f"Supabase query failed: {error_str}. "
+                    "Falling back to SQLite"
+                )
+            return _get_posts_from_sqlite(limit, offset, platform, analyzed)
 
         # Apply analyzed filter in Python if needed (for OR condition)
         if analyzed is not None and analyzed:
@@ -837,10 +958,11 @@ async def start_collection(
     payload: CollectionRequest,
     background_tasks: BackgroundTasks,
     request: Request,
+    user: str = Depends(require_api_key),
 ):
     """Start collection for a platform or all platforms - runs in background"""
     try:
-        from src.pipeline.orchestrator import get_orchestrator
+        from src.application.automation.orchestrator import get_orchestrator
 
         orch = get_orchestrator()
 
@@ -922,6 +1044,25 @@ async def start_collection(
 
 
 # Include routers
+from src.application.api.routes import (
+    collection,
+    analysis,
+    publishing,
+    system,
+    settings,
+    health, # Assuming health router exists based on the instruction's import block
+    database_health,
+    observability,
+    persona_studio,
+    profiles,
+    agents, # New
+    dashboard, # Keep existing dashboard router
+    pipeline, # Pipeline status routes
+)
+
+# Error dashboard routes
+from src.api.routes import errors
+
 app.include_router(publishing.router)
 app.include_router(collection.router)
 app.include_router(analysis.router)
@@ -931,6 +1072,10 @@ app.include_router(observability.router)
 app.include_router(system.router)
 app.include_router(profiles.router)
 app.include_router(persona_studio.router)
+app.include_router(database_health.router)
+app.include_router(agents.router) # New
+app.include_router(pipeline.router) # Pipeline status
+app.include_router(errors.router) # Error dashboard
 
 
 if __name__ == "__main__":

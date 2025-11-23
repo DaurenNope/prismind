@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
 
-from src.utils.logging_config import get_logger
+from src.shared.utils.logging_config import get_logger
 
 try:
     from supabase import create_client  # type: ignore
@@ -132,7 +132,7 @@ async def get_dashboard_overview() -> Dict[str, Any]:
     last_transformation_at: Optional[datetime] = None
     try:
         resp_ready = (
-            client.table("mimesis_transformations")
+            client.table("persona_transformations")
             .select("id", count="exact")
             .eq("ready_for_posting", True)
             .execute()
@@ -140,7 +140,7 @@ async def get_dashboard_overview() -> Dict[str, Any]:
         ready_transformations = resp_ready.count or 0
 
         resp_total = (
-            client.table("mimesis_transformations")
+            client.table("persona_transformations")
             .select("id", count="exact")
             .execute()
         )
@@ -148,7 +148,7 @@ async def get_dashboard_overview() -> Dict[str, Any]:
 
         latest_transformation = _safe_select(
             client,
-            "mimesis_transformations",
+            "persona_transformations",
             "created_at",
             order=("created_at", {"desc": True}),
             limit=1,

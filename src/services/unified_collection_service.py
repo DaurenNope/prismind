@@ -7,7 +7,6 @@ Provides the minimal interface used by the Streamlit Collection tab.
 
 from __future__ import annotations
 
-import asyncio
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -15,7 +14,7 @@ from enum import Enum
 from typing import Callable, Dict, Optional
 
 from src.pipeline.auto_pipeline import AutoPipeline
-from src.pipeline.orchestrator import get_orchestrator
+from src.application.automation.orchestrator import get_orchestrator
 
 
 class CollectionStatus(str, Enum):
@@ -162,7 +161,7 @@ class UnifiedCollectionService:
             # Retry logic with exponential backoff
             import logging
 
-            from src.utils.retry_handler import retry_async
+            from src.shared.utils.retry_handler import retry_async
 
             logger = logging.getLogger(__name__)
 

@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from dotenv import load_dotenv
 
-from src.database.manager import SupabaseManager
+from src.infrastructure.database.manager import SupabaseManager
 
 load_dotenv()
 

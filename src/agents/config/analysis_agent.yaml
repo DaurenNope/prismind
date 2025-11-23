@@ -1,0 +1,65 @@
+# Analysis Agent Configuration
+# Configuration file for the Analysis Agent
+
+# Cache configuration
+cache:
+  # Time-to-live for cached analysis results (hours)
+  ttl_hours: 1
+  # Maximum cache size (entries)
+  max_size: 1000
+
+# Rate limiting configuration
+rate_limit:
+  # Requests per minute
+  rpm: 30
+  # Tokens per minute
+  tpm: 200000
+  # Requests per day
+  rpd: 250
+
+# Batch processing configuration
+batch_processing:
+  # Number of posts to process in parallel
+  batch_size: 5
+  # Maximum number of worker threads
+  max_workers: 3
+  # Timeout for batch processing (seconds)
+  timeout: 300
+
+# Provider configuration
+providers:
+  # Primary provider (gemini, mistral, ollama)
+  primary: gemini
+  # Enable automatic fallback
+  fallback_enabled: true
+  # Health check interval (seconds)
+  health_check_interval: 300
+  # Failure threshold before marking unhealthy
+  failure_threshold: 3
+  # Recovery timeout (seconds)
+  recovery_timeout: 30
+
+# Quality scoring configuration
+quality_scoring:
+  # Minimum value score threshold
+  min_value_score: 0.0
+  # Minimum quality score threshold
+  min_quality_score: 0.0
+  # Rewrite readiness threshold
+  rewrite_readiness_threshold: 5.0
+  # Confidence score threshold
+  confidence_threshold: 0.5
+
+# Analysis configuration
+analysis:
+  # Include comments in analysis
+  include_comments: true
+  # Include media in analysis
+  include_media: true
+  # Enable vision analysis
+  enable_vision: false
+  # Analysis timeout (seconds)
+  timeout: 60
+
+
+

@@ -9,12 +9,12 @@ Actively searches for new content matching user interests
 
 import asyncio
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from src.core.discovery.discovery_engine import DiscoveryEngine
 from src.core.discovery.topic_tracker import TopicTracker
-from src.core.extraction.social_extractor_base import SocialPost
+from src.domain.collection.extractors.social_extractor_base import SocialPost
 
 
 class ActiveDiscovery:
@@ -265,7 +265,7 @@ class ActiveDiscovery:
         logger.info(f"📰 Scanning RSS feeds for: {', '.join(keywords[:3])}...")
 
         try:
-            from src.core.extraction.article_extractor import (
+            from src.domain.collection.extractors.article_extractor import (
                 DEFAULT_RSS_FEEDS,
                 ArticleExtractor,
             )
@@ -415,7 +415,7 @@ class ActiveDiscovery:
         logger.info(f"💾 Storing {len(posts)} discovered posts in database...")
 
         try:
-            from src.storage.db import get_storage
+            from src.infrastructure.database.storage.db import get_storage
 
             storage = get_storage()
             stored_count = 0
@@ -523,7 +523,7 @@ class ActiveDiscovery:
         """Send Telegram notification about high-value content"""
         try:
             # Import only when needed to avoid circular imports
-            from src.publishing.platforms.telegram.bot import send_notification
+            from src.domain.publishing.platforms.telegram.bot import send_notification
 
             for post in high_value_posts[:5]:  # Limit to top 5 posts
                 message = f"🚨 **HIGH-VALUE CONTENT DISCOVERED**\n\n"
@@ -564,7 +564,7 @@ class ActiveDiscovery:
                 log_data.append(log_entry)
 
             # Store in a separate log table or file
-            from src.storage.db import get_storage
+            from src.infrastructure.database.storage.db import get_storage
 
             storage = get_storage()
 
@@ -577,7 +577,7 @@ class ActiveDiscovery:
                 logger.info(
                     f"   📊 Logged {len(log_data)} high-value discoveries to database"
                 )
-            except Exception as e:
+            except Exception:
                 # Fallback: store in a local log file
                 import json
 

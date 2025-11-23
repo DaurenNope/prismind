@@ -15,7 +15,7 @@ from pathlib import Path
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.database.database_agent import DatabaseAgent
+from src.infrastructure.database.database_agent import DatabaseAgent
 
 
 def main():

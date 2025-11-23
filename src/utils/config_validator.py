@@ -12,20 +12,17 @@ Prevents configuration errors early with clear error messages.
 Author: BEYONDLINES AI System
 """
 
-import json
-import os
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Type, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
-from src.utils.logging_config import get_logger
+from src.shared.utils.logging_config import get_logger
 
 
 class ValidationError(Exception):
     """Configuration validation error"""
 
-    pass
 
 
 class ConfigValueType(Enum):

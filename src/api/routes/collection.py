@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
 from dateutil.parser import isoparse
+from fastapi import APIRouter, Query
 
 logger = logging.getLogger(__name__)
 
@@ -201,7 +202,7 @@ async def get_collection_logs(limit: int = 20) -> Dict[str, Any]:
 async def stop_collection() -> Dict[str, Any]:
     """Stop the current collection process"""
     try:
-        from src.services.telegram_collection_commands import get_collection_service
+        from src.domain.collection.services.telegram_collection_commands import get_collection_service
 
         service = get_collection_service()
         stopped = service.stop_collection()
@@ -213,3 +214,222 @@ async def stop_collection() -> Dict[str, Any]:
     except Exception as exc:
         logger.error(f"Error stopping collection: {exc}")
         return {"success": False, "error": str(exc)}
+
+
+@router.get("/latest-posts")
+async def get_latest_posts_by_platform(
+    hours: int = Query(24, ge=1, le=168, description="Hours to look back (1-168)"),
+    limit_per_platform: int = Query(10, ge=1, le=100, description="Max posts per platform (1-100)"),
+) -> Dict[str, Any]:
+    """
+    Get latest collected posts grouped by platform.
+    
+    Returns posts collected within the specified time window, grouped by platform,
+    with a limit per platform.
+    """
+    try:
+        # Calculate cutoff time
+        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours)
+        cutoff_iso = cutoff_time.isoformat()
+        
+        # Try to use NewDatabaseManager first, but fall back to Supabase if needed
+        # Since NewDatabaseManager doesn't have time-based filtering, we'll use Supabase directly
+        # (following the pattern of other endpoints in this router)
+        client = _make_supabase_client()
+        
+        # Query posts from Supabase with time filter
+        try:
+            loop = asyncio.get_event_loop()
+            response = await asyncio.wait_for(
+                loop.run_in_executor(
+                    None,
+                    lambda: (
+                        client.table("posts")
+                        .select("post_id,content,author,url,created_at,title,platform")
+                        .gte("created_at", cutoff_iso)
+                        .order("created_at", desc=True)
+                        .limit(1000)  # Reasonable limit to prevent slow queries
+                        .execute()
+                    ),
+                ),
+                timeout=10.0,
+            )
+            all_posts = getattr(response, "data", []) or []
+        except asyncio.TimeoutError:
+            logger.warning("Latest posts query timed out after 10s")
+            return {
+                "platforms": {},
+                "hours": hours,
+                "total_posts": 0,
+            }
+        except Exception as e:
+            logger.error(f"Error querying latest posts: {e}")
+            return {
+                "platforms": {},
+                "hours": hours,
+                "total_posts": 0,
+            }
+        
+        # Group posts by platform and apply limit
+        platforms_dict: Dict[str, List[Dict[str, Any]]] = {}
+        
+        for post in all_posts:
+            platform = (post.get("platform") or "unknown").lower()
+            
+            # Initialize platform list if needed
+            if platform not in platforms_dict:
+                platforms_dict[platform] = []
+            
+            # Apply limit per platform
+            if len(platforms_dict[platform]) < limit_per_platform:
+                # Format post data according to requirements
+                content = post.get("content", "") or ""
+                # Truncate content to 200 chars
+                content_truncated = content[:200] + "..." if len(content) > 200 else content
+                
+                formatted_post = {
+                    "post_id": post.get("post_id"),
+                    "content": content_truncated,
+                    "author": post.get("author"),
+                    "url": post.get("url"),
+                    "created_at": _safe_iso(post.get("created_at")),
+                    "title": post.get("title"),
+                }
+                
+                platforms_dict[platform].append(formatted_post)
+        
+        # Calculate total posts
+        total_posts = sum(len(posts) for posts in platforms_dict.values())
+        
+        return {
+            "platforms": platforms_dict,
+            "hours": hours,
+            "total_posts": total_posts,
+        }
+        
+    except Exception as exc:
+        logger.error(f"Error getting latest posts: {exc}", exc_info=True)
+        # Return empty structure on error
+        return {
+            "platforms": {},
+            "hours": hours,
+            "total_posts": 0,
+        }
+
+
+@router.get("/search")
+async def search_posts(
+    q: str = Query(..., description="Search query (searches content and author)"),
+    platform: Optional[str] = Query(None, description="Filter by platform"),
+    limit: int = Query(20, ge=1, le=100, description="Max results (1-100)"),
+    offset: int = Query(0, ge=0, description="Pagination offset"),
+) -> Dict[str, Any]:
+    """
+    Search posts by content or author.
+    
+    Performs case-insensitive partial matching on:
+    - Post content
+    - Author name
+    - Author handle/username
+    
+    Returns paginated results.
+    """
+    try:
+        if not q or not q.strip():
+            return {
+                "posts": [],
+                "total": 0,
+                "limit": limit,
+                "offset": offset,
+                "query": q,
+                "platform": platform,
+                "error": "Search query cannot be empty",
+            }
+
+        client = _make_supabase_client()
+
+        # Build query with OR conditions for content/author search
+        # Use ilike for case-insensitive partial matching
+        search_term = f"%{q.strip()}%"
+
+        query_builder = (
+            client.table("posts")
+            .select("post_id,content,author,url,created_at,title,platform,collected_at,author_handle")
+            .or_(f"content.ilike.{search_term},author.ilike.{search_term},author_handle.ilike.{search_term}")
+        )
+
+        # Add platform filter if specified
+        if platform:
+            query_builder = query_builder.eq("platform", platform.lower())
+
+        # Order by collected_at first (most recent collected), then created_at
+        # Note: If collected_at doesn't exist, we'll order by created_at
+        # Supabase will handle nulls appropriately
+        query_builder = query_builder.order("collected_at", desc=True, nulls_last=True)
+        query_builder = query_builder.order("created_at", desc=True)
+
+        # Apply pagination
+        query_builder = query_builder.range(offset, offset + limit - 1)
+
+        # Execute with timeout protection
+        loop = asyncio.get_event_loop()
+        response = await asyncio.wait_for(
+            loop.run_in_executor(
+                None,
+                lambda: query_builder.execute(),
+            ),
+            timeout=10.0,
+        )
+
+        posts = getattr(response, "data", []) or []
+
+        # Format posts for response
+        formatted_posts = []
+        for post in posts:
+            formatted_posts.append({
+                "post_id": post.get("post_id"),
+                "platform": post.get("platform"),
+                "author": post.get("author"),
+                "content": post.get("content"),
+                "url": post.get("url"),
+                "created_at": _safe_iso(post.get("created_at")),
+                "title": post.get("title"),
+                "collected_at": _safe_iso(post.get("collected_at")),
+            })
+
+        # Get total count (for pagination info)
+        # Note: Supabase doesn't return count by default, so we'll estimate
+        # For exact count, would need separate count query (can be added later)
+        # Using len(posts) as approximate count - actual count would require separate query
+
+        return {
+            "posts": formatted_posts,
+            "total": len(formatted_posts),  # Approximate - actual count would require separate query
+            "limit": limit,
+            "offset": offset,
+            "query": q,
+            "platform": platform,
+        }
+
+    except asyncio.TimeoutError:
+        logger.warning("Post search query timed out after 10s")
+        return {
+            "posts": [],
+            "total": 0,
+            "limit": limit,
+            "offset": offset,
+            "query": q,
+            "platform": platform,
+            "error": "Query timeout",
+        }
+    except Exception as exc:
+        logger.error(f"Error searching posts: {exc}", exc_info=True)
+        return {
+            "posts": [],
+            "total": 0,
+            "limit": limit,
+            "offset": offset,
+            "query": q,
+            "platform": platform,
+            "error": str(exc),
+        }

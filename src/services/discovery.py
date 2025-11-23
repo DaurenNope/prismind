@@ -7,7 +7,7 @@ Automatically finds and curates valuable content without manual bookmarking
 import asyncio
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -17,6 +17,11 @@ logger = logging.getLogger(__name__)
 # DEPRECATION NOTICE:
 # This module is being migrated into the orchestrator (src/pipeline/orchestrator.py).
 # Use orchestrator.autonomous_discover(), generate_digest(), and build_news_feed().
+#
+# INTEGRATION PLAN:
+# - This module will be integrated into orchestrator (not removed)
+# - Tracked in Phase 8: AutonomousDiscovery Migration
+# - Do not remove until integration is complete
 
 
 class AutonomousDiscovery:
@@ -49,11 +54,11 @@ class AutonomousDiscovery:
                 return prefs["topics_of_interest"]
 
             # Fall back to multi-topic sources
-            from src.core.extraction.multi_topic_sources import DEFAULT_TOPICS
+            from src.domain.collection.extractors.multi_topic_sources import DEFAULT_TOPICS
 
             return DEFAULT_TOPICS
 
-        except ImportError:
+        except ImportError as e:
             logger.error(f"Error: {e}")
             # Final fallback to diverse default topics
             return [
@@ -233,8 +238,8 @@ class AutonomousDiscovery:
     async def _discover_rss(self) -> List[Dict[str, Any]]:
         """Discover from RSS feeds"""
         try:
-            from src.core.extraction.article_extractor import ArticleExtractor
-            from src.core.extraction.multi_topic_sources import get_sources_for_topics
+            from src.domain.collection.extractors.article_extractor import ArticleExtractor
+            from src.domain.collection.extractors.multi_topic_sources import get_sources_for_topics
 
             # Get RSS feeds based on user topics
             sources = get_sources_for_topics(self.topics_of_interest)
@@ -344,7 +349,7 @@ class AutonomousDiscovery:
     async def _save_discoveries(self, items: List[Dict[str, Any]]) -> int:
         """Save discovered items to discoveries table"""
         try:
-            from src.database.manager import SupabaseManager
+            from src.infrastructure.database.manager import SupabaseManager
 
             supabase = SupabaseManager()
             saved_count = 0

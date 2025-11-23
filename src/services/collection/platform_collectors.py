@@ -21,21 +21,21 @@ def load_dotenv() -> bool:
         return False
 
 
-from src.core.extraction.reddit_extractor import RedditExtractor
+from src.domain.collection.extractors.reddit_extractor import RedditExtractor
 
 # Core imports
-from src.core.extraction.social_extractor_base import SocialPost
-from src.core.extraction.threads_extractor import ThreadsExtractor
-from src.core.extraction.twitter_extractor_playwright import (
+from src.domain.collection.extractors.social_extractor_base import SocialPost
+from src.domain.collection.extractors.threads_extractor import ThreadsExtractor
+from src.domain.collection.extractors.twitter_extractor_playwright import (
     TwitterExtractorPlaywright,
 )
-from src.scrape_state_manager import ScrapeStateManager
+from src.infrastructure.database.scrape_state_manager import ScrapeStateManager
 
 # Analysis import
-from src.services.analysis.post_analyzer import analyze_and_store_post, log
+from src.domain.analysis.services.post_analyzer import analyze_and_store_post, log
 
 # Logger import
-from src.utils.logging_config import get_logger
+from src.shared.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -257,6 +257,17 @@ async def collect_twitter_bookmarks(
             return 0
 
         log(f"Found {len(bookmarks)} Twitter bookmarks from extractor")
+
+        # Extract full thread content in second pass (after collection, before processing)
+        # This avoids DOM conflicts during bookmark scrolling
+        try:
+            if extractor and hasattr(extractor, "extract_threads_second_pass"):
+                log("🧵 Starting second pass thread extraction...")
+                bookmarks = await extractor.extract_threads_second_pass(bookmarks, max_retries=2)
+                log(f"✅ Thread extraction complete: {len(bookmarks)} posts processed")
+        except Exception as e:
+            logger.warning(f"⚠️ Thread extraction failed, continuing with original posts: {e}")
+            # Continue with original bookmarks if thread extraction fails
 
         # Helper function to check if existing post has full content
         # Cache results to avoid repeated DB queries for the same post

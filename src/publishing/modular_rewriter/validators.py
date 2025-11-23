@@ -3,8 +3,8 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Dict, Optional
 
-from src.publishing.fact_validator import FactValidator
-from src.publishing.voice_validator import VoiceValidator
+from src.domain.publishing.fact_validator import FactValidator
+from src.domain.publishing.voice_validator import VoiceValidator
 
 
 class FactCheckService:

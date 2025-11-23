@@ -4,6 +4,10 @@ import json
 from pathlib import Path
 from typing import Dict, List
 
+from src.shared.utils.logging_config import get_logger
+
+logger = get_logger(__name__)
+
 
 def load_personalities() -> List[Dict[str, str]]:
     """Load personalities from config/personalities.json.

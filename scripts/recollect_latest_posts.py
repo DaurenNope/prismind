@@ -10,9 +10,9 @@ from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.database.manager import SupabaseManager
-from src.storage.db import StorageFacade
-from src.pipeline.orchestrator import Orchestrator
+from src.infrastructure.database.manager import SupabaseManager
+from src.infrastructure.database.storage.db import StorageFacade
+from src.application.automation.orchestrator import Orchestrator
 
 async def recollect_latest_posts():
     """Re-collect the latest 150 posts"""

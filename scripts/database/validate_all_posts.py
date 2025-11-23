@@ -9,9 +9,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.services.new_database_manager import NewDatabaseManager
-from src.utils.post_validator import PostValidator
-from src.database.database_agent import DatabaseAgent
-from src.utils.logging_config import get_logger
+from src.shared.utils.post_validator import PostValidator
+from src.infrastructure.database.database_agent import DatabaseAgent
+from src.shared.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 

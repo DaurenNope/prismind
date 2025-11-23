@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.database.manager import SupabaseManager
+from src.infrastructure.database.manager import SupabaseManager
 
 def query_twitter_posts():
     """Show different ways to query Twitter posts from Supabase"""

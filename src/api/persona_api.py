@@ -14,12 +14,12 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
-from pydantic import BaseModel
 import httpx
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from pydantic import BaseModel
 
-from src.publishing.dynamic_rewriter import DynamicRewriter
-from src.publishing.learning_loop import learning_analyzer
+from src.domain.publishing.dynamic_rewriter import DynamicRewriter
+from src.domain.publishing.learning_loop import learning_analyzer
 
 logger = logging.getLogger(__name__)
 

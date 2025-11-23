@@ -10,7 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.services.new_database_manager import NewDatabaseManager
-from src.utils.duplicate_detector import DuplicateDetector
+from src.shared.utils.duplicate_detector import DuplicateDetector
 import re
 
 def check_unanalyzed_posts(db):

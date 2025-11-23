@@ -1,0 +1,65 @@
+# Cleaning Agent Configuration
+# Configuration file for the Cleaning Agent
+
+# Cleanup rules - what to remove
+cleanup_rules:
+  # Remove Python cache directories (__pycache__)
+  remove_pycache: true
+  
+  # Remove backup files (.backup, .OLD, .bak, etc.)
+  remove_backups: true
+  
+  # Remove old files (older than specified days in temp/log directories)
+  remove_old_files: true
+  
+  # Remove obsolete documentation files
+  remove_obsolete_docs: true
+  
+  # Remove test artifacts (.pyc, .pytest_cache, .coverage, htmlcov)
+  remove_test_artifacts: true
+  
+  # Remove temporary files (.tmp, .temp, .swp, .swo, *~)
+  remove_temp_files: true
+
+# Safety checks - protection mechanisms
+safety_checks:
+  # Require verification from skeptic agent before cleanup
+  require_verification: true
+  
+  # Dry run mode - don't actually delete, just report what would be deleted
+  dry_run: false
+  
+  # Backup before delete (not implemented yet)
+  backup_before_delete: false
+
+# File age thresholds
+file_age:
+  # Days old for files to be considered "old" (default: 90)
+  old_file_days: 90
+
+# Exclusions - paths to never clean
+exclusions:
+  # Directories to exclude from cleanup
+  exclude_directories:
+    - ".git"
+    - "node_modules"
+    - ".venv"
+    - "venv"
+    - "env"
+    - ".env"
+    - "migrations"
+    - "data/vector_db"
+  
+  # File patterns to exclude
+  exclude_patterns:
+    - "*.db"
+    - "*.sqlite"
+    - "*.sqlite3"
+    - "requirements*.txt"
+    - "*.yaml"
+    - "*.yml"
+    - "*.json"
+    - "*.md"
+    - "*.py"
+    - "*.sh"
+

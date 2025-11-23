@@ -14,7 +14,7 @@ from typing import Optional, Dict, List
 def check_twitter_cookies() -> Dict:
     """Check Twitter cookie file status"""
     username = os.getenv("TWITTER_USERNAME")
-    cookie_file = os.getenv("TWITTER_COOKIE_FILE") or (f"config/twitter_cookies_{username}.json" if username else "config/twitter_cookies.json")
+    cookie_file = os.getenv("TWITTER_COOKIE_FILE") or (f"config/cookies/twitter_cookies_{username}.json" if username else "config/cookies/twitter_cookies.json")
     cookie_path = Path(cookie_file)
     
     result = {
@@ -83,7 +83,7 @@ def check_twitter_cookies() -> Dict:
 
 def check_threads_cookies() -> Dict:
     """Check Threads cookie file status"""
-    cookie_file = os.getenv("THREADS_COOKIES_FILE") or "config/threads_cookies.json"
+    cookie_file = os.getenv("THREADS_COOKIES_FILE") or "config/cookies/threads_cookies.json"
     
     # Also check alternative locations
     alt_paths = [

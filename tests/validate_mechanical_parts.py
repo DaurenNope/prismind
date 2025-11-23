@@ -73,32 +73,32 @@ def test_imports() -> TestResult:
     try:
         # Core database
         # Analysis
-        from src.core.analysis.intelligent_content_analyzer import (
+        from src.domain.analysis.analyzers.intelligent_content_analyzer import (
             IntelligentContentAnalyzer,
         )
-        from src.core.extraction.reddit_extractor import RedditExtractor
-        from src.core.extraction.threads_extractor import ThreadsExtractor
-        from src.core.extraction.twitter_extractor_playwright import (
+        from src.domain.collection.extractors.reddit_extractor import RedditExtractor
+        from src.domain.collection.extractors.threads_extractor import ThreadsExtractor
+        from src.domain.collection.extractors.twitter_extractor_playwright import (
             TwitterExtractorPlaywright,
         )
-        from src.database.database_agent import DatabaseAgent
-        from src.database.manager import SupabaseManager
+        from src.infrastructure.database.database_agent import DatabaseAgent
+        from src.infrastructure.database.manager import SupabaseManager
 
         # Collection
-        from src.pipeline.orchestrator import Orchestrator, get_orchestrator
+        from src.application.automation.orchestrator import Orchestrator, get_orchestrator
 
         # Publishing
-        from src.publishing.rewriter import ContentRewriter
-        from src.publishing.scheduler import PublishingScheduler
+        from src.domain.publishing.modular_rewriter.compat import create_compat_rewriter
+        from src.domain.publishing.scheduler import PublishingScheduler
 
         # Storage
-        from src.storage.db import StorageFacade, get_storage
-        from src.storage.sqlite_adapter import SQLiteAdapter
-        from src.utils.duplicate_detector import DuplicateDetector
-        from src.utils.logging_config import get_logger
+        from src.infrastructure.database.storage.db import StorageFacade, get_storage
+        from src.infrastructure.database.storage.sqlite_adapter import SQLiteAdapter
+        from src.shared.utils.duplicate_detector import DuplicateDetector
+        from src.shared.utils.logging_config import get_logger
 
         # Utilities
-        from src.utils.post_validator import validate_post
+        from src.shared.utils.post_validator import validate_post
 
         result.passed = True
         result.details = {"imported_modules": 15}
@@ -181,7 +181,7 @@ def test_database_connectivity() -> TestResult:
     result = TestResult("Database Connectivity")
 
     try:
-        from src.database.database_agent import DatabaseAgent
+        from src.infrastructure.database.database_agent import DatabaseAgent
 
         db = DatabaseAgent()
 
@@ -244,8 +244,8 @@ def test_database_operations() -> TestResult:
     result = TestResult("Database Operations")
 
     try:
-        from src.database.database_agent import DatabaseAgent
-        from src.storage.sqlite_adapter import SQLiteAdapter
+        from src.infrastructure.database.database_agent import DatabaseAgent
+        from src.infrastructure.database.storage.sqlite_adapter import SQLiteAdapter
 
         db = DatabaseAgent()
 
@@ -312,7 +312,7 @@ async def test_collection_orchestrator() -> TestResult:
     result = TestResult("Collection Orchestrator")
 
     try:
-        from src.pipeline.orchestrator import get_orchestrator
+        from src.application.automation.orchestrator import get_orchestrator
 
         orch = get_orchestrator()
 
@@ -342,7 +342,7 @@ async def test_collectors_initialization() -> TestResult:
 
     # Test Twitter extractor
     try:
-        from src.core.extraction.twitter_extractor_playwright import (
+        from src.domain.collection.extractors.twitter_extractor_playwright import (
             TwitterExtractorPlaywright,
         )
 
@@ -359,7 +359,7 @@ async def test_collectors_initialization() -> TestResult:
 
     # Test Reddit extractor
     try:
-        from src.core.extraction.reddit_extractor import RedditExtractor
+        from src.domain.collection.extractors.reddit_extractor import RedditExtractor
 
         client_id = os.getenv("REDDIT_CLIENT_ID")
         client_secret = os.getenv("REDDIT_CLIENT_SECRET")
@@ -379,7 +379,7 @@ async def test_collectors_initialization() -> TestResult:
 
     # Test Threads extractor
     try:
-        from src.core.extraction.threads_extractor import ThreadsExtractor
+        from src.domain.collection.extractors.threads_extractor import ThreadsExtractor
 
         extractor = ThreadsExtractor()
         collectors["threads"] = True
@@ -413,7 +413,7 @@ async def test_analyzer_initialization() -> TestResult:
     result = TestResult("Analyzer Initialization")
 
     try:
-        from src.core.analysis.intelligent_content_analyzer import (
+        from src.domain.analysis.analyzers.intelligent_content_analyzer import (
             IntelligentContentAnalyzer,
         )
 
@@ -470,9 +470,9 @@ def test_rewriter_initialization() -> TestResult:
     result = TestResult("Rewriter Initialization")
 
     try:
-        from src.publishing.rewriter import ContentRewriter
+        from src.domain.publishing.modular_rewriter.compat import create_compat_rewriter
 
-        rewriter = ContentRewriter()
+        rewriter = create_compat_rewriter()
 
         # Check if Ollama is available (required for rewriting)
         ollama_available = False
@@ -508,7 +508,7 @@ def test_scheduler_initialization() -> TestResult:
     result = TestResult("Scheduler Initialization")
 
     try:
-        from src.publishing.scheduler import PublishingScheduler
+        from src.domain.publishing.scheduler import PublishingScheduler
 
         scheduler = PublishingScheduler()
         result.passed = True
@@ -532,7 +532,7 @@ def test_post_validator() -> TestResult:
     result = TestResult("Post Validator")
 
     try:
-        from src.utils.post_validator import validate_post
+        from src.shared.utils.post_validator import validate_post
 
         # Test with valid post
         valid_post = {
@@ -575,8 +575,8 @@ def test_duplicate_detector() -> TestResult:
     result = TestResult("Duplicate Detector")
 
     try:
-        from src.database.manager import SupabaseManager
-        from src.utils.duplicate_detector import DuplicateDetector
+        from src.infrastructure.database.manager import SupabaseManager
+        from src.shared.utils.duplicate_detector import DuplicateDetector
 
         supabase_manager = SupabaseManager() if os.getenv("SUPABASE_URL") else None
         detector = DuplicateDetector(db_manager=None, supabase_manager=supabase_manager)

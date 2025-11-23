@@ -31,7 +31,7 @@ async def test_real_ai_services():
     print("\n🤖 Testing Real AI Service Connections...")
 
     try:
-        from src.core.analysis.ai_service_manager import ai_service_manager
+        from src.domain.analysis.analyzers.ai_service_manager import ai_service_manager
 
         print(
             f"Available AI Services: {[s['name'] for s in ai_service_manager.ai_services]}"
@@ -339,7 +339,7 @@ async def test_end_to_end_workflow():
 
     try:
         # This simulates the complete workflow from mention detection to reply generation
-        from src.core.analysis.ai_service_manager import ai_service_manager
+        from src.domain.analysis.analyzers.ai_service_manager import ai_service_manager
         from src.social.multiplatform_interaction import (
             SocialInteraction,
             SocialPlatform,
@@ -466,7 +466,7 @@ async def test_system_readiness():
 
     # Check AI services
     try:
-        from src.core.analysis.ai_service_manager import ai_service_manager
+        from src.domain.analysis.analyzers.ai_service_manager import ai_service_manager
 
         if ai_service_manager.ai_services:
             print(f"✅ AI Services: {len(ai_service_manager.ai_services)} configured")
@@ -533,9 +533,9 @@ async def test_system_readiness():
 
     # Test basic functionality
     try:
-        from src.observability.tracing import tracer
+        from src.infrastructure.observability.tracing import tracer
         from src.resilience.circuit_breaker import circuit_breaker_registry
-        from src.utils.exceptions import ApprovalError, TwitterInteractionError
+        from src.shared.utils.exceptions import ApprovalError, TwitterInteractionError
 
         print("✅ Core Components: Circuit breakers, tracing, exceptions working")
         readiness_score += 1

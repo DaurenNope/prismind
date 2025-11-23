@@ -11,7 +11,7 @@ import concurrent.futures
 import os
 import sys
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 # Add the project root to the path

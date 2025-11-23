@@ -20,7 +20,7 @@ from scripts.curate_usable_posts import (
     is_post_usable,
     parse_datetime,
 )
-from src.utils.logging_config import get_logger
+from src.shared.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 

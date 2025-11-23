@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { fetchDashboardOverview } from '$lib/services/dashboard';
   import type { DashboardOverview, DashboardOperation } from '$lib/types';
+  import AgentGraph from '$lib/components/AgentGraph.svelte';
 
   interface DashboardStats {
     total_posts: number;
@@ -17,11 +18,17 @@
   let loading = true;
   let error: string | null = null;
   let operations: DashboardOperation[] = [];
+  let retrying = false;
 
-  onMount(async () => {
+  const loadData = async () => {
+    loading = true;
+    error = null;
     try {
       const statsResponse = await fetch(`${API_BASE}/api/dashboard/stats`);
-      if (!statsResponse.ok) throw new Error('Failed to fetch stats');
+      if (!statsResponse.ok) {
+        const errorData = await statsResponse.json().catch(() => ({}));
+        throw new Error(errorData.detail || `Failed to fetch stats: ${statsResponse.status}`);
+      }
       stats = await statsResponse.json();
 
       try {
@@ -29,12 +36,19 @@
         operations = overview.operations ?? [];
       } catch (overviewError) {
         console.warn('Dashboard overview unavailable', overviewError);
+        // Don't fail the whole page if overview fails
       }
     } catch (e) {
       error = e instanceof Error ? e.message : 'Unknown error';
+      console.error('Dashboard load error:', e);
     } finally {
       loading = false;
+      retrying = false;
     }
+  };
+
+  onMount(() => {
+    loadData();
   });
 
   const formatNumber = (value: number | undefined) =>
@@ -98,9 +112,22 @@
         <div>
           <p class="text-[10px] uppercase tracking-[0.35em] text-slate-300">Signal summary</p>
           {#if loading}
-            <p class="mt-4 text-sm text-slate-300">Loading metrics…</p>
+            <div class="mt-4 flex items-center gap-2">
+              <div class="h-4 w-4 animate-spin rounded-full border-2 border-[rgba(93,242,193,0.3)] border-t-[rgba(93,242,193,0.9)]"></div>
+              <p class="text-sm text-slate-300">Loading metrics…</p>
+            </div>
           {:else if error}
-            <p class="mt-4 text-sm text-red-200">{error}</p>
+            <div class="mt-4 space-y-2">
+              <p class="text-sm text-red-200">{error}</p>
+              <button
+                type="button"
+                on:click={() => { retrying = true; loadData(); }}
+                disabled={retrying}
+                class="text-xs text-red-300 hover:text-red-100 underline disabled:opacity-50"
+              >
+                {retrying ? 'Retrying...' : 'Retry'}
+              </button>
+            </div>
           {:else if stats}
             <div class="space-y-3 mt-4">
               <div class="flex items-center justify-between">
@@ -137,6 +164,11 @@
         </div>
       </div>
     </div>
+  </section>
+
+  <!-- AGENT VISUALIZATION -->
+  <section>
+    <AgentGraph />
   </section>
 
   <!-- METRIC GRID -->

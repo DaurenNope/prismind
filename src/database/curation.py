@@ -21,7 +21,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 
-from src.utils.logging_config import get_logger
+from src.shared.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -893,7 +893,7 @@ JSON:"""
                         # AUTOMATICALLY TRIGGER REWRITING after angles are stored
                         try:
                             from src.pipeline.auto_pipeline import AutoPipeline
-                            from src.utils.config import get_config
+                            from src.shared.utils.config import get_config
 
                             config = get_config()
                             # Only auto-rewrite if flag is enabled

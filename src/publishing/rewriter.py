@@ -15,12 +15,12 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
-from src.publishing.circuit_breaker import get_circuit_breaker
-from src.publishing.engagement_learner import EngagementLearner
-from src.publishing.fact_validator import FactValidator
-from src.publishing.rag_system import ExampleVectorDatabase
-from src.publishing.thread_splitter import ThreadSplitter
-from src.publishing.voice_validator import VoiceValidator
+from src.domain.publishing.circuit_breaker import get_circuit_breaker
+from src.domain.publishing.engagement_learner import EngagementLearner
+from src.domain.publishing.fact_validator import FactValidator
+from src.domain.publishing.rag_system import ExampleVectorDatabase
+from src.domain.publishing.thread_splitter import ThreadSplitter
+from src.domain.publishing.voice_validator import VoiceValidator
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +101,7 @@ class ContentRewriter:
 
         # Analytics tracking
         try:
-            from src.publishing.rewrite_analytics import get_analytics
+            from src.domain.publishing.rewrite_analytics import get_analytics
 
             self.analytics = get_analytics()
         except Exception as e:
@@ -1851,9 +1851,20 @@ Rewritten post:"""
         logger.info(f"   Using angle: {persona_angle.get('angle')}")
 
         # Extract original content info
-        original_content = analyzed_content.get(
-            "summary", analyzed_content.get("content", "")
-        )
+        # Priority: ai_summary (analyzer output) > summary (legacy) > content (raw)
+        # Validate ai_summary quality before using
+        ai_summary = analyzed_content.get("ai_summary", "").strip()
+        summary = analyzed_content.get("summary", "").strip()
+        raw_content = analyzed_content.get("content", "").strip()
+        
+        # Validate ai_summary quality before using
+        if ai_summary and len(ai_summary) >= 50:  # Minimum quality threshold
+            original_content = ai_summary
+        elif summary and len(summary) >= 50:
+            original_content = summary
+        else:
+            original_content = raw_content
+            logger.warning(f"Using raw content - ai_summary too short ({len(ai_summary) if ai_summary else 0} chars)")
         
         # 🚨 REDDIT COMMENTS HANDLING: Separate main post from comments
         # Comments are helpful context, NOT the main story
@@ -2015,17 +2026,25 @@ PERSONA OPINIONS & STANCES:
 (Use these viewpoints naturally if relevant to the content)
 """
 
+        # Extract language from analyzed_content first
+        content_language = analyzed_content.get("language", "").lower()
+        if content_language in ["ru", "russian", "ru-ru"]:
+            prompt_language = "russian"
+        elif content_language in ["en", "english", "en-us", "en-us"]:
+            prompt_language = "english"
+        else:
+            # Fallback to persona language, then default to English (not Russian)
+            prompt_language = persona_info.get("language") or "english"
+        
         # Language instruction
         language_instruction = ""
-        if persona_info.get("language") == "russian":
+        if prompt_language == "russian":
             language_instruction = "\n⚠️  CRITICAL: Write ENTIRELY in RUSSIAN language. This is a Russian-language profile. Do NOT write in English."
         else:
             language_instruction = "\n✓ Write in English language."
 
         # Determine language for LLM call
-        llm_language = (
-            "russian" if persona_info.get("language") == "russian" else "english"
-        )
+        llm_language = prompt_language
 
         # TWO-STAGE PIPELINE FOR RUSSIAN: Extract ideas first, then write
         if llm_language == "russian":
@@ -2055,7 +2074,7 @@ Remember: The MAIN POST is the story. Comments are just helpful context to under
 
             # ERROR HANDLING: Check if extraction failed due to rate limits
             # If Stage 1 returns an error, FAIL immediately instead of passing error text to Stage 2
-            from src.utils.error_handler import (
+            from src.shared.utils.error_handler import (
                 create_rate_limit_error_result,
                 is_rate_limit_error_in_content,
             )
@@ -2188,10 +2207,22 @@ CREATIVE APPROACH (follow this naturally, don't force it):
 Use this approach as inspiration - be creative and natural, not mechanical.
 """
                 
+                # Extract all analysis fields for context
+                key_concepts = analyzed_content.get("key_concepts", [])
+                action_items = analyzed_content.get("action_items", [])
+                topics = analyzed_content.get("topics", [])
+                tags = analyzed_content.get("tags", [])
+                
                 # SIMPLE PROMPT TO PREVENT META-COMMENTARY
                 prompt = f"""You are {persona_info['name']}. Write about this topic in Russian for {platform}.
 
 Topic: {extracted_ideas}
+Key Concepts: {', '.join(key_concepts[:5]) if key_concepts else 'N/A'}
+Action Items: {', '.join(action_items[:3]) if action_items else 'N/A'}
+Topics: {', '.join(topics[:3]) if topics else 'N/A'}
+Tags: {', '.join(tags[:5]) if tags else 'N/A'}
+
+Use these concepts to create a more contextual rewrite.
 
 Examples of your style:
 {voice_examples_text}
@@ -2259,12 +2290,22 @@ This is randomly selected to ensure variety – follow it exactly, but make it n
 Do NOT repeat this instruction in the output.
 """
 
+            # Extract all analysis fields for context
+            action_items = analyzed_content.get("action_items", [])
+            topics_list = analyzed_content.get("topics", [])
+            tags = analyzed_content.get("tags", [])
+            
             # SIMPLE PROMPT TO PREVENT META-COMMENTARY
             prompt = f"""You are {persona_info['name']}. Write about this topic in English for {platform}.
 
 Topic: {category}
 Key points: {', '.join(key_concepts)}
+Action Items: {', '.join(action_items[:3]) if action_items else 'N/A'}
+Topics: {', '.join(topics_list[:3]) if topics_list else 'N/A'}
+Tags: {', '.join(tags[:5]) if tags else 'N/A'}
 Context: {content_context}
+
+Use these concepts to create a more contextual rewrite.
 
 Examples of your style:
 {voice_examples_text}
@@ -2615,9 +2656,11 @@ Write directly - no explanations:"""
             "author_authority": discovery_signals.get("author_authority", "medium"),
             "trend_relevance": discovery_signals.get("trend_relevance", "mainstream"),
             "time_sensitivity": content_freshness.get("time_sensitivity", "evergreen"),
-            # Scores
-            "original_value_score": analyzed_content.get("intelligent_value_score", 0),
-            "original_quality_score": analyzed_content.get("content_quality_score", 0),
+            # Scores (standardized field names: value_score, quality_score)
+            "original_value_score": analyzed_content.get("value_score", 
+                analyzed_content.get("intelligent_value_score", 0)),
+            "original_quality_score": analyzed_content.get("quality_score",
+                analyzed_content.get("content_quality_score", 0)),
             # NEW: Quality and validation
             "quality_score": quality_score["score"],
             "quality_rating": quality_score["quality"],
@@ -2670,7 +2713,8 @@ Write directly - no explanations:"""
             f"📝 Stage 1: Extracting core ideas with Gemini (target: {target_platform}/{target_content_type})"
         )
 
-        summary = analyzed_content.get("summary", "")
+        # Priority: ai_summary (analyzer output) > summary (legacy)
+        summary = analyzed_content.get("ai_summary", analyzed_content.get("summary", ""))
         category = analyzed_content.get("category", "General")
         key_concepts = analyzed_content.get("key_concepts") or []
         topics = analyzed_content.get("topics") or []
@@ -3114,7 +3158,27 @@ _rewriter = None
 
 
 def get_rewriter() -> ContentRewriter:
-    """Get global rewriter instance"""
+    """
+    Get global rewriter instance.
+    
+    DEPRECATED: This function is deprecated. Use RewriterAgent instead.
+    
+    For migration, use:
+        from src.domain.intelligence.agents.rewriter_agent import get_rewriter_agent
+        rewriter = get_rewriter_agent()
+        await rewriter.initialize()
+        
+    This function now returns a ContentRewriter instance that internally
+    uses RewriterAgent for backward compatibility.
+    """
+    import warnings
+    warnings.warn(
+        "get_rewriter() is deprecated. Use RewriterAgent instead. "
+        "See docs/agents/MIGRATION_REWRITER.md for migration guide.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    
     global _rewriter
     if _rewriter is None:
         _rewriter = ContentRewriter()
@@ -3170,8 +3234,8 @@ async def test_rewriter():
     
     logger.info("=" * 70)
     logger.info(f"{result['persona_emoji']} {result['persona'].upper()} VERSION")
-    print("=" * 70)
-    logger.info()
+    logger.info("=" * 70)
+    logger.info("")
     logger.info(result["rewritten_content"])
     logger.info()
     logger.info(f"Angle: {result['angle_used']}")

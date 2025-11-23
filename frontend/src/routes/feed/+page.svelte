@@ -254,8 +254,21 @@
       {/each}
     </div>
   {:else if error}
-    <div class="rounded-3xl border border-red-400/40 bg-red-500/15 px-5 py-4 text-sm text-red-100">
-      {error}
+    <div class="rounded-3xl border border-red-400/40 bg-red-500/15 px-6 py-5 space-y-3">
+      <div class="flex items-start gap-3">
+        <span class="text-lg">❌</span>
+        <div class="flex-1">
+          <p class="text-sm font-semibold text-red-100 mb-1">Failed to load posts</p>
+          <p class="text-sm text-red-200/80">{error}</p>
+        </div>
+      </div>
+      <button
+        type="button"
+        on:click={() => fetchPosts()}
+        class="rounded-xl border border-red-400/40 bg-red-500/20 px-4 py-2 text-sm font-semibold text-red-100 hover:bg-red-500/30 transition-colors"
+      >
+        Retry
+      </button>
     </div>
   {:else if filteredPosts().length === 0}
     <div class="rounded-3xl border border-white/10 bg-[rgba(12,24,40,0.8)] px-6 py-12 text-center text-sm text-[color:var(--text-muted)]">
@@ -270,12 +283,18 @@
             <span class="text-[11px] text-[color:var(--text-muted)]">{formatDate(post.created_at)}</span>
           </div>
           <h3 class="text-base font-semibold text-[color:var(--text-primary)]">
-            {post.title || (post.content ?? '').slice(0, 90) + ((post.content ?? '').length > 90 ? '…' : '')}
+            {#if post.title && post.title.trim()}
+              {post.title}
+            {:else if post.content && post.content.trim()}
+              {post.content.slice(0, 90)}{post.content.length > 90 ? '…' : ''}
+            {:else}
+              <span class="text-[color:var(--text-muted)] italic">Untitled post</span>
+            {/if}
           </h3>
           <p class="text-sm text-[color:var(--text-muted)]/85 max-h-28 overflow-hidden line-clamp-4">
-            {#if post.ai_summary}
+            {#if post.ai_summary && post.ai_summary.trim()}
               {post.ai_summary}
-            {:else if post.content}
+            {:else if post.content && post.content.trim()}
               {@const cleanContent = (() => {
                 let text = post.content || '';
                 // Remove JSON code blocks
@@ -289,9 +308,13 @@
                 text = text.replace(/\n{3,}/g, '\n\n').trim();
                 return text;
               })()}
-              {cleanContent.slice(0, 200)}{cleanContent.length > 200 ? '…' : ''}
+              {#if cleanContent}
+                {cleanContent.slice(0, 200)}{cleanContent.length > 200 ? '…' : ''}
+              {:else}
+                <span class="italic text-[color:var(--text-muted)]/60">Content not available</span>
+              {/if}
             {:else}
-              No content available
+              <span class="italic text-[color:var(--text-muted)]/60">No content available. This post may not have been fully loaded.</span>
             {/if}
           </p>
           <div class="flex flex-wrap items-center gap-3 pt-2 border-t border-white/5">

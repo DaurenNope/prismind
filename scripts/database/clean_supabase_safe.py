@@ -13,7 +13,7 @@ sys.path.insert(0, str(project_root))
 
 load_dotenv(override=True)
 
-from src.supabase_manager import SupabaseManager
+from src.infrastructure.database.manager import SupabaseManager
 from src.services.new_database_manager import get_database_manager
 
 

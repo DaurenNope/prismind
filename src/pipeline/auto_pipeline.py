@@ -4,16 +4,16 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
-from src.pipeline.orchestrator import get_orchestrator
-from src.publishing.circuit_breaker import get_circuit_breaker
+from src.application.automation.orchestrator import get_orchestrator
+from src.domain.publishing.circuit_breaker import get_circuit_breaker
 from src.services.profile_content_selector import ProfileContentSelector
 from src.services.profile_publishing_orchestrator import ProfilePublishingOrchestrator
-from src.utils.config import get_config
+from src.shared.utils.config import get_config
 
 logger = logging.getLogger(__name__)
 
 try:
-    from src.database.manager import SupabaseManager
+    from src.infrastructure.database.manager import SupabaseManager
 
     supabase_manager = SupabaseManager  # type: ignore
 except Exception as e:  # pragma: no cover - Supabase optional during local tests
@@ -85,7 +85,11 @@ class AutoPipeline:
 
     async def _safe_analyze_batch(self, limit: int) -> int:
         try:
-            return await self._orch.analyze_batch(limit=limit)
+            result = await self._orch.analyze_batch(limit=limit)
+            # Handle both old format (int) and new format (dict)
+            if isinstance(result, dict):
+                return result.get("count", 0)
+            return result
         except Exception as e:
             logger.error(f"Error: {e}")
             return 0
@@ -122,6 +126,153 @@ class AutoPipeline:
                 report[profile_key] = processed
         return report
 
+    async def run_rewrite_cycle_for_posts(
+        self, post_ids: List[str], profiles: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """
+        Rewrite only the specified posts for the given profiles.
+
+        This is used when you want to rewrite only newly analyzed posts,
+        not all eligible posts in the database.
+
+        IMPORTANT: Only rewrites posts that meet quality thresholds:
+        - Must have been analyzed (has analyzed_at)
+        - Must meet minimum quality/value/rewrite scores (default: 7.0)
+        - Must match at least one profile (via PersonaMatcher)
+
+        Args:
+            post_ids: List of post IDs to rewrite
+            profiles: Optional list of profile keys (default: all profiles)
+
+        Returns:
+            Dict with rewrite results per profile
+        """
+        if not post_ids:
+            return {}
+
+        targets = profiles or self._get_profile_keys()
+        if not targets:
+            return {}
+
+        # Get quality thresholds from config
+        flags = self.config.flags
+        min_quality_score = float(flags.get("rewriter_min_quality_score", 7.0))
+        min_value_score = float(flags.get("rewriter_min_value_score", 7.0))
+        min_rewrite_score = float(flags.get("rewriter_min_rewrite_score", 7.0))
+
+        # Fetch the actual posts from storage
+        posts_to_rewrite = []
+        skipped_reasons = {
+            "not_analyzed": 0,
+            "low_quality_score": 0,
+            "low_value_score": 0,
+            "low_rewrite_score": 0,
+        }
+        
+        try:
+            for post_id in post_ids:
+                post = self._orch.storage.get_post_by_id(post_id)
+                if not post:
+                    continue
+
+                # Check 1: Must have been analyzed
+                if not post.get("analyzed_at"):
+                    skipped_reasons["not_analyzed"] += 1
+                    logger.debug(f"⏭️  Skipping post {post_id}: not analyzed yet")
+                    continue
+
+                # Check 2: Quality score threshold
+                quality_score = float(post.get("quality_score", 0) or 0)
+                if quality_score < min_quality_score:
+                    skipped_reasons["low_quality_score"] += 1
+                    logger.debug(
+                        f"⏭️  Skipping post {post_id}: quality_score {quality_score:.1f} < {min_quality_score}"
+                    )
+                    continue
+
+                # Check 3: Value score threshold
+                value_score = float(post.get("value_score", 0) or 0)
+                if value_score < min_value_score:
+                    skipped_reasons["low_value_score"] += 1
+                    logger.debug(
+                        f"⏭️  Skipping post {post_id}: value_score {value_score:.1f} < {min_value_score}"
+                    )
+                    continue
+
+                # Check 4: Rewrite score threshold (if available)
+                rewrite_score = float(post.get("rewrite_score", 0) or 0)
+                if rewrite_score > 0 and rewrite_score < min_rewrite_score:
+                    skipped_reasons["low_rewrite_score"] += 1
+                    logger.debug(
+                        f"⏭️  Skipping post {post_id}: rewrite_score {rewrite_score:.1f} < {min_rewrite_score}"
+                    )
+                    continue
+
+                # Post passed all quality checks
+                posts_to_rewrite.append(post)
+
+        except Exception as e:
+            logger.error(f"Error fetching/filtering posts for rewrite: {e}")
+            return {}
+
+        if skipped_reasons["not_analyzed"] > 0 or any(skipped_reasons.values()):
+            logger.info(
+                f"📊 Post filtering: {len(posts_to_rewrite)} eligible, "
+                f"{sum(skipped_reasons.values())} skipped "
+                f"(not_analyzed: {skipped_reasons['not_analyzed']}, "
+                f"low_quality: {skipped_reasons['low_quality_score']}, "
+                f"low_value: {skipped_reasons['low_value_score']}, "
+                f"low_rewrite: {skipped_reasons['low_rewrite_score']})"
+            )
+
+        if not posts_to_rewrite:
+            logger.info(
+                "⏭️  No posts passed quality thresholds for rewrite. "
+                "Posts must be analyzed and meet minimum scores (quality ≥ 7.0, value ≥ 7.0)."
+            )
+            return {}
+
+        schedule_enabled = self.config.flags.get("auto_schedule_after_rewrite", False)
+        report: Dict[str, Any] = {}
+
+        for profile_key in targets:
+            try:
+                orchestrator = ProfilePublishingOrchestrator(
+                    profile_key, auto_schedule=schedule_enabled
+                )
+                dry_run = not schedule_enabled
+
+                stored = 0
+                scheduled = 0
+                for post in posts_to_rewrite:
+                    try:
+                        result = await orchestrator.process_post(post, dry_run=dry_run)
+                        rewrites = result.get("rewrites") or {}
+                        if not rewrites:
+                            continue
+
+                        created = self._persist_rewrites(
+                            profile_key, post, rewrites, schedule=not dry_run
+                        )
+                        stored += created.get("transformations", 0)
+                        scheduled += created.get("scheduled", 0)
+                    except Exception as exc:
+                        logger.error(
+                            f"❌ Error processing post {post.get('post_id', 'unknown')} for {profile_key}: {exc}",
+                            exc_info=True,
+                        )
+
+                if stored > 0 or scheduled > 0:
+                    report[profile_key] = {
+                        "transformations": stored,
+                        "scheduled": scheduled,
+                        "posts_processed": len(posts_to_rewrite),
+                    }
+            except Exception as exc:
+                logger.error(f"Error processing profile {profile_key}: {exc}")
+
+        return report
+
     async def process_backlog_for_profiles(
         self,
         profiles: Optional[List[str]] = None,
@@ -145,7 +296,6 @@ class AutoPipeline:
                 report["analyzed"] = analyzed
             except Exception as e:
                 logger.error(f"Error: {e}")
-                pass
 
         # Rewrite + schedule from backlog
         targets = profiles or self._get_profile_keys()
@@ -310,9 +460,9 @@ class AutoPipeline:
             if not rewritten_content:
                 continue
 
-            # Avoid duplicates in mimesis_transformations
+            # Avoid duplicates in persona_transformations
             existing = (
-                manager.client.table("mimesis_transformations")
+                manager.client.table("persona_transformations")
                 .select("id")
                 .eq("persona_key", profile_key)
                 .eq("source_post_id", post_id)
@@ -324,7 +474,7 @@ class AutoPipeline:
                 continue
 
             try:
-                manager.client.table("mimesis_transformations").insert(
+                manager.client.table("persona_transformations").insert(
                     {
                         "persona_key": profile_key,
                         "source_post_id": post_id,

@@ -12,6 +12,8 @@ import json
 import logging
 import os
 import sys
+import uuid
+from contextvars import ContextVar
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -90,12 +92,41 @@ class StructuredLogger:
             log_dir / f"beyondlines_{datetime.now().strftime('%Y%m%d')}.log"
         )
 
-        # JSON formatter for file logs
-        json_formatter = logging.Formatter(
-            '{"timestamp": "%(asctime)s", "level": "%(levelname)s", '
-            '"module": "%(name)s", "message": "%(message)s", '
-            '"context": %(context)s}'
-        )
+        # JSON formatter for file logs (with correlation ID support)
+        class JSONFormatter(logging.Formatter):
+            def format(self, record):
+                # Try to get correlation ID, fallback to None if not available
+                try:
+                    from src.shared.utils.observability_hub import get_observability_hub
+                    hub = get_observability_hub()
+                    correlation_id = hub.get_correlation_id() if hasattr(hub, 'get_correlation_id') else None
+                except Exception:
+                    correlation_id = None
+                log_data = {
+                    "timestamp": datetime.fromtimestamp(record.created).isoformat(),
+                    "level": record.levelname,
+                    "module": record.name,
+                    "message": record.getMessage(),
+                    "correlation_id": correlation_id,
+                }
+                
+                # Add context if available
+                if hasattr(record, "context") and record.context:
+                    try:
+                        if isinstance(record.context, str):
+                            log_data["context"] = json.loads(record.context)
+                        else:
+                            log_data["context"] = record.context
+                    except (json.JSONDecodeError, TypeError):
+                        log_data["context"] = {"raw": str(record.context)}
+                
+                # Add exception info if present
+                if record.exc_info:
+                    log_data["exception"] = self.formatException(record.exc_info)
+                
+                return json.dumps(log_data)
+        
+        json_formatter = JSONFormatter()
         file_handler.setFormatter(json_formatter)
         self.logger.addHandler(file_handler)
 
@@ -240,12 +271,36 @@ def setup_logging():
     root_logger.handlers.clear()
 
     if log_format == "json":
-        # JSON format for production
+        # JSON format for production (with correlation ID support)
+        class JSONFormatter(logging.Formatter):
+            def format(self, record):
+                correlation_id = get_correlation_id()
+                log_data = {
+                    "timestamp": datetime.fromtimestamp(record.created).isoformat(),
+                    "level": record.levelname,
+                    "module": record.name,
+                    "message": record.getMessage(),
+                    "correlation_id": correlation_id,
+                }
+                
+                # Add context if available
+                if hasattr(record, "context") and record.context:
+                    try:
+                        if isinstance(record.context, str):
+                            log_data["context"] = json.loads(record.context)
+                        else:
+                            log_data["context"] = record.context
+                    except (json.JSONDecodeError, TypeError):
+                        log_data["context"] = {"raw": str(record.context)}
+                
+                # Add exception info if present
+                if record.exc_info:
+                    log_data["exception"] = self.formatException(record.exc_info)
+                
+                return json.dumps(log_data)
+        
         handler = logging.StreamHandler(sys.stdout)
-        formatter = logging.Formatter(
-            '{"timestamp": "%(asctime)s", "level": "%(levelname)s", '
-            '"module": "%(name)s", "message": "%(message)s"}'
-        )
+        formatter = JSONFormatter()
         handler.setFormatter(formatter)
         root_logger.addHandler(handler)
     else:

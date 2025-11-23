@@ -18,7 +18,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.services.auto_analyzer import AnalyzerQueue
-from src.supabase_manager import SupabaseManager
+from src.infrastructure.database.manager import SupabaseManager
 
 
 async def main():

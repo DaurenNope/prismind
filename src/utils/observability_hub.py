@@ -22,7 +22,7 @@ from enum import Enum
 from functools import wraps
 from typing import Any, Callable, Dict, List, Optional
 
-from src.observability.tracing import (
+from src.infrastructure.observability.tracing import (
     Span,
     SpanKind,
     SpanStatus,
@@ -30,7 +30,7 @@ from src.observability.tracing import (
     span_context,
     trace_context,
 )
-from src.utils.logging_config import get_logger, get_performance_logger
+from src.shared.utils.logging_config import get_logger, get_performance_logger
 
 
 class MetricType(Enum):

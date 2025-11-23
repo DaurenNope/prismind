@@ -8,12 +8,12 @@ Main orchestrator for database operations using modular components.
 
 from typing import Any, Dict, List, Optional
 
-from src.utils.logging_config import get_logger
+from src.shared.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 
-from src.database.analysis import DatabaseAnalysis
-from src.database.operations import DatabaseOperations
+from src.infrastructure.database.analysis import DatabaseAnalysis
+from src.infrastructure.database.operations import DatabaseOperations
 
 
 class NewDatabaseManager:
@@ -192,7 +192,7 @@ def get_database_manager(db_path: str = "beyondlines.db") -> NewDatabaseManager:
     def get_github_trending_repos(self, limit: int = 100) -> List[Dict]:
         """Get GitHub trending repositories"""
         try:
-            from src.storage.db import get_storage
+            from src.infrastructure.database.storage.db import get_storage
 
             storage = get_storage()
             return storage.get_github_trending_repos(limit)
@@ -203,7 +203,7 @@ def get_database_manager(db_path: str = "beyondlines.db") -> NewDatabaseManager:
     def get_telegram_messages(self, limit: int = 100) -> List[Dict]:
         """Get Telegram messages"""
         try:
-            from src.storage.db import get_storage
+            from src.infrastructure.database.storage.db import get_storage
 
             storage = get_storage()
             return storage.get_telegram_messages(limit)

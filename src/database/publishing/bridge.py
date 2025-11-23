@@ -2,13 +2,19 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from src.database.manager import SupabaseManager
+from src.infrastructure.database.manager import SupabaseManager
 
 logger = logging.getLogger(__name__)
 
 
 class MimesisDB:
-    """Thin adapter for Mimesis tables using the shared SupabaseManager."""
+    """Thin adapter for persona_transformations table using the shared SupabaseManager.
+    
+    Note: Class name kept as MimesisDB for backward compatibility.
+    The table has been renamed from mimesis_transformations to persona_transformations.
+    
+    For new code, prefer using PersonaTransformationsDB alias.
+    """
 
     def __init__(self, manager: Optional[SupabaseManager] = None) -> None:
         self.sb = manager or SupabaseManager()
@@ -19,7 +25,7 @@ class MimesisDB:
         """List ready transformations, with error handling."""
         try:
             q = (
-                self.sb.client.table("mimesis_transformations")
+                self.sb.client.table("persona_transformations")
                 .select("*")
                 .eq("ready_for_posting", True)
             )
@@ -99,9 +105,9 @@ class MimesisDB:
         post_data = scheduled_post[0]
 
         # Update status to posted - use DatabaseAgent
-        from src.database.database_agent import DatabaseAgent
+        from src.infrastructure.database.database_agent import get_database_agent
 
-        db_agent = DatabaseAgent()
+        db_agent = get_database_agent()
         db_agent.update_scheduled_post(scheduled_id, {"status": "posted"})
 
         # Create posted_content record with all required fields
@@ -122,17 +128,17 @@ class MimesisDB:
             posted_content["post_url"] = post_url
 
         # Use DatabaseAgent (delegates to StorageFacade)
-        from src.database.database_agent import DatabaseAgent
+        from src.infrastructure.database.database_agent import get_database_agent
 
-        db_agent = DatabaseAgent()
+        db_agent = get_database_agent()
         db_agent.save_posted_content(posted_content)
 
     def insert_scheduled(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """Insert a scheduled post - uses DatabaseAgent (delegates to StorageFacade)."""
         try:
-            from src.database.database_agent import DatabaseAgent
+            from src.infrastructure.database.database_agent import get_database_agent
 
-            db_agent = DatabaseAgent()
+            db_agent = get_database_agent()
             if db_agent.save_scheduled_post(payload):
                 # Get the inserted record
                 try:
@@ -148,7 +154,6 @@ class MimesisDB:
                         return result.data[0]
                 except Exception as e:
                     logger.error(f"Error: {e}")
-                    pass
                 # Fallback: return payload with id if available
                 return payload
             else:
@@ -173,7 +178,7 @@ class MimesisDB:
     def list_transformations(
         self, persona_key: Optional[str] = None, ready_only: bool = False
     ) -> List[Dict[str, Any]]:
-        q = self.sb.client.table("mimesis_transformations").select("*")
+        q = self.sb.client.table("persona_transformations").select("*")
         if persona_key:
             q = q.eq("persona_key", persona_key)
         if ready_only:
@@ -185,7 +190,7 @@ class MimesisDB:
     ) -> Dict[str, Any]:
         # Get existing transformation first
         existing = (
-            self.sb.client.table("mimesis_transformations")
+            self.sb.client.table("persona_transformations")
             .select("*")
             .eq("id", transformation_id)
             .limit(1)
@@ -196,9 +201,9 @@ class MimesisDB:
 
         # Merge fields and save via DatabaseAgent
         updated = {**existing.data[0], **fields}
-        from src.database.database_agent import DatabaseAgent
+        from src.infrastructure.database.database_agent import get_database_agent
 
-        db_agent = DatabaseAgent()
+        db_agent = get_database_agent()
         if db_agent.save_transformation(updated):
             return updated
         else:
@@ -206,7 +211,7 @@ class MimesisDB:
 
     def delete_transformation(self, transformation_id: int) -> None:
         """Delete a transformation by ID"""
-        self.sb.client.table("mimesis_transformations").delete().eq(
+        self.sb.client.table("persona_transformations").delete().eq(
             "id", transformation_id
         ).execute()
 
@@ -224,7 +229,7 @@ class MimesisDB:
         # Get count before deletion
         try:
             count_query = (
-                self.sb.client.table("mimesis_transformations")
+                self.sb.client.table("persona_transformations")
                 .select("*", count="exact")
                 .lt("created_at", cutoff_iso)
                 .execute()
@@ -238,7 +243,7 @@ class MimesisDB:
         # Delete old transformations
         try:
             result = (
-                self.sb.client.table("mimesis_transformations")
+                self.sb.client.table("persona_transformations")
                 .delete()
                 .lt("created_at", cutoff_iso)
                 .execute()
@@ -257,7 +262,7 @@ class MimesisDB:
         # Get count before deletion
         try:
             count_query = (
-                self.sb.client.table("mimesis_transformations")
+                self.sb.client.table("persona_transformations")
                 .select("*", count="exact")
                 .execute()
             )
@@ -270,7 +275,7 @@ class MimesisDB:
         # Delete all transformations
         try:
             # Delete all rows (no filter)
-            self.sb.client.table("mimesis_transformations").delete().neq(
+            self.sb.client.table("persona_transformations").delete().neq(
                 "id", 0
             ).execute()
             logger.info(f"All transformations deleted")
@@ -289,7 +294,7 @@ class MimesisDB:
         for tid in transformation_ids:
             # fetch transformation
             rows = (
-                self.sb.client.table("mimesis_transformations")
+                self.sb.client.table("persona_transformations")
                 .select("*")
                 .eq("id", tid)
                 .limit(1)
@@ -315,7 +320,7 @@ class MimesisDB:
                 "content_type": content_type_map.get(
                     platform, "single_tweet"
                 ),  # Required by DB
-                "scheduled_time": scheduled_at_iso,  # Mimesis uses scheduled_time, not scheduled_at
+                "scheduled_time": scheduled_at_iso,  # scheduled_posts table uses scheduled_time, not scheduled_at
                 "status": "pending",  # Database uses 'pending', not 'scheduled'
             }
             created = self.insert_scheduled(payload)
@@ -323,6 +328,31 @@ class MimesisDB:
             self.update_transformation(tid, {"ready_for_posting": True})
             approved.append(created)
         return approved
+
+    def get_recent_posts(self, hours: int = 24) -> List[Dict[str, Any]]:
+        """Get recent posts from posted_content table within the specified hours."""
+        try:
+            if not self.sb or not self.sb.client:
+                logger.warning(
+                    "Supabase client not available, skipping recent posts check"
+                )
+                return []
+
+            from datetime import datetime, timedelta, timezone
+
+            cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours)
+            cutoff_iso = cutoff_time.isoformat()
+
+            q = (
+                self.sb.client.table("posted_content")
+                .select("*")
+                .gte("posted_at", cutoff_iso)
+                .order("posted_at", desc=True)
+            )
+            return q.execute().data
+        except Exception as e:
+            logger.error(f"Failed to get recent posts: {e}")
+            return []
 
 
 class PersonaDraftsDB:
@@ -409,3 +439,7 @@ class PersonaDraftsDB:
             "last_generated_at": datetime.now(timezone.utc).isoformat(),
         }
         return self.update(draft_id, fields)
+
+
+# Create alias for better naming (backward compatible)
+PersonaTransformationsDB = MimesisDB

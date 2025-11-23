@@ -8,20 +8,18 @@ Tracks system metrics, API response times, resource usage, and alerting.
 Author: BEYONDLINES AI System
 """
 
-import asyncio
 import json
 import threading
 import time
 from collections import defaultdict, deque
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 import psutil
 
-from src.utils.error_handler import handle_errors
-from src.utils.logging_config import get_logger, get_performance_logger
+from src.shared.utils.error_handler import handle_errors
+from src.shared.utils.logging_config import get_logger, get_performance_logger
 
 logger = get_logger("performance_monitor")
 perf_logger = get_performance_logger()

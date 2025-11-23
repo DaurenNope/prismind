@@ -7,7 +7,7 @@ import os
 
 from supabase import create_client
 
-from src.publishing.rewriter import ContentRewriter
+from src.domain.publishing.modular_rewriter.compat import create_compat_rewriter
 
 
 async def rewrite_from_supabase():
@@ -26,7 +26,7 @@ async def rewrite_from_supabase():
         return
 
     supabase = create_client(url, key)
-    rewriter = ContentRewriter()
+    rewriter = create_compat_rewriter()
 
     # Get Reddit posts with content (not just URLs)
     print("\n📊 Fetching Reddit posts from Supabase...")

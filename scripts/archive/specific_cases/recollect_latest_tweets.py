@@ -17,8 +17,8 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.core.extraction.twitter import TwitterExtractorPlaywright
-from src.database.manager import SupabaseManager
+from src.domain.collection.extractors.twitter import TwitterExtractorPlaywright
+from src.infrastructure.database.manager import SupabaseManager
 
 
 async def recollect_latest_tweets(limit: int = 50, dry_run: bool = False):

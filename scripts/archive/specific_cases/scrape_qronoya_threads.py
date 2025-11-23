@@ -8,7 +8,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
-from src.core.extraction.threads_extractor import ThreadsExtractor
+from src.domain.collection.extractors.threads_extractor import ThreadsExtractor
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"

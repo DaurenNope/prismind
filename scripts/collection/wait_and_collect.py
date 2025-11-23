@@ -9,7 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.pipeline.orchestrator import get_orchestrator
+from src.application.automation.orchestrator import get_orchestrator
 
 async def wait_and_collect(minutes: int = 30):
     """Wait for specified minutes then try collection"""

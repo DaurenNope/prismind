@@ -10,7 +10,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from src.utils.logging_config import get_logger
+from src.shared.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -67,9 +67,14 @@ class SQLiteAdapter:
         )
         self.conn.commit()
 
-    def get_posts(self, limit: int = 100) -> List[Dict[str, Any]]:
+    def get_posts(self, limit: int = 100, timeout: Optional[float] = 30.0) -> List[Dict[str, Any]]:
+        """P2-4: Get posts with timeout protection"""
         cur = self.conn.cursor()
         try:
+            # P2-4: Set SQLite timeout (in seconds)
+            if timeout:
+                self.conn.execute(f"PRAGMA busy_timeout = {int(timeout * 1000)}")  # Convert to milliseconds
+            
             cur.execute(
                 "SELECT id, post_id, platform, source, title, content, url, author, created_at FROM posts ORDER BY created_at DESC LIMIT ?",
                 (limit,),
@@ -138,6 +143,26 @@ class SQLiteAdapter:
         except Exception as e:
             logger.error(f"get_unanalyzed_posts failed: {e}")
             return []
+
+    def get_post_by_id(self, post_id: str) -> Optional[Dict[str, Any]]:
+        """Get a specific post by ID from SQLite cache."""
+        if not post_id:
+            return None
+        
+        cur = self.conn.cursor()
+        try:
+            cur.execute(
+                "SELECT * FROM posts WHERE post_id = ? LIMIT 1",
+                (post_id,)
+            )
+            cols = [d[0] for d in cur.description]
+            row = cur.fetchone()
+            if row:
+                return dict(zip(cols, row))
+            return None
+        except Exception as e:
+            logger.error(f"Error getting post by ID from SQLite: {e}")
+            return None
 
     def save_post(self, post: Dict[str, Any]) -> bool:
         cur = self.conn.cursor()

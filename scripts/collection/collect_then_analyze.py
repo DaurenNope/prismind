@@ -13,8 +13,8 @@ from typing import Any, Dict, List
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from src.pipeline.orchestrator import get_orchestrator
-from src.services.analysis.post_analyzer import analyze_and_store_post
+from src.application.automation.orchestrator import get_orchestrator
+from src.domain.analysis.services.post_analyzer import analyze_and_store_post
 from src.services.new_database_manager import NewDatabaseManager
 
 
@@ -85,7 +85,7 @@ async def analyze_only(limit: int = None) -> int:
     # Try to get supabase manager
     supabase_manager = None
     try:
-        from src.supabase_manager import SupabaseManager
+        from src.infrastructure.database.manager import SupabaseManager
 
         supabase_manager = SupabaseManager()
     except Exception:

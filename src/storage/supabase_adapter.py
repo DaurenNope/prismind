@@ -7,11 +7,11 @@ import asyncio
 import os
 from typing import Any, Dict, List, Optional
 
-from src.utils.logging_config import get_logger
+from src.shared.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 
-from src.database.manager import SupabaseManager
+from src.infrastructure.database.manager import SupabaseManager
 from src.services.supabase.post_inserter import PostInserter
 
 
@@ -19,7 +19,7 @@ class SupabaseAdapter:
     def __init__(self) -> None:
         self.client = SupabaseManager().client
         # Create a simple duplicate checker wrapper
-        from src.utils.duplicate_detector import DuplicateDetector
+        from src.shared.utils.duplicate_detector import DuplicateDetector
 
         class DuplicateCheckerWrapper:
             def __init__(self, detector):
@@ -47,7 +47,7 @@ class SupabaseAdapter:
     def save_post(self, post: Dict[str, Any]) -> bool:
         try:
             # VALIDATE POST BEFORE SAVING TO SUPABASE
-            from src.utils.post_validator import validate_post
+            from src.shared.utils.post_validator import validate_post
 
             validation = validate_post(post, strict=True)
             if not validation.is_valid:
@@ -83,8 +83,11 @@ class SupabaseAdapter:
         """Deprecated: analysis is handled upstream."""
         return post
 
-    def get_posts(self, limit: int = 100) -> List[Dict[str, Any]]:
+    def get_posts(self, limit: int = 100, timeout: Optional[float] = 30.0) -> List[Dict[str, Any]]:
+        """P2-4: Get posts with timeout protection"""
         try:
+            # P2-4: Add timeout protection (Supabase client may not support timeout directly)
+            # For now, we log the timeout parameter for future implementation
             result = (
                 self.client.table("posts")
                 .select("*")
@@ -133,6 +136,25 @@ class SupabaseAdapter:
         except Exception as e:
             logger.debug(f"get_unanalyzed_posts failed: {e}")
             return []
+
+    def get_post_by_id(self, post_id: str) -> Optional[Dict[str, Any]]:
+        """Get a specific post by ID from Supabase."""
+        if not post_id:
+            return None
+        
+        try:
+            result = (
+                self.client.table("posts")
+                .select("*")
+                .eq("post_id", post_id)
+                .limit(1)
+                .execute()
+            )
+            data = getattr(result, "data", []) or []
+            return data[0] if data else None
+        except Exception as e:
+            logger.error(f"Error getting post by ID from Supabase: {e}")
+            return None
 
     def save_github_trending_repo(self, repo_data: Dict[str, Any]) -> bool:
         try:

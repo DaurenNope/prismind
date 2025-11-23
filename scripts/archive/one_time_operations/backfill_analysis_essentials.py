@@ -12,8 +12,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import asyncio
 from src.services.new_database_manager import NewDatabaseManager
-from src.database.manager import SupabaseManager
-from src.services.analysis.post_analyzer import analyze_and_store_post
+from src.infrastructure.database.manager import SupabaseManager
+from src.domain.analysis.services.post_analyzer import analyze_and_store_post
 from urllib.parse import urlparse
 
 # Essential fields that should be present after analysis

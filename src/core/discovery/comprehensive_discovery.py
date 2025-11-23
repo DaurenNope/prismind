@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional
 
 from src.core.discovery.discovery_engine import DiscoveryEngine
 from src.core.discovery.topic_tracker import TopicTracker
-from src.core.extraction.social_extractor_base import SocialPost
+from src.domain.collection.extractors.social_extractor_base import SocialPost
 
 
 class ComprehensiveDiscovery:
@@ -156,7 +156,7 @@ Summary:"""
         logger.info("📰 Deep article discovery...")
 
         try:
-            from src.core.extraction.article_extractor import ArticleExtractor
+            from src.domain.collection.extractors.article_extractor import ArticleExtractor
 
             # Expanded RSS feed list
             feeds = [
@@ -275,7 +275,7 @@ Summary:"""
         logger.info("\n🔬 Research Agent: Analyzing trends...")
 
         try:
-            from src.agents.enhanced_research_agent import EnhancedResearchAgent
+            from src.domain.intelligence.agents.enhanced_research_agent import EnhancedResearchAgent
 
             agent = EnhancedResearchAgent()
 
@@ -330,7 +330,7 @@ Summary:"""
         logger.info("\n📚 Librarian Agent: Curating content...")
 
         try:
-            from src.agents.librarian_agent import LibrarianAgent
+            from src.domain.intelligence.agents.librarian_agent import LibrarianAgent
 
             agent = LibrarianAgent()
 

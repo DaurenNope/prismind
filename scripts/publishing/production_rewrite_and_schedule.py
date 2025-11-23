@@ -15,10 +15,10 @@ load_dotenv(override=True)
 
 import logging
 
-from src.core.analysis.intelligent_content_analyzer import IntelligentContentAnalyzer
-from src.publishing.rewriter import ContentRewriter
-from src.publishing.scheduler import PublishingScheduler
-from src.storage.db import StorageFacade
+from src.domain.analysis.analyzers.intelligent_content_analyzer import IntelligentContentAnalyzer
+from src.domain.publishing.modular_rewriter.compat import create_compat_rewriter
+from src.domain.publishing.scheduler import PublishingScheduler
+from src.infrastructure.database.storage.db import StorageFacade
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -35,7 +35,7 @@ class ProductionPublisher:
 
     def __init__(self):
         self.db = StorageFacade()
-        self.rewriter = ContentRewriter()
+        self.rewriter = create_compat_rewriter()
         self.scheduler = PublishingScheduler()
         self.analyzer = IntelligentContentAnalyzer()
 

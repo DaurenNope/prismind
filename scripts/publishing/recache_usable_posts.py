@@ -15,11 +15,11 @@ import logging
 from collections import Counter
 from typing import Iterable, Optional
 
-from src.database.curation import DatabaseCuration
+from src.infrastructure.database.curation import DatabaseCuration
 from src.services.new_database_manager import NewDatabaseManager
 
 try:
-    from src.database.manager import SupabaseManager
+    from src.infrastructure.database.manager import SupabaseManager
 except Exception as exc:  # pragma: no cover - Supabase optional
     SupabaseManager = None  # type: ignore
     logging.getLogger(__name__).warning(

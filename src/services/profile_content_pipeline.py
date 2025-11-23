@@ -451,4 +451,4 @@ if __name__ == "__main__":
 
     logger.info("\n" + "=" * 80)
     logger.info("✅ Pipeline test complete!")
-    print("=" * 80)
+    logger.info("=" * 80)

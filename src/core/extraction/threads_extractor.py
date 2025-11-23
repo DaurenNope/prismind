@@ -94,7 +94,6 @@ class ThreadsExtractor(SocialExtractorBase):
                 )
         except Exception as e:
             logger.error(f"Error: {e}")
-            pass
 
     def _ensure_storage_state_format(self, cookies_path: str) -> str:
         try:
@@ -136,7 +135,6 @@ class ThreadsExtractor(SocialExtractorBase):
                         converted_cookie["expires"] = int(expires)
                     except Exception as e:
                         logger.error(f"Error: {e}")
-                        pass
                 converted["cookies"].append(converted_cookie)
             try:
                 with open(cookies_path, "w") as f:
@@ -681,7 +679,6 @@ class ThreadsExtractor(SocialExtractorBase):
                 await self.page.screenshot(path="logs/threads_login_failure.png")
             except Exception as e:
                 logger.error(f"Error: {e}")
-                pass
             # Clean up browser on error
             if hasattr(self, "browser") and self.browser:
                 await self.browser.close()
@@ -1266,7 +1263,9 @@ class ThreadsExtractor(SocialExtractorBase):
                             json.dump(saved_payload, fh, ensure_ascii=False, indent=2)
                     except Exception as dump_err:
                         logging.debug(f"Threads ajax response dump skipped: {dump_err}")
-                # TODO: parse saved_payload for posts (future step)
+                # Note: saved_payload contains raw API response data.
+                # Post parsing is handled by the main collection flow above.
+                # This saved payload is for debugging/analysis purposes only.
 
         if collected and hasattr(self, "context") and self.context:
             try:
@@ -1439,7 +1438,6 @@ class ThreadsExtractor(SocialExtractorBase):
         else:
             logging.info("Using existing authenticated session")
 
-        posts = []
         try:
             page = self.page
 
@@ -1600,7 +1598,6 @@ class ThreadsExtractor(SocialExtractorBase):
                     logging.info("📸 Screenshot saved: logs/threads_saved_empty.png")
                 except Exception as e:
                     logger.error(f"Error: {e}")
-                    pass
 
             await page.wait_for_timeout(2000)  # Extra wait for dynamic content
 
@@ -2143,7 +2140,6 @@ class ThreadsExtractor(SocialExtractorBase):
                 # We're in an async context, we can't use run()
                 # Create a new event loop in a thread
                 import concurrent.futures
-                import threading
 
                 def run_async():
                     new_loop = asyncio.new_event_loop()
@@ -2273,7 +2269,6 @@ class ThreadsExtractor(SocialExtractorBase):
                             thread_total = total
                 except Exception as e:
                     logger.error(f"Error: {e}")
-                    pass
                 # Preserve Translate markers and pagination for thread segmentation
                 # Remove short time markers like "1d", "2h"
                 text = re.sub(r"\b\d+\s*[dhm]\b", " ", text, flags=re.I)
@@ -2500,8 +2495,8 @@ class ThreadsExtractor(SocialExtractorBase):
 
             # BEST METHOD: Extract from JSON-LD (most reliable and complete!)
             content = ""
-            author = "Unknown Author"
-            author_handle = "unknown"
+            author = None  # Don't use placeholder - will extract from URL
+            author_handle = None  # Don't use placeholder - will extract from URL
 
             # CRITICAL: Extract author from URL FIRST as baseline (before any extraction)
             # This ensures we always have a fallback even if DOM selectors fail
@@ -2793,7 +2788,6 @@ class ThreadsExtractor(SocialExtractorBase):
                                                 )[1].split("/")[0]
                                     except Exception as e:
                                         logger.error(f"Error: {e}")
-                                        pass
 
                                     # If we can't get handle from href, try to extract from text
                                     if (
@@ -2962,7 +2956,6 @@ class ThreadsExtractor(SocialExtractorBase):
                             )
                     except Exception as e:
                         logger.error(f"Error: {e}")
-                        pass
 
             # Try to extract author information (only if better than URL baseline)
             author_selectors = [
@@ -3089,10 +3082,14 @@ class ThreadsExtractor(SocialExtractorBase):
                 hashtags = re.findall(r"#(\w+)", content)
                 mentions = re.findall(r"@(\w+)", content)
 
-            # If we couldn't extract meaningful content, create a basic placeholder
-            if not content or len(content) < 5:
-                content = f"Threads post {post_code} - Content extraction in progress"
-                logging.warning(f"Could not extract meaningful content from {url}")
+            # If we couldn't extract meaningful content, log error and return None
+            # Don't create placeholder content - let validation reject it
+            if not content or len(content) < 10:
+                logging.error(
+                    f"❌ Could not extract meaningful content from {url} "
+                    f"(content length: {len(content) if content else 0})"
+                )
+                return None
 
             # Final content sanitization to avoid replies/translations/noise
             raw_content_before_sanitize = content or ""
@@ -3126,6 +3123,28 @@ class ThreadsExtractor(SocialExtractorBase):
             normalized_handle = self._normalize_handle(author_handle)
             if normalized_handle and normalized_handle != author_handle:
                 author_handle = normalized_handle
+
+            # Ensure we have valid author information (extract from URL if needed)
+            if not author or author in ("Unknown Author", "Unknown", "Thread"):
+                # Try to extract from URL as final fallback
+                url_handle = self._extract_handle_from_url(url)
+                if url_handle:
+                    author = url_handle
+                    if not author_handle or author_handle in ("unknown", "thread", "unknown_user"):
+                        author_handle = url_handle
+                    logging.info(f"✅ Extracted author from URL: @{author_handle}")
+                else:
+                    logging.error(f"❌ Could not extract author information from {url}")
+                    return None
+
+            # Ensure we have valid author handle
+            if not author_handle or author_handle in ("unknown", "thread", "unknown_user"):
+                if author:
+                    author_handle = author
+                else:
+                    logging.error(f"❌ Could not extract author handle from {url}")
+                    return None
+
             # Allowlist filtering removed - collect all posts
 
             # Create the SocialPost object
@@ -3167,25 +3186,13 @@ class ThreadsExtractor(SocialExtractorBase):
             return post
 
         except Exception as e:
-            logging.error(f"Failed to scrape thread {url}: {e}")
-            # Return a basic placeholder if scraping fails
-            try:
-                post_code = url.strip("/").split("/")[-1]
-                return SocialPost(
-                    platform=self.platform_name,
-                    post_id=post_code,
-                    author="Threads User",
-                    author_handle="threads_user",
-                    content=f"Threads post from {url} - Scraping failed",
-                    created_at=datetime.now(timezone.utc),
-                    url=url,
-                    post_type="post",
-                    media_urls=[],
-                    engagement={},
-                )
-            except Exception as e:
-                logger.error(f"Error: {e}")
-                return None
+            logging.error(
+                f"❌ Failed to scrape thread {url}: {e}",
+                exc_info=True
+            )
+            # Don't return placeholder posts - return None to skip invalid posts
+            # Validation will reject placeholder content, so we should fail gracefully
+            return None
 
     def _scrape_thread_data(self, url: str, page) -> Optional[SocialPost]:
         """
@@ -3219,8 +3226,8 @@ class ThreadsExtractor(SocialExtractorBase):
 
             # Try to extract real content using various selectors
             content = ""
-            author = "Unknown Author"
-            author_handle = "unknown"
+            author = None  # Don't use placeholder - will extract from URL if needed
+            author_handle = None  # Don't use placeholder - will extract from URL if needed
             created_at = datetime.now(timezone.utc)
             engagement = {}
             media_urls = []
@@ -3354,10 +3361,34 @@ class ThreadsExtractor(SocialExtractorBase):
                 hashtags = re.findall(r"#(\w+)", content)
                 mentions = re.findall(r"@(\w+)", content)
 
-            # If we couldn't extract meaningful content, create a basic placeholder
+            # If we couldn't extract meaningful content, log error and return None
+            # Don't create placeholder content - let validation reject it
             if not content or len(content) < 10:
-                content = f"Threads post {post_code} - Content extraction in progress"
-                logging.warning(f"Could not extract meaningful content from {url}")
+                logging.error(
+                    f"❌ Could not extract meaningful content from {url} "
+                    f"(content length: {len(content) if content else 0})"
+                )
+                return None
+
+            # Ensure we have valid author information (extract from URL if needed)
+            if not author or author in ("Unknown Author", "Unknown", "Thread"):
+                # Try to extract from URL as final fallback
+                url_handle = self._extract_handle_from_url(url)
+                if url_handle:
+                    author = url_handle
+                    author_handle = url_handle
+                    logging.info(f"✅ Extracted author from URL: @{author_handle}")
+                else:
+                    logging.error(f"❌ Could not extract author information from {url}")
+                    return None
+
+            # Ensure we have valid author handle
+            if not author_handle or author_handle in ("unknown", "thread", "unknown_user"):
+                if author:
+                    author_handle = author
+                else:
+                    logging.error(f"❌ Could not extract author handle from {url}")
+                    return None
 
             # Create the SocialPost object
             post = SocialPost(
@@ -3379,25 +3410,13 @@ class ThreadsExtractor(SocialExtractorBase):
             return post
 
         except Exception as e:
-            logging.error(f"Failed to scrape thread {url}: {e}")
-            # Return a basic placeholder if scraping fails
-            try:
-                post_code = url.strip("/").split("/")[-1]
-                return SocialPost(
-                    platform=self.platform_name,
-                    post_id=post_code,
-                    author="Threads User",
-                    author_handle="threads_user",
-                    content=f"Threads post from {url} - Scraping failed",
-                    created_at=datetime.now(timezone.utc),
-                    url=url,
-                    post_type="post",
-                    media_urls=[],
-                    engagement={},
-                )
-            except Exception as e:
-                logger.error(f"Error: {e}")
-                return None
+            logging.error(
+                f"❌ Failed to scrape thread {url}: {e}",
+                exc_info=True
+            )
+            # Don't return placeholder posts - return None to skip invalid posts
+            # Validation will reject placeholder content, so we should fail gracefully
+            return None
 
     def get_posts_by_urls(self, urls: list[str]) -> list[SocialPost]:
         # This will be updated later if needed
@@ -3455,4 +3474,3 @@ class ThreadsExtractor(SocialExtractorBase):
                 await self.pw.stop()
         except Exception as e:
             logging.debug(f"Error during ThreadsExtractor cleanup: {e}")
-            pass

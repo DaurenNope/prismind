@@ -14,8 +14,8 @@ from pathlib import Path
 project_root = Path(__file__).resolve().parent
 sys.path.insert(0, str(project_root))
 
-from src.orchestration.autonomous_manager import autonomous_manager
-from src.utils.logging_config import get_logger
+from src.application.orchestration.autonomous_manager import autonomous_manager
+from src.shared.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -56,7 +56,7 @@ class AutonomousLauncher:
 
         try:
             # Validate configuration
-            from src.utils.config_validator import validate_config_at_startup
+            from src.shared.utils.config_validator import validate_config_at_startup
 
             config_result = validate_config_at_startup()
 
@@ -148,7 +148,7 @@ async def main():
 
     # Handle configuration-only mode
     if args.config_only:
-        from src.utils.config_validator import validate_config_at_startup
+        from src.shared.utils.config_validator import validate_config_at_startup
 
         result = validate_config_at_startup()
         sys.exit(0 if result["valid"] else 1)

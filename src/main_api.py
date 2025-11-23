@@ -18,7 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 # Import API routers
-from src.api.persona_api import router as persona_router
+from src.application.api.persona_api import router as persona_router
 
 # Configure logging
 logging.basicConfig(
@@ -36,7 +36,7 @@ async def lifespan(app: FastAPI):
 
     try:
         # Test DynamicRewriter availability
-        from src.publishing.dynamic_rewriter import DynamicRewriter
+        from src.domain.publishing.dynamic_rewriter import DynamicRewriter
         rewriter = DynamicRewriter()
         logger.info("✅ DynamicRewriter initialized successfully")
 
@@ -104,7 +104,7 @@ async def health_check():
 
     # Check DynamicRewriter
     try:
-        from src.publishing.dynamic_rewriter import DynamicRewriter
+        from src.domain.publishing.dynamic_rewriter import DynamicRewriter
         rewriter = DynamicRewriter()
         health_status["services"]["dynamic_rewriter"] = "healthy"
         health_status["services"]["embedding_model"] = "healthy" if rewriter.voice_analyzer.embedding_model else "unavailable"
@@ -123,7 +123,7 @@ async def get_system_stats():
     """Get system statistics for frontend dashboard"""
     try:
         # Import persona count and rewriter for RAG stats
-        from src.api.persona_api import personas_db, rewriter
+        from src.application.api.persona_api import personas_db, rewriter
 
         # Calculate real metrics from personas database
         authenticity_scores = []
@@ -180,7 +180,7 @@ async def get_system_stats():
 async def get_quality_trends():
     """Get quality trend analytics for the dashboard"""
     try:
-        from src.api.persona_api import personas_db
+        from src.application.api.persona_api import personas_db
 
         # Calculate quality trends over time
         quality_trends = []
@@ -232,7 +232,7 @@ async def get_quality_trends():
 async def get_persona_performance(persona_id: str):
     """Get detailed performance analytics for a specific persona"""
     try:
-        from src.api.persona_api import personas_db, rewriter
+        from src.application.api.persona_api import personas_db, rewriter
 
         if persona_id not in personas_db:
             raise HTTPException(status_code=404, detail="Persona not found")

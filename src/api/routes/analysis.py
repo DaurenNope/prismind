@@ -5,15 +5,15 @@ import os
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+from dateutil.parser import isoparse
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
-from dateutil.parser import isoparse
 
-from src.pipeline.orchestrator import get_orchestrator
+from src.application.automation.orchestrator import get_orchestrator
 from src.services.new_database_manager import NewDatabaseManager
 
 try:
-    from src.utils.logging_config import get_logger
+    from src.shared.utils.logging_config import get_logger
 except Exception:  # pragma: no cover - fallback if logging module import fails
     import logging
 
@@ -68,9 +68,17 @@ def _ensure_list(value: Any) -> List[str]:
     return []
 
 
-async def _run_auto_rewrite_cycle(module_logger) -> Optional[Dict[str, Any]]:
+async def _run_auto_rewrite_cycle(
+    module_logger, analyzed_post_ids: Optional[List[str]] = None
+) -> Optional[Dict[str, Any]]:
     """
     Trigger the auto rewrite pipeline (without auto posting).
+
+    Args:
+        module_logger: Logger instance
+        analyzed_post_ids: Optional list of post IDs that were just analyzed.
+                         If provided, only these posts will be processed for rewriting.
+                         If None, processes all eligible posts (backward compatibility).
 
     Returns summary dict if rewrites/scheduling occurred, otherwise None.
     """
@@ -81,7 +89,18 @@ async def _run_auto_rewrite_cycle(module_logger) -> Optional[Dict[str, Any]]:
         if not auto_pipeline.enabled:
             return None
 
-        rewrite_report = await auto_pipeline.run_rewrite_cycle()
+        # If specific post IDs were analyzed, only rewrite those
+        if analyzed_post_ids:
+            module_logger.info(
+                f"Rewriting only newly analyzed posts: {len(analyzed_post_ids)} posts"
+            )
+            rewrite_report = await auto_pipeline.run_rewrite_cycle_for_posts(
+                analyzed_post_ids
+            )
+        else:
+            # Backward compatibility: process all eligible posts
+            rewrite_report = await auto_pipeline.run_rewrite_cycle()
+        
         if rewrite_report:
             module_logger.info(f"Auto rewrite cycle complete: {rewrite_report}")
         else:
@@ -259,9 +278,8 @@ async def get_analysis_stats() -> Dict[str, Any]:
 
         quality_values: List[float] = []
         for post in analyzed_posts:
-            score = post.get("quality_score")
-            if score is None:
-                score = post.get("content_quality_score")
+            # Standardized field name: quality_score (with legacy fallback)
+            score = post.get("quality_score") or post.get("content_quality_score")
             if isinstance(score, (int, float)):
                 quality_values.append(float(score))
 
@@ -357,8 +375,8 @@ async def get_recent_analysis(limit: int = 20) -> Dict[str, Any]:
                     "analysis_timestamp": _safe_timestamp(
                         post.get("analysis_timestamp") or post.get("analyzed_at")
                     ),
-                    "quality_score": post.get("quality_score")
-                    or post.get("content_quality_score"),
+                    # Standardized field name: quality_score (with legacy fallback)
+                    "quality_score": post.get("quality_score") or post.get("content_quality_score"),
                     "value_score": post.get("value_score"),
                     "sentiment": post.get("sentiment") or post.get("sentiment_label"),
                     "ai_summary": post.get("ai_summary") or post.get("summary"),
@@ -378,7 +396,7 @@ async def get_recent_analysis(limit: int = 20) -> Dict[str, Any]:
 @router.post("/run")
 async def trigger_analysis(request: AnalysisRunRequest) -> Dict[str, Any]:
     """Kick off an analysis batch."""
-    from src.utils.logging_config import get_logger
+    from src.shared.utils.logging_config import get_logger
 
     logger = get_logger(__name__)
 
@@ -400,19 +418,31 @@ async def trigger_analysis(request: AnalysisRunRequest) -> Dict[str, Any]:
                 "message": "No unanalyzed posts found. All posts are already analyzed.",
             }
 
-        analyzed = await orchestrator.analyze_batch(
+        result = await orchestrator.analyze_batch(
             limit=request.limit, force=request.force
         )
+        # Handle both old format (int) and new format (dict)
+        if isinstance(result, dict):
+            analyzed = result.get("count", 0)
+            analyzed_post_ids = result.get("analyzed_post_ids", [])
+        else:
+            # Backward compatibility: old format returned just int
+            analyzed = result
+            analyzed_post_ids = []
+        
         logger.info(f"Analysis batch completed: {analyzed} posts analyzed")
         automation = None
         if analyzed > 0:
-            automation = await _run_auto_rewrite_cycle(logger)
+            # Only rewrite the newly analyzed posts, not all posts in database
+            automation = await _run_auto_rewrite_cycle(logger, analyzed_post_ids=analyzed_post_ids)
 
         response: Dict[str, Any] = {
             "success": True,
             "analyzed": analyzed,
             "message": f"Analyzed {analyzed} out of {len(unanalyzed)} available posts",
         }
+        if analyzed_post_ids:
+            response["analyzed_post_ids"] = analyzed_post_ids
         if automation:
             response["automation"] = automation
 

@@ -1,0 +1,118 @@
+# Collection Orchestrator Agent Configuration
+
+agent:
+  id: collection_orchestrator
+  name: Collection Orchestrator
+  version: 1.0.0
+
+# Platform-specific rate limits
+rate_limits:
+  twitter:
+    requests_per_minute: 15
+    requests_per_hour: 300
+    burst_limit: 3
+    base_delay: 4.0
+    max_delay: 60.0
+    backoff_multiplier: 1.5
+    jitter_range: [0.8, 1.2]
+  
+  reddit:
+    requests_per_minute: 30
+    requests_per_hour: 600
+    burst_limit: 5
+    base_delay: 2.0
+    max_delay: 30.0
+    backoff_multiplier: 1.3
+    jitter_range: [0.9, 1.1]
+  
+  threads:
+    requests_per_minute: 20
+    requests_per_hour: 400
+    burst_limit: 4
+    base_delay: 3.0
+    max_delay: 45.0
+    backoff_multiplier: 1.4
+    jitter_range: [0.85, 1.15]
+  
+  github_trending:
+    requests_per_minute: 10
+    requests_per_hour: 200
+    burst_limit: 2
+    base_delay: 5.0
+    max_delay: 60.0
+    backoff_multiplier: 1.6
+    jitter_range: [0.8, 1.2]
+  
+  telegram_channels:
+    requests_per_minute: 30
+    requests_per_hour: 600
+    burst_limit: 5
+    base_delay: 2.0
+    max_delay: 30.0
+    backoff_multiplier: 1.3
+    jitter_range: [0.9, 1.1]
+
+# Circuit breaker configuration
+circuit_breakers:
+  failure_threshold: 5
+  recovery_timeout: 300  # 5 minutes
+  success_threshold: 2
+  timeout: 60  # 1 minute
+
+# Collection schedules (cron format)
+schedules:
+  twitter:
+    cron: "0 */6 * * *"  # Every 6 hours
+    timezone: "UTC"
+    enabled: true
+  
+  reddit:
+    cron: "0 */4 * * *"  # Every 4 hours
+    timezone: "UTC"
+    enabled: true
+  
+  threads:
+    cron: "0 */8 * * *"  # Every 8 hours
+    timezone: "UTC"
+    enabled: true
+  
+  github_trending:
+    cron: "0 0 * * *"  # Daily at midnight
+    timezone: "UTC"
+    enabled: true
+  
+  telegram_channels:
+    cron: "0 */2 * * *"  # Every 2 hours
+    timezone: "UTC"
+    enabled: true
+
+# State persistence
+state:
+  persistence_backend: "database"  # "database" or "redis"
+  persistence_interval: 60  # Persist every 60 seconds
+  restore_on_startup: true
+
+# Error recovery
+error_recovery:
+  max_retries: 3
+  initial_backoff: 2  # seconds
+  max_backoff: 300  # 5 minutes
+  backoff_multiplier: 2.0
+  retry_transient_errors: true
+  retry_rate_limit_errors: true
+  alert_on_persistent_failures: true
+  persistent_failure_threshold: 5
+
+# Metrics
+metrics:
+  enabled: true
+  collection_interval: 60  # Collect metrics every 60 seconds
+  expose_via_health_check: true
+
+# Concurrency
+concurrency:
+  max_concurrent_collections: 3
+  max_concurrent_platform_operations: 5
+
+
+

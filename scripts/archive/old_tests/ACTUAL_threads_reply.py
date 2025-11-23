@@ -204,7 +204,7 @@ async def post_real_reply():
 async def generate_reply():
     """Generate reply using AI"""
     try:
-        from src.core.analysis.ai_service_manager import ai_service_manager
+        from src.domain.analysis.analyzers.ai_service_manager import ai_service_manager
 
         # Load profile
         with open("config/profiles/cryptoniard.json", "r") as f:

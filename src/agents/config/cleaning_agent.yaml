@@ -1,0 +1,107 @@
+# Cleaning Agent Configuration
+# Configuration file for the Cleaning Agent
+
+# Cleanup rules - what to remove
+cleanup_rules:
+  # Documentation cleanup
+  docs:
+    # Archive completed status reports
+    archive_completed: true
+    # Keep only active documentation in docs/
+    keep_active_only: true
+    # Archive location
+    archive_location: "docs/archive/completed/"
+  
+  # Log rotation
+  logs:
+    # Keep last N days of logs
+    keep_days: 7
+    # Archive logs older than N days
+    archive_days: 30
+    # Archive location
+    archive_location: "logs/archive/"
+  
+  # Backup management
+  backups:
+    # Keep last N database backups
+    keep_count: 3
+    # Archive backups older than N days
+    archive_days: 90
+    # Archive location
+    archive_location: "backups/archive/"
+  
+  # Deprecated code detection
+  deprecated_code:
+    # Detect deprecated code
+    detect: true
+    # Remove deprecated code (false = report only, don't auto-remove)
+    remove: false
+  
+  # Script organization
+  scripts:
+    # Organize archive scripts
+    organize_archive: true
+    # Keep only active scripts in main scripts/ directory
+    keep_active_only: true
+  
+  # Legacy cleanup rules (for backward compatibility)
+  # Remove Python cache directories (__pycache__, .pytest_cache, .mypy_cache, .ruff_cache)
+  remove_pycache: true
+  
+  # Remove backup files (.backup, .OLD, .bak, etc.) - now handled by backups section
+  remove_backups: false
+  
+  # Remove old files (older than specified days in temp/log directories)
+  remove_old_files: true
+  
+  # Remove obsolete documentation files - now handled by docs section
+  remove_obsolete_docs: false
+  
+  # Remove test artifacts (.pyc, .pytest_cache, .coverage, htmlcov)
+  remove_test_artifacts: true
+  
+  # Remove temporary files (.tmp, .temp, .swp, .swo, *~) - enhanced with test_results/ and var/
+  remove_temp_files: true
+
+# Safety checks - protection mechanisms
+safety_checks:
+  # Require verification from skeptic agent before cleanup
+  require_verification: true
+  
+  # Dry run mode - don't actually delete, just report what would be deleted
+  dry_run: false
+  
+  # Backup before delete (not implemented yet)
+  backup_before_delete: false
+
+# File age thresholds
+file_age:
+  # Days old for files to be considered "old" (default: 90)
+  old_file_days: 90
+
+# Exclusions - paths to never clean
+exclusions:
+  # Directories to exclude from cleanup
+  exclude_directories:
+    - ".git"
+    - "node_modules"
+    - ".venv"
+    - "venv"
+    - "env"
+    - ".env"
+    - "migrations"
+    - "data/vector_db"
+  
+  # File patterns to exclude
+  exclude_patterns:
+    - "*.db"
+    - "*.sqlite"
+    - "*.sqlite3"
+    - "requirements*.txt"
+    - "*.yaml"
+    - "*.yml"
+    - "*.json"
+    - "*.md"
+    - "*.py"
+    - "*.sh"
+

@@ -15,8 +15,8 @@ sys.path.insert(0, str(project_root))
 
 load_dotenv()
 
-from src.database.manager import SupabaseManager
-from src.publishing.rewriter import ContentRewriter
+from src.infrastructure.database.manager import SupabaseManager
+from src.domain.publishing.modular_rewriter.compat import create_compat_rewriter
 
 # Selected posts to rewrite
 SELECTED_POSTS = [
@@ -50,7 +50,7 @@ SELECTED_POSTS = [
 async def regenerate_rewrites():
     """Regenerate rewrites for selected posts"""
     supabase = SupabaseManager().client
-    rewriter = ContentRewriter()
+    rewriter = create_compat_rewriter()
 
     print("🔄 Regenerating rewrites with updated prompts...\n")
     print("=" * 80)

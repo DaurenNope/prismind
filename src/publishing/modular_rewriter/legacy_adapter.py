@@ -1,23 +1,31 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
-from src.publishing.rewriter import ContentRewriter
+if TYPE_CHECKING:
+    from .compat import CompatRewriter
 
 
 class LegacyRewriterAdapter:
     """
-    Thin wrapper around the existing monolithic `ContentRewriter`.
+    Thin wrapper around ModularRewriter via CompatRewriter.
 
-    This lets the new modular orchestrator expose a stable interface while we
-    gradually migrate functionality out of the legacy implementation.  Once the
-    modular pipeline is fully featured, this adapter can be removed.
+    DEPRECATED: This adapter is kept for backward compatibility but now uses
+    ModularRewriter under the hood. Consider migrating to ModularRewriter directly.
     """
 
-    def __init__(self, rewriter: Optional[ContentRewriter] = None) -> None:
-        self._rewriter = rewriter or ContentRewriter()
+    def __init__(self, rewriter: Optional["CompatRewriter"] = None) -> None:
+        self._rewriter = rewriter
         self._lock = asyncio.Lock()
+
+    @property
+    def rewriter(self) -> "CompatRewriter":
+        """Lazy initialization to avoid circular import recursion."""
+        if self._rewriter is None:
+            from .compat import CompatRewriter
+            self._rewriter = CompatRewriter()
+        return self._rewriter
 
     async def rewrite(
         self,
@@ -30,14 +38,13 @@ class LegacyRewriterAdapter:
         target_content_type: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
-        Delegate to `ContentRewriter.rewrite_analyzed_post`.
+        Delegate to CompatRewriter.rewrite_analyzed_post (uses ModularRewriter).
 
-        The legacy class is not thread-safe when it comes to persona loading,
-        so we serialize access with an asyncio lock.
+        The compat layer provides the same interface as ContentRewriter.
         """
 
         async with self._lock:
-            return await self._rewriter.rewrite_analyzed_post(
+            return await self.rewriter.rewrite_analyzed_post(
                 analyzed_content=analyzed_content,
                 persona=persona,
                 platform=platform,

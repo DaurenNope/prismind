@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from src.utils.logging_config import get_logger
+from src.shared.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -221,7 +221,7 @@ class DatabaseValidation:
         analyzed_at = post.get("analyzed_at")
         if created_at and analyzed_at:
             try:
-                from datetime import timezone, timedelta
+                from datetime import timedelta, timezone
 
                 from dateutil.parser import parse
 
@@ -390,7 +390,7 @@ class DatabaseValidation:
                 # Check if it looks like JSON (array or object) - invalid for boolean
                 if value_stripped.startswith(("{", "[")):
                     try:
-                        from src.utils.logging_config import get_logger
+                        from src.shared.utils.logging_config import get_logger
 
                         get_logger(__name__).warning(
                             f"Invalid boolean value appears to be JSON: {value_stripped[:50]}..., using default {default}"
@@ -406,7 +406,7 @@ class DatabaseValidation:
                     return False
                 # Unknown string value - use default
                 try:
-                    from src.utils.logging_config import get_logger
+                    from src.shared.utils.logging_config import get_logger
 
                     get_logger(__name__).warning(
                         f"Unknown boolean string value: {value_stripped[:50]}..., using default {default}"
@@ -417,7 +417,7 @@ class DatabaseValidation:
                 return default
             # Unknown type - use default
             try:
-                from src.utils.logging_config import get_logger
+                from src.shared.utils.logging_config import get_logger
 
                 get_logger(__name__).warning(
                     f"Unknown boolean type: {type(value)}, using default {default}"
@@ -508,6 +508,7 @@ class DatabaseValidation:
         if created_at and normalized.get("analyzed_at"):
             try:
                 from datetime import timezone
+
                 from dateutil.parser import parse
                 
                 created = parse(str(created_at))
@@ -643,7 +644,7 @@ class DatabaseValidation:
             except Exception as e:
                 # Log error but don't fail - use get_logger if available
                 try:
-                    from src.utils.logging_config import get_logger
+                    from src.shared.utils.logging_config import get_logger
 
                     logger = get_logger(__name__)
                     logger.warning(f"Error checking deprecation for post: {e}")
@@ -692,7 +693,7 @@ class DatabaseValidation:
             # Try to normalize existing category first
             if category:
                 try:
-                    from src.core.analysis.intelligent_content_analyzer import (
+                    from src.domain.analysis.analyzers.intelligent_content_analyzer import (
                         IntelligentContentAnalyzer,
                     )
 

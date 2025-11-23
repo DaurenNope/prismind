@@ -46,7 +46,7 @@ async def generate_reply_with_real_prompts():
         if not profile:
             return False
 
-        from src.core.analysis.ai_service_manager import ai_service_manager
+        from src.domain.analysis.analyzers.ai_service_manager import ai_service_manager
 
         # Use the actual voice guidelines from our profile
         voice_general = profile["voice_guidelines"]["general"]

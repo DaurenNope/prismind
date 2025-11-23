@@ -1,0 +1,66 @@
+# Monitoring Agent Configuration
+
+# Monitoring intervals (in seconds)
+monitoring_interval_seconds: 60
+health_check_interval_seconds: 30
+
+# Alert thresholds
+alert_thresholds:
+  # System resource thresholds (percentages)
+  cpu_percent: 80.0
+  memory_percent: 80.0
+  disk_percent: 90.0
+  
+  # Failure counts
+  agent_failure_count: 3
+  service_failure_count: 3
+  
+  # Performance thresholds
+  response_time_ms: 1000.0
+
+# Alert cooldown (seconds) - prevents alert spam
+alert_cooldown_seconds: 300  # 5 minutes
+
+# Alert channels configuration
+alert_channels:
+  # Email alerts
+  email:
+    enabled: false
+    smtp_server: smtp.gmail.com
+    smtp_port: 587
+    smtp_user: ""  # Set via environment variable or here
+    smtp_password: ""  # Set via environment variable or here
+    to_email: ""  # Recipient email address
+
+  # Slack alerts
+  slack:
+    enabled: false
+    webhook_url: ""  # Slack webhook URL
+
+  # Telegram alerts
+  telegram:
+    enabled: false
+    bot_token: ""  # Can also use TELEGRAM_BOT_TOKEN env var
+    chat_id: ""  # Can also use TELEGRAM_CHAT_ID env var
+
+# Metrics retention
+metrics_retention:
+  max_history_size: 1000
+  max_alert_history: 500
+
+# Service monitoring
+services:
+  supabase:
+    enabled: true
+    timeout_seconds: 5
+  
+  redis:
+    enabled: true
+    timeout_seconds: 3
+  
+  database:
+    enabled: true
+    timeout_seconds: 5
+
+
+

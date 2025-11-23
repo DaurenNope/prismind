@@ -2,7 +2,7 @@
 import re
 from typing import Optional
 
-from src.database.manager import SupabaseManager
+from src.infrastructure.database.manager import SupabaseManager
 
 
 def sanitize_threads_content(raw: Optional[str]) -> Optional[str]:

@@ -12,16 +12,16 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from src.database.publishing.bridge import MimesisDB
-from src.publishing.modular_rewriter import (
+from src.infrastructure.database.publishing.bridge import MimesisDB
+from src.domain.publishing.modular_rewriter import (
     ModularRewriter,
     RewriteRequest,
     build_persona_context,
 )
 from src.services.profile_content_pipeline import ProfileContentPipeline
 from src.services.profile_content_selector import ProfileContentSelector
-from src.storage.db import get_storage
-from src.utils.config import get_config
+from src.infrastructure.database.storage.db import get_storage
+from src.shared.utils.config import get_config
 
 logger = logging.getLogger(__name__)
 

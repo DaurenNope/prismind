@@ -21,9 +21,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from dotenv import load_dotenv
 
-from src.database.manager import SupabaseManager
-from src.database.publishing.bridge import MimesisDB
-from src.publishing.scheduler import PublishingScheduler
+from src.infrastructure.database.manager import SupabaseManager
+from src.infrastructure.database.publishing.bridge import MimesisDB
+from src.domain.publishing.scheduler import PublishingScheduler
 from src.services.profile_publishing_orchestrator import ProfilePublishingOrchestrator
 
 load_dotenv()

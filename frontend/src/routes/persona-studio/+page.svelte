@@ -399,6 +399,17 @@ function removeExample(index: number): void {
 		return null;
 	}
 
+
+	// Svelte action to set textarea value directly via DOM, bypassing Svelte's template evaluation
+	function setTextareaValue(node: HTMLTextAreaElement, value: string) {
+		node.value = value || '';
+		return {
+			update(value: string) {
+				node.value = value || '';
+			}
+		};
+	}
+
 async function loadLatestRewrites(personaKey?: string | null, limit = 5): Promise<void> {
 	latestRewrites = [];
 	if (!personaKey) return;
@@ -1694,9 +1705,12 @@ function formatDuration(start?: string, end?: string) {
 										<label for="prompt-editor" class="text-[10px] uppercase tracking-[0.35em] text-[color:var(--text-muted)]">Prompt template</label>
 										<textarea
 											id="prompt-editor"
-											bind:value={editingPrompt}
+											use:setTextareaValue={editingPrompt}
+											on:input={(e) => {
+												editingPrompt = e.currentTarget.value;
+											}}
 											rows="12"
-											placeholder="Enter prompt template. Use placeholders: {persona_name}, {persona_language}, {platform}, {hook}, {angle}, {cta}, {human_draft}, {summary}, {content}"
+											placeholder="Enter prompt template. Available placeholders: persona_name, persona_language, platform, hook, angle, cta, human_draft, summary, content (wrap in curly braces)"
 											class="w-full rounded-2xl border border-white/10 bg-[rgba(15,29,46,0.92)] px-4 py-3 text-sm font-mono text-[color:var(--text-primary)] placeholder-[color:var(--text-muted)]/60"
 										></textarea>
 										<p class="text-[10px] text-[color:var(--text-muted)]/70">

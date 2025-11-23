@@ -5,15 +5,15 @@ Simplified version for beyondlines publishing system
 Now includes rate limiting inspired by elizaOS's RequestQueue pattern.
 """
 
-import os
 import time
 from datetime import datetime
 from typing import Dict, List, Optional
 
 import tweepy
-from dotenv import load_dotenv
 
-load_dotenv(override=True)
+from src.shared.utils.secrets_manager import get_secrets_manager
+
+secrets = get_secrets_manager()
 
 
 class TwitterPoster:
@@ -21,10 +21,10 @@ class TwitterPoster:
 
     def __init__(self):
         """Initialize Twitter client with rate limiting."""
-        self.api_key = os.getenv("TWITTER_API_KEY")
-        self.api_secret = os.getenv("TWITTER_API_SECRET")
-        self.access_token = os.getenv("TWITTER_ACCESS_TOKEN")
-        self.access_secret = os.getenv("TWITTER_ACCESS_TOKEN_SECRET")
+        self.api_key = secrets.get("TWITTER_API_KEY")
+        self.api_secret = secrets.get("TWITTER_API_SECRET")
+        self.access_token = secrets.get("TWITTER_ACCESS_TOKEN")
+        self.access_secret = secrets.get("TWITTER_ACCESS_TOKEN_SECRET")
 
         if not all(
             [self.api_key, self.api_secret, self.access_token, self.access_secret]

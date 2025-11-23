@@ -16,7 +16,7 @@ from typing import Dict, List
 
 from supabase import create_client
 
-from src.publishing.rewriter import ContentRewriter
+from src.domain.publishing.modular_rewriter.compat import create_compat_rewriter
 from src.services.profile_content_pipeline import ProfileContentPipeline
 
 # Profiles to manage
@@ -81,7 +81,7 @@ async def get_content_for_profile(profile_key: str, count: int = 10) -> List[Dic
 async def rewrite_for_profile(post: Dict, profile_key: str) -> str:
     """Rewrite a post for the profile's voice using the existing rewriter"""
 
-    rewriter = ContentRewriter()
+    rewriter = create_compat_rewriter()
 
     # Determine platform from profile config
     config = PROFILES.get(profile_key, {})
@@ -289,19 +289,19 @@ async def publish_due_posts():
 
     for post in result.data:
         try:
-            # TODO: Implement actual publishing to Threads/Telegram
-            # For now, just mark as published
-
+            # Note: Actual publishing should be handled by the publisher worker service.
+            # This script is for testing/verification only. For production publishing,
+            # use the automated publisher worker which handles Threads/Telegram posting.
             persona = post.get("persona_key", post.get("personality_key", "unknown"))
             print(f"   Publishing to {post['platform']} for {persona}")
             print(f"   Content: {post['content'][:100]}...")
 
-            # Mark as published
+            # Mark as published (simulation mode - use publisher worker for actual posting)
             client.table("scheduled_posts").update(
                 {"status": "posted", "updated_at": now.isoformat()}
             ).eq("id", post["id"]).execute()
 
-            print(f"   ✅ Published!")
+            print(f"   ✅ Marked as published (use publisher worker for actual posting)")
 
         except Exception as e:
             print(f"   ❌ Publish error: {e}")

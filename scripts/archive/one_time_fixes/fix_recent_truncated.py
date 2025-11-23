@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 
 from playwright.async_api import async_playwright
 
-from src.supabase_manager import SupabaseManager
+from src.infrastructure.database.manager import SupabaseManager
 
 
 async def get_full_content(url: str) -> tuple[str, bool]:

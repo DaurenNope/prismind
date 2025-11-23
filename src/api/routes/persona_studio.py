@@ -8,6 +8,7 @@ the modular rewriter) to the Persona Studio frontend.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import statistics
@@ -16,20 +17,21 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import asyncio
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from src.database.manager import SupabaseManager
-from src.database.publishing.bridge import MimesisDB, PersonaDraftsDB
-from src.publishing.rag_system import ExampleVectorDatabase
-from src.publishing.modular_rewriter import (
+from src.infrastructure.database.manager import SupabaseManager
+from src.infrastructure.database.publishing.bridge import MimesisDB, PersonaDraftsDB
+from src.pipeline.full_automation_loop import FullAutomationLoop
+from src.domain.publishing.modular_rewriter import (
     ModularRewriter,
     RewriteRequest,
     build_persona_context,
 )
+from src.domain.publishing.rag_system import ExampleVectorDatabase
 from src.services.profile_content_pipeline import list_available_profiles
-from src.pipeline.full_automation_loop import FullAutomationLoop
+
+
 class AutomationRunRequest(BaseModel):
     platforms: Optional[List[str]] = None
     analyze_limit: Optional[int] = Field(
@@ -61,7 +63,7 @@ _AUTOMATION_STATE: Dict[str, Any] = {
     "history": [],
 }
 _AUTOMATION_LOCK = asyncio.Lock()
-from src.utils.logging_config import get_logger
+from src.shared.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/api/persona-studio", tags=["persona-studio"])
@@ -1034,9 +1036,9 @@ async def get_persona_prompts(persona_key: str) -> Dict[str, Any]:
                 templates = data.get("templates", data)  # Support both formats
         else:
             # Generate default prompts from PromptBuilder so user can see/edit them
-            from src.publishing.modular_rewriter.prompt_builder import PromptBuilder
-            from src.publishing.modular_rewriter.schemas import RewriteRequest
-            from src.publishing.modular_rewriter.content_planner import RewritePlan
+            from src.domain.publishing.modular_rewriter.content_planner import RewritePlan
+            from src.domain.publishing.modular_rewriter.prompt_builder import PromptBuilder
+            from src.domain.publishing.modular_rewriter.schemas import RewriteRequest
             
             persona_context = build_persona_context(persona_key, config)
             builder = PromptBuilder()

@@ -43,7 +43,7 @@ async def run_complete_collection():
     print("-" * 70)
     try:
         from src.services.autonomous_discovery import AutonomousDiscovery
-        from src.core.extraction.edgy_sources import get_all_edgy_sources
+        from src.domain.collection.extractors.edgy_sources import get_all_edgy_sources
         
         discovery = AutonomousDiscovery()
         disc_results = await discovery.discover_content()

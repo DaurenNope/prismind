@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from src.utils.logging_config import get_logger
+from src.shared.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/api/profiles", tags=["profiles"])
@@ -288,7 +288,7 @@ async def reload_profile(profile_key: str) -> Dict[str, Any]:
         profile_data = _load_profile(profile_key)
 
         # Force PersonaMatcher to reload
-        from src.publishing.persona_matcher import get_persona_matcher
+        from src.domain.publishing.persona_matcher import get_persona_matcher
 
         matcher = get_persona_matcher()
         # Re-initialize to reload

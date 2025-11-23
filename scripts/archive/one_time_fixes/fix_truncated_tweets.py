@@ -4,7 +4,7 @@ Fix truncated tweets by re-fetching them with proper Show more expansion
 """
 import asyncio
 from playwright.async_api import async_playwright
-from src.supabase_manager import SupabaseManager
+from src.infrastructure.database.manager import SupabaseManager
 import time
 
 async def get_full_content(url: str) -> str:

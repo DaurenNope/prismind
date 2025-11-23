@@ -21,7 +21,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from src.utils.logging_config import get_logger
+from src.shared.utils.logging_config import get_logger
 
 
 class MigrationStatus(Enum):
@@ -338,8 +338,16 @@ class MigrationManager:
             )
             self.logger.debug(f"SQL:\n{migration.up_sql}")
 
-            # TODO: Execute SQL via Supabase API or RPC
-            # For now, just record as applied
+            # Note: Supabase Python client doesn't support raw SQL execution directly.
+            # Migrations should be executed via:
+            # 1. Supabase Dashboard SQL Editor (manual)
+            # 2. Supabase Management API (requires additional setup)
+            # 3. Supabase CLI (migration files)
+            # This system tracks migration status; actual SQL execution must be done externally.
+            self.logger.warning(
+                f"Migration {migration.version} SQL recorded but not executed. "
+                f"Execute manually via Supabase Dashboard or CLI."
+            )
             self._record_migration(migration, MigrationStatus.APPLIED)
 
         except Exception as e:
@@ -374,8 +382,13 @@ class MigrationManager:
             self.logger.info(f"Rolling back migration {version}: {migration.name}")
             self.logger.debug(f"SQL:\n{migration.down_sql}")
 
-            # TODO: Execute SQL via Supabase API or RPC
-            # For now, just record as rolled back
+            # Note: Supabase Python client doesn't support raw SQL execution directly.
+            # Rollback SQL should be executed via Supabase Dashboard SQL Editor or CLI.
+            # This system tracks rollback status; actual SQL execution must be done externally.
+            self.logger.warning(
+                f"Migration {migration.version} rollback SQL recorded but not executed. "
+                f"Execute manually via Supabase Dashboard or CLI."
+            )
             self._record_migration(migration, MigrationStatus.ROLLED_BACK)
 
             self.logger.info(f"Rolled back migration: {version}")

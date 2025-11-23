@@ -171,7 +171,7 @@ class RealThreadsReplyGuy:
     async def generate_reply(self, discussion_title: str) -> str:
         """Generate reply using real cryptoniard profile"""
         try:
-            from src.core.analysis.ai_service_manager import ai_service_manager
+            from src.domain.analysis.analyzers.ai_service_manager import ai_service_manager
 
             voice_general = self.profile["voice_guidelines"]["general"]
             voice_english = self.profile["voice_guidelines"]["english"]

@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from src.utils.logging_config import get_logger
+from src.application.api.auth import require_api_key
+from src.shared.utils.logging_config import get_logger
 
 try:
     from supabase import create_client  # type: ignore
@@ -50,9 +51,11 @@ def _make_supabase_client():
 
 
 @router.get("/credentials")
-async def get_credentials() -> Dict[str, Any]:
+async def get_credentials(user: str = Depends(require_api_key)) -> Dict[str, Any]:
     """
     Fetch stored platform credentials.
+    
+    Requires API authentication.
     """
     try:
         client = _make_supabase_client()
@@ -67,9 +70,13 @@ async def get_credentials() -> Dict[str, Any]:
 
 
 @router.post("/credentials")
-async def upsert_credentials(payload: PlatformCredentials) -> Dict[str, Any]:
+async def upsert_credentials(
+    payload: PlatformCredentials, user: str = Depends(require_api_key)
+) -> Dict[str, Any]:
     """
     Upsert credentials for a platform.
+    
+    Requires API authentication.
     """
     try:
         client = _make_supabase_client()

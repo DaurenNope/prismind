@@ -11,9 +11,9 @@ Main orchestrator for thread summarization using modular components.
 
 from typing import Any, Dict
 
-from src.core.analysis.thread_summarizer_ai import ThreadSummarizerAI
-from src.core.analysis.thread_summarizer_parser import ThreadSummarizerParser
-from src.core.analysis.thread_summary import ThreadSummary
+from src.domain.analysis.analyzers.thread_summarizer_ai import ThreadSummarizerAI
+from src.domain.analysis.analyzers.thread_summarizer_parser import ThreadSummarizerParser
+from src.domain.analysis.analyzers.thread_summary import ThreadSummary
 
 
 class ThreadSummarizer:

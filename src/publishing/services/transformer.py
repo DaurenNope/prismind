@@ -6,11 +6,15 @@ from typing import Dict, Iterable, List, Optional
 
 import requests
 
-from src.database.manager import SupabaseManager
+from src.infrastructure.database.manager import SupabaseManager
 
 
 class SimpleTransformer:
-    """Minimal persona transformer.
+    """
+    Minimal persona transformer.
+
+    DEPRECATED: This is a fallback transformer. Consider using ModularRewriter
+    for better quality and consistency.
 
     If Ollama/QWEN endpoint is configured, uses it; otherwise returns a simple
     templated rewrite based on the source content/title.
@@ -97,13 +101,13 @@ class PersonaGenerator:
                 "platform": platform,
                 "content": text,
                 "content_type": content_type_map.get(platform, "single_tweet"),
-                "scheduled_time": when.isoformat(),  # Mimesis uses scheduled_time
+                "scheduled_time": when.isoformat(),  # scheduled_posts table uses scheduled_time
                 "status": "pending",  # Database uses 'pending', not 'scheduled'
             }
             # Use DatabaseAgent (delegates to StorageFacade)
-            from src.database.database_agent import DatabaseAgent
+            from src.infrastructure.database.database_agent import get_database_agent
 
-            db_agent = DatabaseAgent()
+            db_agent = get_database_agent()
             if db_agent.save_scheduled_post(row):
                 # Get the inserted record if needed
                 try:
@@ -126,7 +130,7 @@ class PersonaGenerator:
         persona_key: str,
         sources: Iterable[Dict[str, object]],
     ) -> List[Dict[str, object]]:
-        """Write rewrites into mimesis_transformations for later approval."""
+        """Write rewrites into persona_transformations for later approval."""
         created: List[Dict[str, object]] = []
         for src in sources:
             text = self.transformer.transform(persona_key, src)
@@ -138,14 +142,14 @@ class PersonaGenerator:
                 "ready_for_posting": False,
             }
             # Use DatabaseAgent (delegates to StorageFacade)
-            from src.database.database_agent import DatabaseAgent
+            from src.infrastructure.database.database_agent import get_database_agent
 
-            db_agent = DatabaseAgent()
+            db_agent = get_database_agent()
             if db_agent.save_transformation(row):
                 # Get the inserted record if needed
                 try:
                     result = (
-                        self.sb.client.table("mimesis_transformations")
+                        self.sb.client.table("persona_transformations")
                         .select("*")
                         .eq("content", row.get("content"))
                         .eq("persona_key", persona_key)

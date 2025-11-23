@@ -7,11 +7,10 @@ Unified Value Scorer for BEYONDLINES
 Combines sophisticated scoring with intelligent analysis
 """
 
-import re
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict
 
-from src.core.extraction.social_extractor_base import SocialPost
+from src.domain.collection.extractors.social_extractor_base import SocialPost
 
 from .value_scorer_patterns import ValueScorerPatterns
 

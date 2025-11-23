@@ -23,12 +23,12 @@ def load_collection_config():
 
 
 # Analysis imports
-from src.core.analysis.intelligent_content_analyzer import IntelligentContentAnalyzer
-from src.utils.observability_hub import get_observability_hub, instrument_function
+from src.domain.analysis.analyzers.intelligent_content_analyzer import IntelligentContentAnalyzer
+from src.shared.utils.observability_hub import get_observability_hub, instrument_function
 
 # Optional local media analyzer
 try:
-    from src.core.analysis.local_media_analyzer import LocalMediaAnalyzer
+    from src.domain.analysis.analyzers.local_media_analyzer import LocalMediaAnalyzer
 
     _LOCAL_MEDIA_AVAILABLE = True
 except Exception as e:
@@ -39,7 +39,7 @@ except Exception as e:
 
 
 # Get logger at module level
-from src.utils.logging_config import get_logger
+from src.shared.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -178,9 +178,9 @@ async def analyze_and_store_post(db_manager, post_dict, supabase_manager=None):
     # CRITICAL: Prefer DatabaseAgent for data normalization and quality control
     db_agent = None
     try:
-        from src.database.database_agent import DatabaseAgent
+        from src.infrastructure.database.database_agent import get_database_agent
 
-        db_agent = DatabaseAgent()
+        db_agent = get_database_agent()
     except Exception as e:
         import logging
 
@@ -341,13 +341,15 @@ async def analyze_and_store_post(db_manager, post_dict, supabase_manager=None):
                 ),
                 "key_concepts": analysis_result.get("key_concepts", []),
                 "tags": analysis_result.get("tags", []),
+                "suggested_tags": analysis_result.get("tags", []) or analysis_result.get("suggested_tags", []),
+                "action_items": analysis_result.get("action_items", []),
                 "topic": analysis_result.get("topic", ""),
                 "content_type": analysis_result.get("content_type", ""),
                 "language": analysis_result.get("language", ""),
                 "category": analysis_result.get("category", ""),  # Add category field
-                "fit_categories": analysis_result.get(
-                    "fit_categories", []
-                ),  # Add fit_categories field
+                # Note: fit_categories column not yet in Supabase schema.
+                # To enable: Add TEXT[] column 'fit_categories' to posts table via migration.
+                # "fit_categories": analysis_result.get("fit_categories", []),
                 "analyzed_at": analysis_result.get("analyzed_at"),
                 "analysis_model": analysis_result.get("analysis_model")
                 or analysis_result.get("ai_service"),
@@ -655,7 +657,7 @@ async def analyze_and_store_post(db_manager, post_dict, supabase_manager=None):
                     essential_fields["content_type"] = "text"
 
             # Ensure list fields are actually lists
-            for key in ("key_concepts", "tags"):
+            for key in ("key_concepts", "tags", "suggested_tags", "action_items"):
                 val = essential_fields.get(key)
                 if val is None:
                     essential_fields[key] = []
@@ -781,13 +783,13 @@ async def analyze_and_store_post(db_manager, post_dict, supabase_manager=None):
     # CRITICAL: Use StorageFacade directly (single source of truth)
     # StorageFacade handles: duplicate checks, SQLite + Supabase sync, collected_at
     # DatabaseAgent adds normalization and monitoring on top
-    from src.storage.db import get_storage
+    from src.infrastructure.database.storage.db import get_storage
 
     storage = get_storage()
 
     # Ensure post_id is set
     if not enhanced_post.get("post_id"):
-        from src.storage.id_generator import PostIDGenerator
+        from src.infrastructure.database.storage.id_generator import PostIDGenerator
 
         enhanced_post["post_id"] = PostIDGenerator.generate_post_id(enhanced_post)
 
@@ -839,58 +841,9 @@ async def analyze_and_store_post(db_manager, post_dict, supabase_manager=None):
         )
         return False
 
-    # REMOVED: All legacy fallback paths - StorageFacade is the only path now
-    # Legacy code below is kept for reference but should never execute
-    if False:  # Disabled legacy path
-        # Update post in local database instead of adding
-        try:
-            # Try to update the existing post with analysis data
-            local_updated = False
-            try:
-                if hasattr(db_manager, "update_post"):
-                    local_updated = bool(db_manager.update_post(post_id, enhanced_post))
-            except Exception as e:
-                logger.error(f"Error: {e}")
-                log(f"Local update failed: {e}", "warning")
-                local_updated = False
-
-            if not local_updated:
-                # If update did not apply (e.g., duplicate/ignored), try insert
-                try:
-                    local_stored = bool(db_manager.add_post(enhanced_post))
-                except Exception as e:
-                    logger.error(f"Error: {e}")
-                    log(f"Local insert failed: {e}", "warning")
-                    local_stored = False
-
-                if not local_stored:
-                    # Final existence check: consider success if row already exists
-                    try:
-                        if hasattr(
-                            db_manager, "get_post_by_id"
-                        ) and db_manager.get_post_by_id(post_id):
-                            log(
-                                "Post already existed; analysis update may have been a no-op",
-                                "info",
-                            )
-                        else:
-                            log(
-                                "Local store/update did not apply; proceeding anyway",
-                                "warning",
-                            )
-                    except Exception as e:
-                        # If we cannot check existence, don't block pipeline
-                        import logging
-
-                        logging.getLogger(__name__).debug(
-                            f"Could not verify local existence: {e}"
-                        )
-                        log("Could not verify local existence; proceeding", "warning")
-            log(f"Local persistence complete", "success")
-        except Exception as local_error:
-            logger.error(f"Error: {local_error}")
-            log(f"Local database operation failed: {local_error}", "error")
-            return False
+    # P1: Removed disabled legacy code (80+ lines after if False:)
+    # Legacy fallback paths removed - StorageFacade is the only path now
+    # This code was disabled and never executed, removed for code cleanliness
 
     # Fallback: Store in Supabase if available (legacy path - should not be needed if DatabaseAgent works)
     if supabase_manager:

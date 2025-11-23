@@ -1,0 +1,149 @@
+# Database Agent Configuration
+# Configuration file for the enhanced DatabaseAgent
+
+agent:
+  id: "database_agent"
+  name: "Database Agent"
+  version: "2.0.0"
+  description: "Enhanced database agent with query optimization, sync management, and performance monitoring"
+  
+  dependencies: []
+  
+  # Initialization settings
+  initialization:
+    timeout_seconds: 30
+    retry_attempts: 3
+    retry_delay_seconds: 1.0
+
+# Query Optimization Configuration
+query_optimization:
+  enabled: true
+  
+  # Slow query detection
+  slow_query_threshold_ms: 100.0
+  track_query_performance: true
+  max_tracked_queries_per_hash: 1000
+  
+  # Index suggestions
+  auto_suggest_indexes: true
+  auto_create_indexes: false  # Safety: require manual approval
+  
+  # Query plan analysis
+  cache_query_plans: true
+  max_cached_plans: 100
+
+# Sync Management Configuration
+sync_management:
+  enabled: true
+  
+  # Sync settings
+  default_sync_limit: 100
+  max_sync_limit: 10000
+  sync_retry_attempts: 3
+  sync_retry_delay_seconds: 2.0
+  
+  # Conflict resolution
+  conflict_resolution_strategy: "supabase_source_of_truth"  # Options: supabase_source_of_truth, sqlite_source_of_truth, merge
+  
+  # Sync metrics
+  track_sync_metrics: true
+  sync_metrics_retention_days: 30
+
+# Performance Monitoring Configuration
+performance_monitoring:
+  enabled: true
+  
+  # Performance thresholds
+  thresholds:
+    query_latency_p95_ms: 100.0
+    query_latency_p99_ms: 500.0
+    sync_latency_ms: 1000.0
+    connection_pool_utilization_percent: 80.0
+  
+  # Monitoring intervals
+  analysis_interval_seconds: 300  # Run performance analysis every 5 minutes
+  alert_cooldown_seconds: 60  # Don't alert more than once per minute
+  
+  # Alerting
+  enable_alerts: true
+  alert_on_degradation: true
+  alert_severity_levels:
+    - warning
+    - error
+    - critical
+
+# Health Check Configuration
+health_checks:
+  enabled: true
+  
+  # Health check intervals
+  check_interval_seconds: 60  # Check every minute
+  detailed_check_interval_seconds: 300  # Detailed check every 5 minutes
+  
+  # Health check components
+  check_connectivity: true
+  check_query_performance: true
+  check_sync_status: true
+  check_resource_usage: true
+  
+  # Health thresholds
+  sync_health_threshold_percent: 95.0
+  query_performance_health_threshold_ms: 100.0
+  
+  # History retention
+  health_check_history_size: 100
+
+# Database Connection Configuration
+database:
+  # Supabase settings
+  supabase:
+    enabled: true
+    connection_timeout_seconds: 10
+    query_timeout_seconds: 30
+    max_retries: 3
+  
+  # SQLite settings
+  sqlite:
+    enabled: true
+    connection_timeout_seconds: 5
+    query_timeout_seconds: 10
+    max_retries: 2
+
+# Metrics Configuration
+metrics:
+  enabled: true
+  
+  # Metric tracking
+  track_query_metrics: true
+  track_sync_metrics: true
+  track_performance_metrics: true
+  
+  # Metric retention
+  metrics_retention_days: 7
+  metrics_aggregation_interval_minutes: 15
+
+# Event Publishing Configuration
+events:
+  enabled: true
+  
+  # Event types to publish
+  publish_task_events: true
+  publish_performance_alerts: true
+  publish_sync_events: true
+  publish_health_check_events: false  # Too frequent, disabled by default
+  
+  # Event filtering
+  min_event_severity: "info"  # Options: debug, info, warning, error, critical
+
+# Logging Configuration
+logging:
+  level: "INFO"  # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  
+  # Log categories
+  log_query_optimization: true
+  log_sync_operations: true
+  log_performance_analysis: true
+  log_health_checks: false  # Too frequent, disabled by default
+
+
+

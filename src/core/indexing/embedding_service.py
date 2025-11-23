@@ -2,10 +2,10 @@
 Embedding service for generating and managing vector embeddings using pgvector.
 """
 
-import logging
-from typing import List, Optional, Dict, Any
 import hashlib
 import json
+import logging
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 

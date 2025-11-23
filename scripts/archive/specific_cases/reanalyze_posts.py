@@ -23,9 +23,9 @@ os.environ["MISTRAL_API_KEY"] = ""  # Empty key disables Mistral
 
 import sqlite3
 
-from src.database.database_agent import DatabaseAgent
-from src.services.analysis.post_analyzer import analyze_and_store_post
-from src.utils.logging_config import get_logger
+from src.infrastructure.database.database_agent import DatabaseAgent
+from src.domain.analysis.services.post_analyzer import analyze_and_store_post
+from src.shared.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 

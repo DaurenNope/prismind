@@ -11,12 +11,12 @@ import asyncio
 from datetime import datetime, timedelta
 from typing import Any, Dict, List
 
-from src.database.database_agent import DatabaseAgent
+from src.infrastructure.database.database_agent import get_database_agent
 
 
 class PerformancePoller:
-    def __init__(self, agent: DatabaseAgent) -> None:
-        self.agent = agent
+    def __init__(self, agent=None) -> None:
+        self.agent = agent or get_database_agent()
         # minutes since posting
         self.windows_minutes: List[int] = [15, 60, 24 * 60, 72 * 60]
 
@@ -27,7 +27,7 @@ class PerformancePoller:
         if platform == "threads" and url:
             try:
                 # Reuse ThreadsExtractor DOM logic to get basic engagement signals
-                from src.core.extraction.threads_extractor import ThreadsExtractor
+                from src.domain.collection.extractors.threads_extractor import ThreadsExtractor
 
                 extractor = ThreadsExtractor()
                 posts = await extractor.scrape_posts_from_urls_async([url])
@@ -123,7 +123,7 @@ class PerformancePoller:
 
 
 async def main() -> None:
-    agent = DatabaseAgent()
+    agent = get_database_agent()
     poller = PerformancePoller(agent)
     await poller.run_forever()
 

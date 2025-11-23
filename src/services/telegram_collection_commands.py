@@ -6,14 +6,15 @@ Provides collection commands for the Telegram bot using unified service
 
 import asyncio
 import logging
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes
 from typing import Dict
 
-from src.services.unified_collection_service import (
-    UnifiedCollectionService,
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import ContextTypes
+
+from src.domain.collection.services.unified_collection_service import (
     CollectionProgress,
     CollectionStatus,
+    UnifiedCollectionService,
 )
 
 logger = logging.getLogger(__name__)

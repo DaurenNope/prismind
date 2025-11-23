@@ -15,10 +15,10 @@ from typing import Any, Dict, List, Optional
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.database.manager import SupabaseManager
-from src.services.analysis.post_analyzer import analyze_and_store_post
+from src.infrastructure.database.manager import SupabaseManager
+from src.domain.analysis.services.post_analyzer import analyze_and_store_post
 from src.services.new_database_manager import get_database_manager
-from src.utils.logging_config import get_logger
+from src.shared.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 

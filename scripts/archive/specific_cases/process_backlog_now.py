@@ -13,7 +13,7 @@ from pathlib import Path
 # Ensure project root on path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.pipeline.auto_pipeline import AutoPipeline
+from src.application.automation.auto_pipeline import AutoPipeline
 
 
 async def main() -> int:

@@ -5,17 +5,15 @@ Handles all Supabase database operations
 """
 
 import json
-import os
 from typing import Any, Dict, List, Optional
 
-from dotenv import load_dotenv
-
-from src.utils.logging_config import get_logger
+from src.shared.utils.logging_config import get_logger
+from src.shared.utils.secrets_manager import get_secrets_manager
 
 logger = get_logger(__name__)
 
-# Load environment variables
-load_dotenv()
+# Use centralized secrets manager
+secrets = get_secrets_manager()
 
 try:
     from supabase import Client, create_client
@@ -35,9 +33,9 @@ class SupabaseManager:
         self.client = None
         self.table_name = "posts"
 
-        # Get credentials from environment
-        url = os.getenv("SUPABASE_URL")
-        key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        # Get credentials from secrets manager
+        url = secrets.get("SUPABASE_URL")
+        key = secrets.get("SUPABASE_SERVICE_ROLE_KEY") or secrets.get("SUPABASE_KEY")
 
         # Store credentials as attributes for test compatibility
         self.supabase_url = url
@@ -602,11 +600,20 @@ class SupabaseManager:
             List of matching post dictionaries
         """
         try:
-            # Use Supabase's text search functionality
+            # Sanitize query to prevent SQL injection
+            from src.shared.utils.query_sanitizer import sanitize_search_query
+            
+            sanitized_query = sanitize_search_query(query)
+            if not sanitized_query:
+                return []
+            
+            # Use Supabase's text search functionality with sanitized input
+            # Note: Supabase client escapes parameters, but we sanitize for extra safety
+            search_pattern = f"%{sanitized_query}%"
             response = (
                 self.client.table(self.table_name)
                 .select("*")
-                .or_(f"title.ilike.%{query}%,content.ilike.%{query}%")
+                .or_(f"title.ilike.{search_pattern},content.ilike.{search_pattern}")
                 .limit(limit)
                 .execute()
             )
@@ -652,11 +659,16 @@ class SupabaseManager:
             # Start with base query
             query_builder = self.client.table(self.table_name).select("*")
 
-            # Apply text search
+            # Apply text search with sanitization
             if query:
-                query_builder = query_builder.or_(
-                    f"title.ilike.%{query}%,content.ilike.%{query}%,ai_summary.ilike.%{query}%"
-                )
+                from src.shared.utils.query_sanitizer import sanitize_search_query
+                
+                sanitized_query = sanitize_search_query(query)
+                if sanitized_query:
+                    search_pattern = f"%{sanitized_query}%"
+                    query_builder = query_builder.or_(
+                        f"title.ilike.{search_pattern},content.ilike.{search_pattern},ai_summary.ilike.{search_pattern}"
+                    )
 
             # Apply filters
             if platform:
@@ -666,9 +678,14 @@ class SupabaseManager:
                 query_builder = query_builder.eq("category", category)
 
             if author:
-                query_builder = query_builder.or_(
-                    f"author.ilike.%{author}%,author_handle.ilike.%{author}%"
-                )
+                from src.shared.utils.query_sanitizer import sanitize_search_query
+                
+                sanitized_author = sanitize_search_query(author)
+                if sanitized_author:
+                    author_pattern = f"%{sanitized_author}%"
+                    query_builder = query_builder.or_(
+                        f"author.ilike.{author_pattern},author_handle.ilike.{author_pattern}"
+                    )
 
             if min_value_score is not None:
                 query_builder = query_builder.gte("value_score", min_value_score)
@@ -684,8 +701,12 @@ class SupabaseManager:
 
             if tags:
                 # Search in smart_tags field (assuming it's JSON)
+                from src.shared.utils.query_sanitizer import sanitize_search_query
+                
                 for tag in tags:
-                    query_builder = query_builder.ilike("smart_tags", f"%{tag}%")
+                    sanitized_tag = sanitize_search_query(str(tag))
+                    if sanitized_tag:
+                        query_builder = query_builder.ilike("smart_tags", f"%{sanitized_tag}%")
 
             # Apply ordering and limit
             query_builder = query_builder.order("created_at", desc=True).limit(limit)

@@ -317,3 +317,6 @@ playwright/.auth/
 
 # Backup directories
 _backup*/
+!frontend/src/lib/components/AgentGraph.svelte
+!tests/test_e2e_workflows.py
+!tests/core/test_agent_graph_progression.py

@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 
 from dateutil.parser import parse
 
-from src.storage.db import get_storage
+from src.infrastructure.database.storage.db import get_storage
 
 
 def delete_recent_posts():

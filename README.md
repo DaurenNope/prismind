@@ -102,6 +102,37 @@ CREATE INDEX idx_discoveries_created_at ON discoveries(created_at DESC);
 
 ## 📖 Usage
 
+### Quick Start - Integrated Automation
+
+Run the complete integrated automation system:
+
+```bash
+# Start integrated automation (AgentGraph + FullAutomationLoop + PublisherWorker)
+python main.py integrated
+```
+
+This runs the full pipeline:
+- **Collection** - Gathers posts from all platforms
+- **Analysis** - Multi-agent analysis via AgentGraph
+- **Transformation** - Rewrites content for personas
+- **Scheduling** - Schedules posts optimally
+- **Publishing** - Automatic posting via PublisherWorker
+
+See [Integration Guide](docs/INTEGRATION_GUIDE.md) for detailed architecture.
+
+### Other Commands
+
+```bash
+# Run collection service only
+python main.py collect
+
+# Verify posting functionality
+python main.py verify-posting
+
+# Show help
+python main.py --help
+```
+
 ### Web Dashboard
 
 ```bash
@@ -179,9 +210,57 @@ Collects from:
 - Telegram Russian crypto channels
 - Stores in Supabase with quality scoring
 
+### Agent System
+
+The system includes specialized agents:
+
+- **Scout Agent** - Discovers and collects content
+- **Analyst Agent** - Analyzes content quality and relevance
+- **Skeptic Agent** - Verifies claims and fact-checks
+- **Historian Agent** - Provides historical context
+- **Cleaning Agent** - Removes redundant files after verification
+
+See [Agent Documentation](docs/agents/) for details.
+
 ---
 
 ## 🎨 System Architecture
+
+### Integrated Automation System
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│         INTEGRATED AUTOMATION ORCHESTRATOR                      │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │  AgentGraph (Multi-Agent Analysis System)               │  │
+│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐ │  │
+│  │  │ Director │─▶│  Scout   │─▶│ Analyst  │─▶│ Skeptic  │ │  │
+│  │  └────┬─────┘  └──────────┘  └──────────┘  └──────────┘ │  │
+│  │       │                                    ┌──────────┐   │  │
+│  │       └──────────────────────────────────▶│Historian │   │  │
+│  │                                            └──────────┘   │  │
+│  └──────────────────────────────────────────────────────────┘  │
+│                           │                                     │
+│                           ▼                                     │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │  FullAutomationLoop                                       │  │
+│  │  1. Collection → 2. Analysis → 3. Transformation          │  │
+│  │  4. Scheduling → 5. Publishing                             │  │
+│  └──────────────────────────────────────────────────────────┘  │
+│                           │                                     │
+│                           ▼                                     │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │  PublisherWorker (Background Service)                     │  │
+│  │  • Checks every 15s for due posts                         │  │
+│  │  • Posts to Twitter, Threads, Telegram                    │  │
+│  │  • Tracks engagement                                     │  │
+│  └──────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Core Pipeline
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -191,9 +270,9 @@ Collects from:
 │  ┌──────────────┐    ┌──────────────┐    ┌──────────┐ │
 │  │   SOURCES    │───▶│   ANALYSIS   │───▶│ DATABASE │ │
 │  └──────────────┘    └──────────────┘    └──────────┘ │
-│   • Twitter/Reddit/Threads   • Essential AI fields     │
-│   • Telegram channels        • Incremental + dedupe    │
-│   • GitHub trending          • Deterministic scoring   │
+│   • Twitter/Reddit/Threads   • AgentGraph (new)        │
+│   • Telegram channels        • Traditional (legacy)    │
+│   • GitHub trending          • Multi-agent system      │
 │   • RSS (curated)            Supabase + SQLite cache   │
 │                                                         │
 │  ┌──────────────┐    ┌──────────────┐    ┌──────────┐ │
@@ -201,10 +280,16 @@ Collects from:
 │  └──────────────┘    └──────────────┘    └──────────┘ │
 │   • Web (Svelte)       • Preferences        Actions:  │
 │   • Bot (Telegram)     • Patterns           • Save    │
-│                        • Trends             • Dismiss  │
-│                                             • Skip     │
+│   • Agent Graph UI     • Trends             • Dismiss  │
+│                        • Agent insights    • Skip     │
 └─────────────────────────────────────────────────────────┘
 ```
+
+**Key Components:**
+- **IntegratedAutomationOrchestrator** - Main coordinator
+- **AgentGraph** - LangGraph-based multi-agent system
+- **FullAutomationLoop** - Complete content pipeline
+- **PublisherWorker** - Automatic posting service
 
 ---
 
@@ -222,8 +307,28 @@ beyondlines/
 │   │   ├── analysis/            # AI analysis
 │   │   │   ├── intelligent_content_analyzer.py
 │   │   │   └── value_scorer.py
+│   │   ├── orchestration/       # NEW: Agent orchestration
+│   │   │   ├── agent_graph.py   # LangGraph multi-agent system
+│   │   │   ├── integrated_automation.py  # Main orchestrator
+│   │   │   └── agent_registration.py     # Agent registration
 │   │   └── learning/            # Smart curation
 │   │       └── intelligent_curator.py
+│   │
+│   ├── agents/
+│   │   ├── specialized/        # Specialized agents
+│   │   │   ├── scout_agent.py
+│   │   │   ├── analyst_agent.py
+│   │   │   ├── skeptic_agent.py
+│   │   │   └── historian_agent.py
+│   │   ├── base_agent.py        # Base agent framework
+│   │   ├── registry.py         # Agent registry
+│   │   └── messaging.py        # Inter-agent messaging
+│   │
+│   ├── pipeline/
+│   │   └── full_automation_loop.py  # Complete automation pipeline
+│   │
+│   ├── publishing/
+│   │   └── worker.py           # PublisherWorker (background service)
 │   │
 │   ├── services/
 │   │   ├── autonomous_discovery.py      # Discovery engine
@@ -240,9 +345,12 @@ beyondlines/
 │   ├── test_discovery_pipeline.py  # Integration tests
 │   └── test_collectors.py          # Unit tests
 │
+├── main.py                    # Main CLI entry point
 ├── run_full_collection.py      # One-click collection script
 ├── archive/                    # Moved: legacy scripts/assets
-├── docs/archive/               # Moved: legacy notes/docs
+├── docs/                       # Documentation
+│   ├── INTEGRATION_GUIDE.md    # Integration guide
+│   └── agents/                 # Agent documentation
 ├── requirements.txt             # Python dependencies
 └── .env.example                 # Configuration template
 ```

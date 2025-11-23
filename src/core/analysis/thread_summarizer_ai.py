@@ -13,7 +13,7 @@ from typing import Any, Dict
 
 import requests
 
-from src.core.analysis.thread_summary import ThreadSummary
+from src.domain.analysis.analyzers.thread_summary import ThreadSummary
 
 
 class ThreadSummarizerAI:

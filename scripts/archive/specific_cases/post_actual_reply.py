@@ -21,7 +21,7 @@ async def post_real_reply():
     try:
         import tweepy
 
-        from src.core.analysis.ai_service_manager import ai_service_manager
+        from src.domain.analysis.analyzers.ai_service_manager import ai_service_manager
 
         # Initialize client with full auth (we know this works)
         client = tweepy.Client(

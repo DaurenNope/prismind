@@ -4,6 +4,7 @@
   import { onMount, onDestroy } from 'svelte';
   import logoMark from '$lib/assets/beyondlines-mark.svg';
   import ToastCenter from '../components/Toast.svelte';
+  import ErrorBoundary from '$lib/components/ErrorBoundary.svelte';
 
   interface NavItem {
     label: string;
@@ -18,6 +19,7 @@
     { label: 'Collection', href: '/collection', icon: '📥', sublabel: 'Crawlers' },
     { label: 'Persona Studio', href: '/persona-studio', icon: '🎭', sublabel: 'AI persona creation' },
     { label: 'Publishing', href: '/publishing', icon: '📝', sublabel: 'Persona output' },
+    { label: 'Content Plan', href: '/content-plan', icon: '📅', sublabel: 'Calendar view' },
     { label: 'Analysis', href: '/analysis', icon: '🤖', sublabel: 'AI workbench' },
     { label: 'Profiles', href: '/profiles', icon: '👤', sublabel: 'Legacy profiles' },
     { label: 'System', href: '/system', icon: '🔧', sublabel: 'Health & status' },
@@ -143,7 +145,9 @@
       </header>
 
       <main class="relative z-10 pb-14">
-        <slot />
+        <ErrorBoundary fallback="An error occurred while loading this page. Please try refreshing.">
+          <slot />
+        </ErrorBoundary>
       </main>
     </div>
   </div>

@@ -7,15 +7,15 @@ Direct implementation without external dependencies
 """
 
 import json
-import os
 import time
 from datetime import datetime
 from typing import Dict, Optional
 
 import requests
-from dotenv import load_dotenv
 
-load_dotenv(override=True)
+from src.shared.utils.secrets_manager import get_secrets_manager
+
+secrets = get_secrets_manager()
 
 
 class ThreadsPoster:
@@ -23,13 +23,13 @@ class ThreadsPoster:
 
     def __init__(self):
         """Initialize with Threads API credentials."""
-        # Support multiple env var names
+        # Support multiple env var names using secrets manager
         self.access_token = (
-            os.getenv("THREADS_ACCESS_TOKEN")
-            or os.getenv("THREADS_TOKEN_ACCESS")
-            or os.getenv("THREADS_API_TOKEN")
+            secrets.get("THREADS_ACCESS_TOKEN")
+            or secrets.get("THREADS_TOKEN_ACCESS")
+            or secrets.get("THREADS_API_TOKEN")
         )
-        self.user_id = os.getenv("THREADS_USER_ID") or os.getenv("THREADS_API_USER_ID")
+        self.user_id = secrets.get("THREADS_USER_ID") or secrets.get("THREADS_API_USER_ID")
 
         if not self.access_token:
             raise ValueError(
@@ -256,7 +256,7 @@ if __name__ == "__main__":
         if hasattr(poster, "username"):
             logger.info(f"   Username: @{poster.username}")
         logger.info(f"   User ID: {poster.user_id}")
-        logger.info(f"   Token: {poster.access_token[:20]}...")
+        logger.info(f"   Token: [REDACTED]")
 
         logger.info("\n📝 Ready to post to Threads")
         logger.info("   (Uncomment test code to actually post)")

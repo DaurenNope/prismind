@@ -22,8 +22,8 @@ from pathlib import Path
 project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.publishing.engagement_tracker import get_engagement_tracker
-from src.utils.logging_config import get_logger
+from src.domain.publishing.engagement_tracker import get_engagement_tracker
+from src.shared.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 

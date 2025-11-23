@@ -1,0 +1,175 @@
+{
+  "timestamp": "2025-11-23T16:51:23.405385",
+  "operation": "identify_deprecated_code",
+  "total_items": 24,
+  "deprecated_items": [
+    {
+      "file": "tests/agents/test_cleaning_agent.py",
+      "line": 389,
+      "pattern": "@deprecated",
+      "type": "decorator",
+      "content": "@deprecated"
+    },
+    {
+      "file": "tests/agents/test_cleaning_agent.py",
+      "line": 393,
+      "pattern": "#\\s*DEPRECATED",
+      "type": "comment",
+      "content": "# DEPRECATED: This is old code"
+    },
+    {
+      "file": "scripts/run_cleaning_tasks.py",
+      "line": 463,
+      "pattern": "@deprecated",
+      "type": "decorator",
+      "content": "(r\"@deprecated\", \"decorator\"),"
+    },
+    {
+      "file": "scripts/run_cleaning_tasks.py",
+      "line": 466,
+      "pattern": "TODO.*deprecated",
+      "type": "comment",
+      "content": "(r\"TODO.*deprecated\", \"comment\"),"
+    },
+    {
+      "file": "scripts/run_cleaning_tasks.py",
+      "line": 467,
+      "pattern": "FIXME.*deprecated",
+      "type": "comment",
+      "content": "(r\"FIXME.*deprecated\", \"comment\"),"
+    },
+    {
+      "file": "scripts/run_cleaning_tasks.py",
+      "line": 468,
+      "pattern": "DeprecationWarning",
+      "type": "warning",
+      "content": "(r\"DeprecationWarning\", \"warning\"),"
+    },
+    {
+      "file": "scripts/run_cleaning_tasks.py",
+      "line": 469,
+      "pattern": "DeprecationWarning",
+      "type": "warning",
+      "content": "(r\"warnings\\.warn\\(.*DeprecationWarning\", \"warning_call\")"
+    },
+    {
+      "file": "src/publishing/rewriter.py",
+      "line": 36,
+      "pattern": "DeprecationWarning",
+      "type": "warning",
+      "content": "DeprecationWarning,"
+    },
+    {
+      "file": "src/publishing/rewriter.py",
+      "line": 3178,
+      "pattern": "DeprecationWarning",
+      "type": "warning",
+      "content": "DeprecationWarning,"
+    },
+    {
+      "file": "src/database/validation.py",
+      "line": 584,
+      "pattern": "#\\s*DEPRECATED",
+      "type": "comment",
+      "content": "# Deprecated posts = posts that WERE time-sensitive OR are too old to be relevant for rewrites"
+    },
+    {
+      "file": "src/pipeline/orchestrator.py",
+      "line": 43,
+      "pattern": "DeprecationWarning",
+      "type": "warning",
+      "content": "DeprecationWarning,"
+    },
+    {
+      "file": "src/pipeline/orchestrator.py",
+      "line": 584,
+      "pattern": "DeprecationWarning",
+      "type": "warning",
+      "content": "DeprecationWarning,"
+    },
+    {
+      "file": "src/core/analysis/intelligent_content_analyzer.py",
+      "line": 103,
+      "pattern": "DeprecationWarning",
+      "type": "warning",
+      "content": "DeprecationWarning,"
+    },
+    {
+      "file": "src/agents/specialized/cleaning_agent.py",
+      "line": 167,
+      "pattern": "#\\s*DEPRECATED",
+      "type": "comment",
+      "content": "# Deprecated code detection"
+    },
+    {
+      "file": "src/agents/specialized/cleaning_agent.py",
+      "line": 797,
+      "pattern": "@deprecated",
+      "type": "decorator",
+      "content": "\"\"\"Identify deprecated code marked with @deprecated or DEPRECATED comments.\"\"\""
+    },
+    {
+      "file": "src/agents/specialized/cleaning_agent.py",
+      "line": 804,
+      "pattern": "@deprecated",
+      "type": "decorator",
+      "content": "(r\"@deprecated\", \"decorator\"),"
+    },
+    {
+      "file": "src/agents/specialized/cleaning_agent.py",
+      "line": 807,
+      "pattern": "TODO.*deprecated",
+      "type": "comment",
+      "content": "(r\"TODO.*deprecated\", \"comment\"),"
+    },
+    {
+      "file": "src/agents/specialized/cleaning_agent.py",
+      "line": 808,
+      "pattern": "FIXME.*deprecated",
+      "type": "comment",
+      "content": "(r\"FIXME.*deprecated\", \"comment\")"
+    },
+    {
+      "file": "src/application/automation/orchestrator.py",
+      "line": 43,
+      "pattern": "DeprecationWarning",
+      "type": "warning",
+      "content": "DeprecationWarning,"
+    },
+    {
+      "file": "src/application/automation/orchestrator.py",
+      "line": 584,
+      "pattern": "DeprecationWarning",
+      "type": "warning",
+      "content": "DeprecationWarning,"
+    },
+    {
+      "file": "src/infrastructure/database/validation.py",
+      "line": 584,
+      "pattern": "#\\s*DEPRECATED",
+      "type": "comment",
+      "content": "# Deprecated posts = posts that WERE time-sensitive OR are too old to be relevant for rewrites"
+    },
+    {
+      "file": "src/domain/publishing/rewriter.py",
+      "line": 36,
+      "pattern": "DeprecationWarning",
+      "type": "warning",
+      "content": "DeprecationWarning,"
+    },
+    {
+      "file": "src/domain/publishing/rewriter.py",
+      "line": 3178,
+      "pattern": "DeprecationWarning",
+      "type": "warning",
+      "content": "DeprecationWarning,"
+    },
+    {
+      "file": "src/domain/analysis/analyzers/intelligent_content_analyzer.py",
+      "line": 103,
+      "pattern": "DeprecationWarning",
+      "type": "warning",
+      "content": "DeprecationWarning,"
+    }
+  ]
+}

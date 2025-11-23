@@ -1,0 +1,32 @@
+# Separate test configurations for different test types
+# This file documents the different pytest configurations used in CI
+
+# Unit tests (fast, no external dependencies)
+# Command: pytest -m "not integration and not e2e"
+# Runs: All tests except integration and e2e
+
+# Integration tests (require database/external services)
+# Command: pytest -m integration
+# Requires: Test database credentials (SUPABASE_TEST_URL, SUPABASE_TEST_KEY)
+# Runs: Tests marked with @pytest.mark.integration
+
+# E2E tests (require full system)
+# Command: pytest -m e2e
+# Requires: Full system setup, test databases, mocked external APIs
+# Runs: Tests marked with @pytest.mark.e2e
+
+# Performance tests
+# Command: pytest -m performance
+# Runs: Tests marked with @pytest.mark.performance
+# Note: These are marked as slow and may take longer
+
+# Coverage report
+# Command: pytest --cov=src --cov-report=html --cov-report=term-missing
+# Target: 80%+ coverage
+# Output: htmlcov/ directory with HTML report
+
+
+
+
+
+

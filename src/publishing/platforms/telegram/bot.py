@@ -21,14 +21,14 @@ from telegram.ext import (
     ContextTypes,
 )
 
-from src.agents.github_research_agent import get_github_agent
-from src.agents.librarian_book_agent import get_librarian
+from src.domain.intelligence.agents.github_research_agent import get_github_agent
+from src.domain.intelligence.agents.librarian_book_agent import get_librarian
 from src.core.discovery.deep_discovery import DeepDiscovery
+from src.domain.publishing.modular_rewriter import get_rewriter
 
 # Local imports
-from src.scrape_state_manager import state_manager
+from src.infrastructure.database.scrape_state_manager import state_manager
 from src.services.automation import IntelligenceAutomation
-from src.publishing.rewriter import get_rewriter
 from src.services.digest import DigestGenerator
 from src.services.health import get_health_monitor
 from src.services.new_database_manager import get_database_manager
@@ -42,7 +42,7 @@ from src.services.telegram_bot_agents_extension import (
     rewrite_command,
 )
 from src.services.telegram_formatting import format_post_stats, format_posts_list
-from src.utils.duplicate_detector import get_duplicate_detector
+from src.shared.utils.duplicate_detector import get_duplicate_detector
 
 LOGGER = logging.getLogger(__name__)
 
@@ -69,8 +69,8 @@ def _load_access_controls() -> tuple[Set[int], int]:
     allowed_ids = _parse_allowed_user_ids(os.getenv("TELEGRAM_ALLOWED_USER_IDS", ""))
     try:
         cooldown = int(os.getenv("TELEGRAM_COMMAND_COOLDOWN", "15"))
-    except ValueError:
-        logger.error(f"Error: {e}")
+    except ValueError as e:
+        logger.error(f"Error parsing cooldown: {e}")
         cooldown = 15
     return allowed_ids, max(0, cooldown)
 
@@ -415,7 +415,7 @@ async def _cmd_discover(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         # Convert to SocialPost objects
         from datetime import datetime
 
-        from src.core.extraction.social_extractor_base import SocialPost
+        from src.domain.collection.extractors.social_extractor_base import SocialPost
 
         posts = []
         for p in posts_data:
@@ -1136,7 +1136,7 @@ async def _cmd_collect(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     try:
         # Use new orchestrator API
-        from src.pipeline.orchestrator import get_orchestrator
+        from src.application.automation.orchestrator import get_orchestrator
 
         orch = get_orchestrator()
         # Only bookmark platforms via /collect; RSS is discovery mode, not part of /collect
@@ -1255,7 +1255,7 @@ async def _job_collect(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Background job to run collection and send a brief summary."""
     chat_id = context.job.chat_id if context.job else None
     try:
-        from src.services.collection.collection_orchestrator import run_full_collection
+        from src.domain.collection.services.collection_orchestrator import run_full_collection
 
         results = await run_full_collection()
         total = results.get("total", 0)
@@ -1368,7 +1368,7 @@ async def _cmd_analyze(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await message.reply_text("Analyzing recent posts…")
     try:
         # Lazy import to keep bot light
-        from src.services.analysis.post_analyzer import analyze_and_store_post, log
+        from src.domain.analysis.services.post_analyzer import analyze_and_store_post, log
 
         db = get_database_manager()
         platforms_filter = [platform] if platform else None
@@ -1812,7 +1812,7 @@ async def _cmd_ask(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
 
         # Lazy import research agent
-        from src.agents.enhanced_research_agent import EnhancedResearchAgent
+        from src.domain.intelligence.agents.enhanced_research_agent import EnhancedResearchAgent
 
         # Perform research
         agent = EnhancedResearchAgent()
@@ -1996,7 +1996,7 @@ async def _cmd_research(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         )
 
         # Lazy import
-        from src.agents.autonomous_research_orchestrator import (
+        from src.domain.intelligence.agents.autonomous_research_orchestrator import (
             get_research_orchestrator,
         )
 
@@ -2045,7 +2045,7 @@ async def _cmd_curate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await message.reply_text("📚 Curating your personalized content...")
 
         # Lazy import
-        from src.agents.librarian_agent import get_librarian_agent
+        from src.domain.intelligence.agents.librarian_agent import get_librarian_agent
 
         librarian = get_librarian_agent()
 

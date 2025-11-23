@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 from typing import Dict, Iterable, List
 
-from src.utils.logging_config import get_logger
+from src.shared.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 

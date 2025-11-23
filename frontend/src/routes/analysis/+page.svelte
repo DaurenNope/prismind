@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import Toast from '$lib/components/Toast.svelte';
+  import AnalysisField from '$lib/components/AnalysisField.svelte';
+  import AnalysisSummary from '$lib/components/AnalysisSummary.svelte';
   import { fetchAnalysisStats, fetchRecentAnalysis, triggerAnalysisRun } from '$lib/services/analysis';
   import type { AnalysisStats, AnalyzedPost } from '$lib/types';
 
@@ -127,13 +129,13 @@
           <div class="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
             <p class="text-[11px] uppercase tracking-[0.32em] text-[color:var(--text-muted)]/70">Last run</p>
             <p class="text-base font-medium text-[color:var(--text-primary)]">
-              {stats ? formatTimestamp(stats.last_analysis_at) : '—'}
+              <AnalysisField value={stats?.last_analysis_at} format="date" fallback="Never" loading={loading} />
             </p>
           </div>
           <div class="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
             <p class="text-[11px] uppercase tracking-[0.32em] text-[color:var(--text-muted)]/70">Avg quality</p>
             <p class="text-2xl font-semibold text-[rgba(93,242,193,0.9)]">
-              {stats?.average_quality ?? '—'}
+              <AnalysisField value={stats?.average_quality} format="score" fallback="—" loading={loading} />
             </p>
           </div>
           <div class="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
@@ -195,9 +197,17 @@
         <div class="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
           {#each stats.queue_preview as item}
             <div class="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
-              <p class="text-[10px] uppercase tracking-[0.3em] text-[rgba(78,192,255,0.85)]">{item.platform}</p>
-              <p class="text-[color:var(--text-primary)] text-sm line-clamp-2">{item.content_preview}</p>
-              <p class="text-[10px] uppercase tracking-[0.28em] text-[color:var(--text-muted)]/70 mt-1">{formatTimestamp(item.created_at)}</p>
+              <p class="text-[10px] uppercase tracking-[0.3em] text-[rgba(78,192,255,0.85)]">{item.platform || 'Unknown'}</p>
+              <p class="text-[color:var(--text-primary)] text-sm line-clamp-2">
+                {#if item.content_preview && item.content_preview.trim()}
+                  {item.content_preview}
+                {:else}
+                  <span class="text-[color:var(--text-muted)]/60 italic">No preview available</span>
+                {/if}
+              </p>
+              <p class="text-[10px] uppercase tracking-[0.28em] text-[color:var(--text-muted)]/70 mt-1">
+                <AnalysisField value={item.created_at} format="date" fallback="Unknown date" />
+              </p>
             </div>
           {/each}
         </div>
@@ -278,26 +288,44 @@
                     <p class="text-xs text-[color:var(--text-muted)]/80">Analyzed {formatTimestamp(post.analysis_timestamp)}</p>
                   </div>
                   <div class="flex gap-3 text-xs">
-                    <span class="rounded-full border border-[rgba(93,242,193,0.35)] bg-[rgba(93,242,193,0.15)] px-3 py-1 text-[rgba(93,242,193,0.9)]">Quality {post.quality_score ?? '—'}</span>
-                    <span class="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-[color:var(--text-muted)]">Sentiment {post.sentiment ?? '—'}</span>
+                    <span class="rounded-full border border-[rgba(93,242,193,0.35)] bg-[rgba(93,242,193,0.15)] px-3 py-1 text-[rgba(93,242,193,0.9)]">
+                      Quality <AnalysisField value={post.quality_score} format="score" fallback="—" />
+                    </span>
+                    <span class="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-[color:var(--text-muted)]">
+                      Sentiment <AnalysisField value={post.sentiment} fallback="—" />
+                    </span>
                   </div>
                 </header>
                 <div class="space-y-3">
-                  {#if post.ai_summary}
-                    <div>
-                      <p class="text-[10px] uppercase tracking-[0.28em] text-[color:var(--text-muted)]/70">Summary</p>
-                      <p class="text-sm text-[color:var(--text-primary)]/90 whitespace-pre-line">{post.ai_summary}</p>
-                    </div>
-                  {/if}
                   <div>
-                    <p class="text-[10px] uppercase tracking-[0.28em] text-[color:var(--text-muted)]/70">Original</p>
-                    <p class="text-sm text-[color:var(--text-muted)]/85 whitespace-pre-line max-h-32 overflow-y-auto">{post.content}</p>
+                    <p class="text-[10px] uppercase tracking-[0.28em] text-[color:var(--text-muted)]/70 mb-1">Summary</p>
+                    <AnalysisSummary 
+                      summary={post.ai_summary} 
+                      loading={false}
+                      emptyMessage="No summary available. This post has not been analyzed yet."
+                    />
                   </div>
-                  {#if post.key_concepts && post.key_concepts.length > 0}
-                    <div class="flex flex-wrap gap-2 text-[10px] uppercase tracking-[0.3em] text-[rgba(78,192,255,0.85)]">
-                      {#each post.key_concepts as tag}
-                        <span class="rounded-full border border-white/10 bg-white/5 px-3 py-1">{tag}</span>
-                      {/each}
+                  <div>
+                    <p class="text-[10px] uppercase tracking-[0.28em] text-[color:var(--text-muted)]/70 mb-1">Original</p>
+                    {#if post.content && post.content.trim()}
+                      <p class="text-sm text-[color:var(--text-muted)]/85 whitespace-pre-line max-h-32 overflow-y-auto">{post.content}</p>
+                    {:else}
+                      <p class="text-sm text-[color:var(--text-muted)]/70 italic">No content available</p>
+                    {/if}
+                  </div>
+                  {#if post.key_concepts && Array.isArray(post.key_concepts) && post.key_concepts.length > 0}
+                    <div>
+                      <p class="text-[10px] uppercase tracking-[0.28em] text-[color:var(--text-muted)]/70 mb-2">Key Concepts</p>
+                      <div class="flex flex-wrap gap-2 text-[10px] uppercase tracking-[0.3em] text-[rgba(78,192,255,0.85)]">
+                        {#each post.key_concepts.filter(tag => tag && tag.trim()) as tag}
+                          <span class="rounded-full border border-white/10 bg-white/5 px-3 py-1">{tag}</span>
+                        {/each}
+                      </div>
+                    </div>
+                  {:else}
+                    <div>
+                      <p class="text-[10px] uppercase tracking-[0.28em] text-[color:var(--text-muted)]/70 mb-1">Key Concepts</p>
+                      <p class="text-xs text-[color:var(--text-muted)]/60 italic">No key concepts identified</p>
                     </div>
                   {/if}
                 </div>

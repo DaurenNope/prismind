@@ -3,7 +3,7 @@ Content quality metrics and validation rules
 """
 
 import re
-from typing import Dict, Any, List
+from typing import Any, Dict, List
 
 
 class ContentQualityMetrics:

@@ -11,8 +11,8 @@ from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException, Request
 
-from src.utils.logging_config import get_logger
-from src.utils.observability_hub import get_observability_hub
+from src.shared.utils.logging_config import get_logger
+from src.shared.utils.observability_hub import get_observability_hub
 
 router = APIRouter(prefix="/api/observability", tags=["observability"])
 logger = get_logger(__name__)

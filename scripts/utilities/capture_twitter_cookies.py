@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from playwright.async_api import async_playwright
 from playwright_stealth import stealth_async as stealth
 
-DEFAULT_OUTPUT = Path("config/twitter_cookies_cryptoniard.json")
+DEFAULT_OUTPUT = Path("config/cookies/twitter_cookies_cryptoniard.json")
 
 
 async def _wait_for_user(

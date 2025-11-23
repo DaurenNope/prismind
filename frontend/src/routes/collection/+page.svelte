@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { fetchCollectorStatus, fetchCollectionLogs } from '$lib/services/collection';
-  import { API_BASE } from '$lib/config';
-  import type { CollectorStatus, CollectionLogEntry } from '$lib/types';
+  import { API_BASE, getFetchOptions } from '$lib/config';
+  import type { CollectorStatus, CollectionLogEntry, PostRecord } from '$lib/types';
 
   let collectors: CollectorStatus[] = [];
   let logs: CollectionLogEntry[] = [];
@@ -13,6 +13,67 @@
   let autoRefresh = true;
   const refreshMs = 30_000;
   let refreshTimer: ReturnType<typeof setInterval> | null = null;
+
+  // Latest Collections state
+  let latestPosts: PostRecord[] = [];
+  let loadingLatestPosts = false;
+  let timeFilter: '1h' | '6h' | '24h' | '7d' | 'all' = '24h';
+  let latestPostsError: string | null = null;
+
+  const getTimeFilterDate = (filter: string): Date | null => {
+    const now = new Date();
+    switch (filter) {
+      case '1h':
+        return new Date(now.getTime() - 60 * 60 * 1000);
+      case '6h':
+        return new Date(now.getTime() - 6 * 60 * 60 * 1000);
+      case '24h':
+        return new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      case '7d':
+        return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      case 'all':
+      default:
+        return null;
+    }
+  };
+
+  const fetchLatestPosts = async () => {
+    loadingLatestPosts = true;
+    latestPostsError = null;
+    try {
+      const sinceDate = getTimeFilterDate(timeFilter);
+      const params = new URLSearchParams({
+        limit: '50',
+        offset: '0'
+      });
+
+      // Note: The API doesn't support time filtering directly,
+      // so we'll fetch and filter client-side
+      const response = await fetch(`${API_BASE}/api/posts?${params.toString()}`, getFetchOptions());
+      if (!response.ok) {
+        throw new Error(`Failed to fetch posts: ${response.status}`);
+      }
+      const data = await response.json();
+      let posts: PostRecord[] = data.posts || [];
+
+      // Filter by time if needed
+      if (sinceDate) {
+        posts = posts.filter((post) => {
+          if (!post.created_at) return false;
+          const postDate = new Date(post.created_at);
+          return postDate >= sinceDate;
+        });
+      }
+
+      latestPosts = posts;
+    } catch (err) {
+      latestPostsError = err instanceof Error ? err.message : 'Failed to load latest posts';
+      console.error('Error fetching latest posts:', err);
+      latestPosts = [];
+    } finally {
+      loadingLatestPosts = false;
+    }
+  };
 
   const loadData = async () => {
     loadingData = true;
@@ -85,11 +146,10 @@
     error = null;
     try {
       const body = platform ? { platform } : {};
-      const response = await fetch(`${API_BASE}/api/collection/start`, {
+      const response = await fetch(`${API_BASE}/api/collection/start`, getFetchOptions({
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
-      });
+      }));
       if (!response.ok) {
         let detailMessage: string | undefined;
         try {
@@ -144,6 +204,28 @@
       .map((part) => (part.length ? part[0].toUpperCase() + part.slice(1) : part))
       .join(' ');
 
+  const groupPostsByPlatform = (posts: PostRecord[]): Record<string, PostRecord[]> => {
+    const grouped: Record<string, PostRecord[]> = {};
+    posts.forEach((post) => {
+      const platform = post.platform || 'unknown';
+      if (!grouped[platform]) {
+        grouped[platform] = [];
+      }
+      grouped[platform].push(post);
+    });
+    return grouped;
+  };
+
+  const getContentPreview = (content: string | undefined, maxLength = 150): string => {
+    if (!content) return 'No content';
+    if (content.length <= maxLength) return content;
+    return content.substring(0, maxLength).trim() + '...';
+  };
+
+  const handleTimeFilterChange = () => {
+    void fetchLatestPosts();
+  };
+
   const formatStatus = (message?: string, collected?: number, success = true) => {
     if (message) return message;
     if (typeof collected === 'number') {
@@ -156,6 +238,7 @@
 
   onMount(() => {
     void loadData();
+    void fetchLatestPosts();
     if (autoRefresh) startPolling();
   });
 
@@ -167,6 +250,7 @@
     stopPolling();
     refreshTimer = setInterval(() => {
       void loadData();
+      void fetchLatestPosts();
     }, refreshMs);
   };
 
@@ -377,4 +461,122 @@
         </div>
       </div>
     </section>
+
+  <!-- Latest Collections Section -->
+  <section class="rounded-3xl border border-white/10 bg-[rgba(11,20,34,0.85)] backdrop-blur-xl p-6 space-y-5 shadow-[0_35px_120px_-80px_rgba(78,192,255,0.5)]">
+    <div class="flex flex-wrap items-center justify-between gap-4">
+      <div>
+        <p class="text-[11px] uppercase tracking-[0.4em] text-[color:var(--text-muted)]">Recent Activity</p>
+        <h2 class="text-xl font-semibold text-[color:var(--text-primary)] mt-2">Latest Collections</h2>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <select
+          bind:value={timeFilter}
+          on:change={handleTimeFilterChange}
+          class="rounded-xl border border-white/10 bg-[rgba(15,29,46,0.9)] px-4 py-2 text-sm font-semibold text-[color:var(--text-primary)] hover:border-[rgba(78,192,255,0.5)] transition-colors focus:outline-none focus:ring-2 focus:ring-[rgba(78,192,255,0.5)]"
+        >
+          <option value="1h">Last Hour</option>
+          <option value="6h">Last 6 Hours</option>
+          <option value="24h">Last 24 Hours</option>
+          <option value="7d">Last 7 Days</option>
+          <option value="all">All Time</option>
+        </select>
+        <button
+          type="button"
+          class="rounded-xl border border-[rgba(78,192,255,0.45)] bg-[linear-gradient(135deg,rgba(78,192,255,0.18),rgba(93,242,193,0.18))] px-4 py-2 text-sm font-semibold text-[color:var(--text-primary)] shadow-[0_12px_40px_-24px_rgba(78,192,255,0.6)] hover:shadow-[0_18px_60px_-24px_rgba(78,192,255,0.65)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          disabled={loadingLatestPosts}
+          on:click={() => fetchLatestPosts()}
+        >
+          {loadingLatestPosts ? 'Refreshing...' : 'Refresh'}
+        </button>
+      </div>
+    </div>
+
+    {#if latestPostsError}
+      <div class="rounded-2xl border border-red-400/40 bg-red-500/15 px-4 py-3 text-sm text-red-100">
+        <p class="font-semibold">Error loading latest posts</p>
+        <p class="text-xs mt-1 opacity-90">{latestPostsError}</p>
+        <button
+          type="button"
+          class="mt-2 text-xs underline text-red-200 hover:text-red-100"
+          on:click={() => fetchLatestPosts()}
+        >
+          Retry
+        </button>
+      </div>
+    {/if}
+
+    {#if loadingLatestPosts && latestPosts.length === 0}
+      <div class="space-y-4">
+        {#each Array.from({ length: 3 }) as _, index}
+          <div class="animate-pulse rounded-2xl border border-white/10 bg-[rgba(15,29,46,0.85)] px-5 py-4 space-y-3">
+            <div class="flex items-center justify-between">
+              <div class="h-4 w-24 rounded-full bg-white/10"></div>
+              <div class="h-3 w-16 rounded-full bg-white/10"></div>
+            </div>
+            <div class="h-5 w-3/4 rounded-full bg-white/10"></div>
+            <div class="h-4 w-full rounded-full bg-white/10"></div>
+            <div class="h-4 w-2/3 rounded-full bg-white/10"></div>
+            <div class="h-9 w-24 rounded-xl bg-white/10"></div>
+          </div>
+        {/each}
+      </div>
+    {:else if latestPosts.length === 0}
+      <div class="rounded-2xl border border-white/10 bg-[rgba(15,29,46,0.85)] px-6 py-8 text-center">
+        <p class="text-sm text-[color:var(--text-muted)]/80">No posts collected in the selected time period.</p>
+        <p class="text-xs text-[color:var(--text-muted)]/60 mt-2">Run a collection sweep to gather new content.</p>
+      </div>
+    {:else}
+      {#each Object.entries(groupPostsByPlatform(latestPosts)) as [platform, posts]}
+        <div class="space-y-3">
+          <div class="flex items-center gap-2">
+            <p class="text-[11px] uppercase tracking-[0.35em] text-[rgba(78,192,255,0.85)]">{formatPlatform(platform)}</p>
+            <span class="text-xs text-[color:var(--text-muted)]">({posts.length} {posts.length === 1 ? 'post' : 'posts'})</span>
+          </div>
+          <div class="space-y-3">
+            {#each posts as post}
+              <article class="rounded-2xl border border-white/10 bg-[rgba(15,29,46,0.9)] px-5 py-4 space-y-3 shadow-[0_20px_70px_-60px_rgba(78,192,255,0.45)]">
+                <div class="flex items-start justify-between gap-3">
+                  <div class="flex-1 min-w-0">
+                    {#if post.title}
+                      <h3 class="text-sm font-semibold text-[color:var(--text-primary)] mb-1 line-clamp-2">
+                        {post.title}
+                      </h3>
+                    {/if}
+                    <p class="text-sm text-[color:var(--text-muted)] line-clamp-3">
+                      {getContentPreview(post.content)}
+                    </p>
+                  </div>
+                </div>
+                <div class="flex items-center justify-between gap-4 text-xs text-[color:var(--text-muted)]">
+                  <div class="flex items-center gap-3 flex-wrap">
+                    {#if post.author}
+                      <span class="flex items-center gap-1">
+                        <span class="text-[10px] uppercase tracking-[0.3em]">By</span>
+                        <span class="font-medium">{post.author}</span>
+                      </span>
+                    {/if}
+                    {#if post.created_at}
+                      <span>·</span>
+                      <span>{formatDate(post.created_at)}</span>
+                    {/if}
+                  </div>
+                  {#if post.url}
+                    <a
+                      href={post.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="rounded-xl border border-[rgba(78,192,255,0.45)] bg-[rgba(78,192,255,0.1)] px-3 py-1.5 text-xs font-semibold text-[rgba(78,192,255,0.9)] hover:bg-[rgba(78,192,255,0.2)] transition-colors"
+                    >
+                      View
+                    </a>
+                  {/if}
+                </div>
+              </article>
+            {/each}
+          </div>
+        </div>
+      {/each}
+    {/if}
+  </section>
 </div>

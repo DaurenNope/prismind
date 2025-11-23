@@ -12,7 +12,7 @@ from typing import Any, Dict, Optional
 import requests
 from dotenv import load_dotenv
 
-from src.utils.standardized_result import OperationResult, ResultFactory
+from src.shared.utils.standardized_result import OperationResult, ResultFactory
 
 load_dotenv()
 
@@ -56,7 +56,7 @@ class PostingService:
         """
         # Try Twitter API first (faster than Playwright if it works)
         try:
-            from src.publishing.platforms.twitter import post_to_twitter_direct
+            from src.domain.publishing.platforms.twitter import post_to_twitter_direct
 
             result = post_to_twitter_direct(content)
             if result.get("success"):
@@ -71,7 +71,7 @@ class PostingService:
 
         # Fallback to Playwright (browser automation)
         try:
-            from src.publishing.platforms.twitter_playwright import (
+            from src.domain.publishing.platforms.twitter_playwright import (
                 post_to_twitter_direct as post_twitter_playwright,
             )
 
@@ -152,7 +152,7 @@ class PostingService:
         # Use Playwright (primary method - works reliably)
         logger.info("Using Playwright for Threads posting...")
         try:
-            from src.publishing.platforms.threads_playwright import (
+            from src.domain.publishing.platforms.threads_playwright import (
                 post_to_threads_direct,
             )
 

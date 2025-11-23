@@ -98,6 +98,22 @@ def get_job_status(job_id: str):
     return response
 
 
+@app.get("/health/live")
+def liveness_check():
+    """
+    Liveness probe endpoint.
+    Returns 200 if the service is alive (process is running).
+    Kubernetes will restart the container if this fails.
+    """
+    from datetime import datetime
+
+    return {
+        "status": "alive",
+        "timestamp": datetime.utcnow().isoformat(),
+        "service": "prismind-api",
+    }
+
+
 @app.get("/health")
 def healthcheck():
     """Comprehensive health check for BEYONDLINES API service"""
@@ -116,11 +132,15 @@ def healthcheck():
 
     # Check Redis connection
     try:
+        import time
+
+        start_time = time.time()
         conn = get_redis_connection()
         redis_result = conn.ping()
+        response_time_ms = (time.time() - start_time) * 1000
         health_info["checks"]["redis"] = {
             "status": "healthy" if redis_result else "unhealthy",
-            "response_time_ms": 0,  # Could be enhanced with timing
+            "response_time_ms": round(response_time_ms, 2),
         }
     except RedisError as exc:
         health_info["checks"]["redis"] = {"status": "unhealthy", "error": str(exc)}
@@ -128,18 +148,18 @@ def healthcheck():
 
     # Check system resources
     try:
+        cpu_percent = psutil.cpu_percent(interval=0.1)
+        memory = psutil.virtual_memory()
+        disk = psutil.disk_usage("/")
         health_info["checks"]["system"] = {
             "status": "healthy",
-            "cpu_percent": psutil.cpu_percent(interval=1),
-            "memory_percent": psutil.virtual_memory().percent,
-            "disk_percent": psutil.disk_usage("/").percent,
+            "cpu_percent": round(cpu_percent, 2),
+            "memory_percent": round(memory.percent, 2),
+            "disk_percent": round(disk.percent, 2),
         }
 
         # Set status to degraded if resources are high
-        if (
-            health_info["checks"]["system"]["cpu_percent"] > 90
-            or health_info["checks"]["system"]["memory_percent"] > 90
-        ):
+        if cpu_percent > 90 or memory.percent > 90 or disk.percent > 90:
             health_info["status"] = "degraded"
 
     except Exception as exc:
@@ -184,6 +204,8 @@ def healthcheck():
 @app.get("/health/ready")
 def readiness_check():
     """Readiness check for Kubernetes/container orchestration"""
+    from datetime import datetime
+
     try:
         # Check if Redis is accessible
         conn = get_redis_connection()

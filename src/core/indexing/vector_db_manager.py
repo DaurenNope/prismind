@@ -3,9 +3,9 @@ Vector database manager for pgvector operations in Supabase.
 """
 
 import logging
-from typing import List, Optional, Dict, Any
 import os
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -20,8 +20,8 @@ class VectorDBManager:
         
         # Try to initialize Supabase client
         try:
-            from supabase import create_client, Client
-            
+            from supabase import Client, create_client
+
             # Get Supabase credentials from environment
             url = os.environ.get("SUPABASE_URL")
             key = os.environ.get("SUPABASE_KEY")

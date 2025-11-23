@@ -9,7 +9,6 @@ Research Engine (Simplified)
 Main orchestrator for research operations using modular components.
 """
 
-import asyncio
 from typing import Any, Dict, List, Optional
 
 from src.core.research.search_filters import SearchFilters

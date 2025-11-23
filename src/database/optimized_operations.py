@@ -19,8 +19,8 @@ from functools import wraps
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from src.utils.error_handler import DatabaseError, async_handle_errors, handle_errors
-from src.utils.logging_config import get_logger, get_performance_logger
+from src.shared.utils.error_handler import DatabaseError, async_handle_errors, handle_errors
+from src.shared.utils.logging_config import get_logger, get_performance_logger
 
 logger = get_logger("database_ops")
 perf_logger = get_performance_logger()

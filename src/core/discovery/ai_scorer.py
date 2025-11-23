@@ -8,7 +8,7 @@ Uses Ollama/Gemini to intelligently score content quality
 """
 
 import os
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
 
 class AIContentScorer:
@@ -101,7 +101,6 @@ Respond with ONLY a number between 0.0 and 1.0 (e.g., 0.75)"""
                             return score
                     except Exception as e:
                         logger.error(f"Error: {e}")
-                        pass
 
             except Exception as e:
                 logger.error(f"   Ollama scoring failed: {e}")
@@ -124,7 +123,6 @@ Respond with ONLY a number between 0.0 and 1.0 (e.g., 0.75)"""
                         return score
                 except Exception as e:
                     logger.error(f"Error: {e}")
-                    pass
 
             except Exception as e:
                 logger.error(f"   Gemini scoring failed: {e}")

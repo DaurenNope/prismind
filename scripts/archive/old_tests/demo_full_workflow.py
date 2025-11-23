@@ -27,7 +27,7 @@ async def demonstrate_twitter_workflow():
     print("🐦 Demonstrating Complete Twitter Reply Workflow...")
 
     try:
-        from src.core.analysis.ai_service_manager import ai_service_manager
+        from src.domain.analysis.analyzers.ai_service_manager import ai_service_manager
         from src.twitter.interaction_client import (
             InteractionType,
             TwitterInteraction,
@@ -137,7 +137,7 @@ async def demonstrate_threads_workflow():
     print("\n🧵 Demonstrating Complete Threads Reply Workflow...")
 
     try:
-        from src.core.analysis.ai_service_manager import ai_service_manager
+        from src.domain.analysis.analyzers.ai_service_manager import ai_service_manager
         from src.social.multiplatform_interaction import (
             SocialInteraction,
             SocialPlatform,

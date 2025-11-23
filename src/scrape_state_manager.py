@@ -4,13 +4,12 @@ Scrape State Manager
 Tracks scraping progress and save points to avoid rescraping the same content
 """
 
-from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 from dotenv import load_dotenv
 
-from src.database.scrape_state import ScrapeStateDatabase
+from src.infrastructure.database.scrape_state import ScrapeStateDatabase
 
 # Load environment variables
 load_dotenv()

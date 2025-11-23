@@ -13,10 +13,10 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.core.extraction.twitter import TwitterExtractorPlaywright
-from src.core.extraction.twitter.url_fetcher import fetch_tweet_content_from_url
-from src.database.manager import SupabaseManager
-from src.services.analysis.post_analyzer import detect_content_truncation
+from src.domain.collection.extractors.twitter import TwitterExtractorPlaywright
+from src.domain.collection.extractors.twitter.url_fetcher import fetch_tweet_content_from_url
+from src.infrastructure.database.manager import SupabaseManager
+from src.domain.analysis.services.post_analyzer import detect_content_truncation
 
 
 async def fetch_full_content_from_url(

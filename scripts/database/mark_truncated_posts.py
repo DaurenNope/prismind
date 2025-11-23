@@ -14,8 +14,8 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.database.manager import SupabaseManager
-from src.services.analysis.post_analyzer import detect_content_truncation
+from src.infrastructure.database.manager import SupabaseManager
+from src.domain.analysis.services.post_analyzer import detect_content_truncation
 
 
 def mark_truncated_posts(limit: int = 100):

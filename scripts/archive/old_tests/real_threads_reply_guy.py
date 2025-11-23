@@ -21,7 +21,7 @@ async def test_existing_threads_posting():
     print("🧵 Testing EXISTING Threads posting module...")
 
     try:
-        from src.publishing.platforms.threads_playwright import (
+        from src.domain.publishing.platforms.threads_playwright import (
             post_to_threads_playwright,
         )
 
@@ -122,7 +122,7 @@ async def generate_reply_with_real_profile():
     print("🤖 Generating reply with existing profile system...")
 
     try:
-        from src.core.analysis.ai_service_manager import ai_service_manager
+        from src.domain.analysis.analyzers.ai_service_manager import ai_service_manager
         from src.services.profile_content_selector import profile_content_selector
 
         # Load cryptoniard profile
@@ -193,7 +193,7 @@ async def create_and_post_real_reply():
         print(f"{reply}")
 
         # Post as new thread since no discussion found
-        from src.publishing.platforms.threads_playwright import (
+        from src.domain.publishing.platforms.threads_playwright import (
             post_to_threads_playwright,
         )
 

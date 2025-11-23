@@ -13,8 +13,8 @@ from typing import Any, Dict, List, Optional
 # Add parent directory to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from src.database.manager import SupabaseManager
-from src.utils.logging_config import get_logger
+from src.infrastructure.database.manager import SupabaseManager
+from src.shared.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 

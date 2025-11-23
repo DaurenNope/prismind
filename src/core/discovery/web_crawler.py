@@ -11,7 +11,7 @@ import asyncio
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from src.core.extraction.social_extractor_base import SocialPost
+from src.domain.collection.extractors.social_extractor_base import SocialPost
 
 
 class WebCrawler:
@@ -204,7 +204,6 @@ class WebCrawler:
                 await self.crawler.__aexit__(None, None, None)
             except Exception as e:
                 logger.error(f"Error: {e}")
-                pass
 
 
 # Trending content sources to crawl

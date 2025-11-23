@@ -5,8 +5,9 @@ Handles keyword extraction and sentiment analysis
 """
 
 import re
-from typing import List, Dict, Any
 from collections import Counter
+from typing import Any, Dict, List
+
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 

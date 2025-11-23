@@ -5,13 +5,13 @@ Automatically identifies content needing research and orchestrates multi-source 
 """
 
 import asyncio
-from typing import List, Dict, Any, Optional
-from datetime import datetime, timezone
 import logging
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
-from src.agents.enhanced_research_agent import EnhancedResearchAgent
-from src.research.academic_research import AcademicResearchEngine
-from src.research.semantic_search import SemanticSearchEngine
+from src.domain.intelligence.agents.enhanced_research_agent import EnhancedResearchAgent
+from src.domain.intelligence.research.academic_research import AcademicResearchEngine
+from src.domain.intelligence.research.semantic_search import SemanticSearchEngine
 from src.services.new_database_manager import get_database_manager
 
 logger = logging.getLogger(__name__)

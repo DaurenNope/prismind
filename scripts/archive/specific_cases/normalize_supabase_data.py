@@ -21,7 +21,7 @@ from typing import Dict, Any, Optional
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.supabase_manager import SupabaseManager
+from src.infrastructure.database.manager import SupabaseManager
 
 
 def extract_handle_from_url(url: str) -> Optional[str]:

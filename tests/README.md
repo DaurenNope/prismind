@@ -1,124 +1,219 @@
-# Prismind Test Suite
+# Testing Guide
 
-## Overview
-
-This directory contains comprehensive tests for the Prismind project, including unit tests, integration tests, and end-to-end tests.
+This directory contains the test suite for BEYONDLINES.
 
 ## Test Structure
 
-```
-tests/
-├── __init__.py
-├── conftest.py                    # Shared fixtures and configuration
-├── test_orchestrator_error_handling.py  # Unit tests for orchestrator error handling
-├── test_database_agent_curation.py      # Unit tests for automatic curation
-├── test_integration_analysis_pipeline.py # Integration tests for analysis pipeline
-└── README.md                      # This file
-```
+- **Unit Tests**: Fast, isolated tests for individual components (default)
+- **Integration Tests**: Tests for component integration and workflows (`-m integration`)
+- **E2E Tests**: End-to-end tests requiring full system (`-m e2e`)
+- **Performance Tests**: Performance benchmarks (`-m performance`)
+- **System Validation**: Comprehensive system validation (`scripts/validation/system_validation.py`)
+
+## Test Categories
+
+### Integration Tests
+
+| Test File | Purpose | Status |
+|-----------|---------|--------|
+| `test_integration_collection.py` | Collection → Database flow | ✅ |
+| `test_integration_analysis.py` | Analysis → Database flow | ✅ |
+| `test_integration_publishing.py` | Publishing workflow | ✅ |
+| `test_integration_api.py` | API endpoints | ✅ |
+| `test_integration_analysis_pipeline.py` | Full analysis pipeline | ✅ |
+| `test_integration.py` | Component integration | ✅ |
 
 ## Running Tests
 
-### Run all tests
+### Run all unit tests (default)
 ```bash
-pytest tests/
+pytest
 ```
 
-### Run specific test file
+### Run only unit tests
 ```bash
-pytest tests/test_orchestrator_error_handling.py
+pytest -m "not integration and not e2e"
 ```
 
-### Run specific test
+### Run integration tests
 ```bash
-pytest tests/test_orchestrator_error_handling.py::TestOrchestratorErrorHandling::test_analyze_batch_logs_errors
+pytest -m integration
 ```
 
-### Run with verbose output
+### Run E2E tests
 ```bash
-pytest tests/ -v
+pytest -m e2e
+```
+
+### Run performance tests
+```bash
+pytest -m performance
 ```
 
 ### Run with coverage
 ```bash
-pytest tests/ --cov=src --cov-report=html
+pytest --cov=src --cov-report=html --cov-report=term-missing
 ```
 
-## Test Categories
+### Run specific test file
+```bash
+pytest tests/test_database_consistency.py
+```
 
-### Unit Tests
-- **test_orchestrator_error_handling.py**: Tests error handling and logging in the orchestrator
-- **test_database_agent_curation.py**: Tests automatic curation to usable_posts table
+### Run specific test
+```bash
+pytest tests/test_database_consistency.py::TestDatabaseConsistency::test_post_saved_to_both_databases
+```
 
-### Integration Tests
-- **test_integration_analysis_pipeline.py**: Tests the full analysis pipeline flow
+## Test Configuration
+
+### pytest.ini
+Main pytest configuration. By default, integration and e2e tests are skipped.
+
+### pyproject.toml
+Contains coverage configuration and pytest markers.
+
+## Test Files
+
+### Critical Tests (P0)
+- `test_database_consistency.py`: SQLite ↔ Supabase sync consistency
+- `test_transactions.py`: Transaction handling and rollback scenarios
+- `test_database_sync.py`: Database sync behavior (existing, enhanced)
+
+### Coverage Tests (P1)
+- `test_e2e_workflows.py`: End-to-end workflow tests
+- `test_automated_checklist.py`: Automated tests from manual checklist
+
+### Performance Tests (P2)
+- `test_performance.py`: Performance benchmarks and load tests
+
+## CI/CD
+
+Tests run automatically on:
+- Push to `main` or `develop` branches
+- Pull requests
+
+See `.github/workflows/ci.yml` for CI configuration.
+
+## Coverage Targets
+
+- **Target**: 80%+ coverage
+- **Current**: Check with `pytest --cov=src --cov-report=term-missing`
+
+## Writing Tests
+
+### Unit Test Example
+```python
+def test_example():
+    """Test description"""
+    assert True
+```
+
+### Integration Test Example
+```python
+@pytest.mark.integration
+def test_database_operation():
+    """Test with database"""
+    # Test code
+    assert True
+```
+
+### E2E Test Example
+```python
+@pytest.mark.e2e
+def test_full_workflow():
+    """Test complete workflow"""
+    # Test code
+    assert True
+```
 
 ## Test Fixtures
 
-Common fixtures are defined in `conftest.py`:
-- `sample_post`: A valid sample post for testing
-- `sample_truncated_post`: A truncated post for testing
-- `sample_error_post`: An error post for testing
+Common fixtures are in `conftest.py`:
+- `sample_post`: Sample post data
+- `test_data_dir`: Test data directory
 
-## Writing New Tests
+## System Validation
 
-1. Create a new test file following the naming convention `test_*.py`
-2. Import necessary fixtures from `conftest.py`
-3. Use `@pytest.mark.asyncio` for async tests
-4. Use `@pytest.fixture` for test fixtures
-5. Follow the existing test structure and patterns
+### Running System Validation
 
-## Test Coverage Goals
-
-- **Unit Tests**: 80%+ coverage for core components
-- **Integration Tests**: Cover all major workflows
-- **Error Handling**: Test all error paths
-- **Edge Cases**: Test boundary conditions
-
-## Continuous Integration
-
-Tests are automatically run in CI/CD pipeline:
-- On every push to main branch
-- On pull requests
-- Before deployment
-
-## Debugging Tests
-
-### Run tests with debug output
 ```bash
-pytest tests/ -v -s
+# Run comprehensive system validation
+python scripts/validation/system_validation.py
+
+# Results saved to docs/VALIDATION_RESULTS.md
 ```
 
-### Run tests with pdb on failure
-```bash
-pytest tests/ --pdb
+**What It Validates**:
+- Database connection
+- Supabase connection
+- Analysis pipeline (10 posts)
+- AI field parsing (key_concepts, tags, action_items)
+- Collection pipeline
+- API endpoints
+
+**Expected Duration**: 5-10 minutes
+
+### Validation Results
+
+Results are saved to:
+- `docs/VALIDATION_RESULTS.md` - Markdown report
+- Console output - Real-time progress
+
+## Test Data
+
+### Required Test Data
+
+- **Posts**: 10+ posts in database for analysis testing
+- **Database**: `beyondlines.db` file (auto-created if missing)
+
+### Optional Test Data
+
+- **Supabase**: Test project (for sync tests)
+- **AI Credentials**: Gemini/Mistral/Ollama keys (for analysis tests)
+- **Platform Credentials**: Twitter/Reddit/Threads (for collection tests)
+- **API Key**: `API_KEY` for API authentication tests
+
+### Creating Test Data
+
+```python
+from src.services.new_database_manager import get_database_manager
+
+db = get_database_manager()
+test_post = {
+    "post_id": "test_123",
+    "platform": "twitter",
+    "content": "Test post content",
+    "author": "test_user",
+    "url": "https://twitter.com/test/status/123",
+}
+db.add_post(test_post)
 ```
 
-### Run tests with logging
-```bash
-pytest tests/ --log-cli-level=DEBUG
-```
+## Test Documentation
 
-## Best Practices
+### Additional Resources
 
-1. **Isolation**: Each test should be independent and not rely on other tests
-2. **Mocking**: Use mocks for external dependencies (APIs, databases)
-3. **Fixtures**: Use fixtures for common test data
-4. **Assertions**: Use descriptive assertion messages
-5. **Cleanup**: Clean up after tests (use fixtures with teardown)
+- **Test Matrix**: See `docs/TEST_MATRIX.md` for comprehensive test coverage
+- **Test Runbook**: See `docs/TEST_RUNBOOK.md` for detailed test procedures
+- **Validation Results**: See `docs/VALIDATION_RESULTS.md` for latest validation
+- **Test Results**: See `docs/TEST_RESULTS.md` for test execution results
 
-## Known Issues
+## Notes
 
-- Some integration tests require database access and may be skipped in CI
-- Some tests may require specific environment variables to be set
+- Integration tests may require test database credentials
+- E2E tests require full system setup
+- Performance tests are marked as `slow` and may take longer
+- System validation creates test data automatically if needed
+- Some tests skip gracefully if dependencies are missing
 
-## Contributing
+## Troubleshooting
 
-When adding new features:
-1. Write tests first (TDD approach)
-2. Ensure all tests pass
-3. Maintain or improve test coverage
-4. Update this README if needed
+### Common Issues
 
+1. **Database errors**: Ensure `beyondlines.db` exists and is writable
+2. **Import errors**: Ensure project root is in Python path
+3. **Timeout errors**: Increase timeout values or check AI service availability
+4. **API errors**: Start API server before running API tests
 
-
-
+See `docs/TEST_RUNBOOK.md` for detailed troubleshooting guide.

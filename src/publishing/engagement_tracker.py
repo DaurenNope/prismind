@@ -10,8 +10,8 @@ import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
-from src.database.manager import SupabaseManager
-from src.publishing.engagement_learner import EngagementLearner
+from src.infrastructure.database.manager import SupabaseManager
+from src.domain.publishing.engagement_learner import EngagementLearner
 
 logger = logging.getLogger(__name__)
 
@@ -180,7 +180,7 @@ class EngagementTracker:
     async def _fetch_threads_metrics(self, thread_id: str) -> Optional[Dict[str, int]]:
         """Fetch Threads engagement metrics"""
         try:
-            from src.publishing.platforms.threads import ThreadsPoster
+            from src.domain.publishing.platforms.threads import ThreadsPoster
 
             poster = ThreadsPoster()
             insights = poster.get_thread_insights(thread_id)

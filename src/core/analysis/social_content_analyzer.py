@@ -10,7 +10,7 @@ from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 logger = logging.getLogger(__name__)
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "extraction"))
-from src.core.extraction.social_extractor_base import SocialPost
+from src.domain.collection.extractors.social_extractor_base import SocialPost
 
 
 class SocialContentAnalyzer:

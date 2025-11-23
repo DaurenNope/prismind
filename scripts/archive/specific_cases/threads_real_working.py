@@ -242,7 +242,7 @@ async def test_reply_generation_with_real_profile():
         with open("config/profiles/cryptoniard.json", "r") as f:
             profile = json.load(f)
 
-        from src.core.analysis.ai_service_manager import ai_service_manager
+        from src.domain.analysis.analyzers.ai_service_manager import ai_service_manager
 
         # Create a mention about automation
         mention_text = "What do people think about using AI for crypto social media automation? Any tools you recommend beyond the basic schedulers?"

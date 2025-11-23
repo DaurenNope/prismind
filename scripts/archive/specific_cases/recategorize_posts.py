@@ -15,8 +15,8 @@ Usage:
 import asyncio
 import argparse
 from datetime import datetime
-from src.supabase_manager import SupabaseManager
-from src.core.analysis.intelligent_content_analyzer import IntelligentContentAnalyzer
+from src.infrastructure.database.manager import SupabaseManager
+from src.domain.analysis.analyzers.intelligent_content_analyzer import IntelligentContentAnalyzer
 
 
 async def recategorize_posts(categories_to_fix=None, limit=None):

@@ -14,11 +14,11 @@ import asyncio
 import logging
 from typing import Any, Dict, Iterable, List, Optional
 
-from src.services.analysis.post_analyzer import analyze_and_store_post
+from src.domain.analysis.services.post_analyzer import analyze_and_store_post
 from src.services.new_database_manager import NewDatabaseManager
 
 try:
-    from src.database.manager import SupabaseManager
+    from src.infrastructure.database.manager import SupabaseManager
 except Exception as exc:  # pragma: no cover
     SupabaseManager = None  # type: ignore
     logging.getLogger(__name__).warning(f"Supabase unavailable: {exc}")

@@ -1,0 +1,87 @@
+# Rewriter Agent Configuration
+
+# Agent metadata
+agent:
+  id: "rewriter_agent"
+  name: "Rewriter Agent"
+  version: "1.0.0"
+  dependencies:
+    - "analysis_agent"  # Depends on analysis agent for analyzed content
+
+# Batch processing configuration
+batch_processing:
+  batch_size: 5  # Number of posts to process in parallel
+  max_parallel_personas: 3  # Maximum personas to generate in parallel
+  progress_update_interval: 10  # Update progress every N items
+
+# Quality thresholds
+quality:
+  min_quality_score: 70  # Minimum quality score (0-100)
+  min_voice_consistency: 80  # Minimum voice consistency score (0-100)
+  min_fact_preservation: 75  # Minimum fact preservation score (0-100)
+  retry_on_low_quality: true  # Retry rewrite if quality is below threshold
+  max_retries: 1  # Maximum retry attempts
+
+# Persona configuration
+personas:
+  enabled: []  # Empty list means all personas are enabled
+  # Example: ["qronoya", "aspandead"] to enable only specific personas
+
+# Platform configuration
+platforms:
+  default: "auto"  # Default platform (auto, twitter, threads, linkedin)
+  auto_detect: true  # Automatically detect best platform from content
+
+# LLM configuration
+llm:
+  provider: "gemini"  # Primary provider (gemini, mistral, ollama)
+  model: "gemini-2.5-flash-lite"  # Model name
+  max_tokens: 500  # Maximum tokens per request
+  temperature: 0.7  # Temperature for generation
+  timeout: 30  # Request timeout in seconds
+  retry_attempts: 3  # Number of retry attempts on failure
+
+# Performance configuration
+performance:
+  rewrite_timeout: 8  # Maximum time per rewrite in seconds
+  batch_timeout: 300  # Maximum time for batch processing in seconds
+  enable_caching: true  # Enable result caching
+  cache_ttl: 3600  # Cache TTL in seconds
+
+# Validation configuration
+validation:
+  enable_fact_validation: true  # Enable fact accuracy checking
+  enable_voice_validation: true  # Enable voice consistency checking
+  enable_quality_validation: true  # Enable rewrite quality checking
+  enable_appropriateness_check: true  # Enable content appropriateness checking
+
+# Metrics configuration
+metrics:
+  track_quality_scores: true  # Track quality scores
+  track_voice_scores: true  # Track voice consistency scores
+  track_fact_scores: true  # Track fact preservation scores
+  track_rewrite_times: true  # Track rewrite execution times
+  metrics_retention_days: 30  # How long to retain metrics
+
+# Circuit breaker configuration
+circuit_breaker:
+  enabled: true  # Enable circuit breaker for API calls
+  failure_threshold: 5  # Number of failures before opening circuit
+  recovery_timeout: 60  # Time before attempting recovery in seconds
+
+# RAG configuration
+rag:
+  enabled: true  # Enable RAG for example retrieval
+  vector_db_path: "data/vector_db"  # Path to vector database
+  max_examples: 5  # Maximum examples to retrieve
+  similarity_threshold: 0.18  # Minimum similarity threshold
+
+# Analytics configuration
+analytics:
+  enabled: true  # Enable analytics tracking
+  log_rewrites: true  # Log rewrite operations
+  log_quality_scores: true  # Log quality scores
+  log_validation_results: true  # Log validation results
+
+
+

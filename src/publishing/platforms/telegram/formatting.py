@@ -9,7 +9,7 @@ Enhanced post formatting with GitHub metadata
 
 from typing import Any, Dict
 
-from src.utils.github_metadata import format_github_display, get_github_metadata
+from src.shared.utils.github_metadata import format_github_display, get_github_metadata
 
 
 def _get_field(post: Any, field: str, default: Any = None) -> Any:

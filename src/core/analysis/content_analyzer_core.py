@@ -14,12 +14,12 @@ import requests
 
 try:
     from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer  # type: ignore
-except Exception:  # pragma: no cover
-    logger.error(f"Error: {e}")
+except Exception as e:  # pragma: no cover
+    logger.error(f"Error importing SentimentIntensityAnalyzer: {e}")
     sentiment_intensity_analyzer = None  # type: ignore
 else:
     sentiment_intensity_analyzer = SentimentIntensityAnalyzer  # type: ignore
-from src.core.extraction.social_extractor_base import SocialPost
+from src.domain.collection.extractors.social_extractor_base import SocialPost
 
 
 class ContentAnalyzerCore:
@@ -119,9 +119,21 @@ class ContentAnalyzerCore:
                     analysis = json.loads(content)
                     analysis["ai_service"] = "mistral"
                     analysis["sentiment_analysis"] = sentiment_scores
+                    # Ensure all required fields exist and are lists
+                    analysis.setdefault("key_concepts", [])
+                    analysis.setdefault("suggested_tags", [])
+                    analysis.setdefault("action_items", [])
+                    analysis.setdefault("insights", [])
+                    # Coerce to lists if needed
+                    if analysis.get("key_concepts") is None:
+                        analysis["key_concepts"] = []
+                    if analysis.get("suggested_tags") is None:
+                        analysis["suggested_tags"] = []
+                    if analysis.get("action_items") is None:
+                        analysis["action_items"] = []
                     return analysis
-                except json.JSONDecodeError:
-                    logger.error(f"Error: {e}")
+                except json.JSONDecodeError as e:
+                    logger.error(f"JSON decode error in Mistral response: {e}")
                     # Fallback to text parsing
                     return self._parse_text_analysis(
                         content, sentiment_scores, "mistral"
@@ -160,9 +172,21 @@ class ContentAnalyzerCore:
                     analysis = json.loads(content)
                     analysis["ai_service"] = "ollama"
                     analysis["sentiment_analysis"] = sentiment_scores
+                    # Ensure all required fields exist and are lists
+                    analysis.setdefault("key_concepts", [])
+                    analysis.setdefault("suggested_tags", [])
+                    analysis.setdefault("action_items", [])
+                    analysis.setdefault("insights", [])
+                    # Coerce to lists if needed
+                    if analysis.get("key_concepts") is None:
+                        analysis["key_concepts"] = []
+                    if analysis.get("suggested_tags") is None:
+                        analysis["suggested_tags"] = []
+                    if analysis.get("action_items") is None:
+                        analysis["action_items"] = []
                     return analysis
-                except json.JSONDecodeError:
-                    logger.error(f"Error: {e}")
+                except json.JSONDecodeError as e:
+                    logger.error(f"JSON decode error in Ollama response: {e}")
                     return self._parse_text_analysis(
                         content, sentiment_scores, "ollama"
                     )
@@ -183,13 +207,32 @@ class ContentAnalyzerCore:
             result = model.generate_content(prompt)
             content = result.text
 
-            try:
-                analysis = json.loads(content)
-                analysis["ai_service"] = "gemini"
-                analysis["sentiment_analysis"] = sentiment_scores
-                return analysis
-            except json.JSONDecodeError:
-                logger.error(f"Error: {e}")
+                try:
+                    analysis = json.loads(content)
+                    analysis["ai_service"] = "gemini"
+                    analysis["sentiment_analysis"] = sentiment_scores
+                    # Ensure all required fields exist and are lists
+                    analysis.setdefault("ai_summary", "")
+                    analysis.setdefault("key_concepts", [])
+                    analysis.setdefault("suggested_tags", [])
+                    analysis.setdefault("tags", [])
+                    analysis.setdefault("action_items", [])
+                    analysis.setdefault("insights", [])
+                    # Coerce to lists if needed
+                    if analysis.get("key_concepts") is None:
+                        analysis["key_concepts"] = []
+                    if analysis.get("suggested_tags") is None:
+                        analysis["suggested_tags"] = []
+                    if analysis.get("tags") is None:
+                        analysis["tags"] = []
+                    if analysis.get("action_items") is None:
+                        analysis["action_items"] = []
+                    # Ensure ai_summary exists
+                    if not analysis.get("ai_summary") and analysis.get("summary"):
+                        analysis["ai_summary"] = analysis["summary"]
+                    return analysis
+            except json.JSONDecodeError as e:
+                logger.error(f"JSON decode error in Gemini response: {e}")
                 return self._parse_text_analysis(content, sentiment_scores, "gemini")
 
         except Exception as e:
@@ -279,10 +322,18 @@ class ContentAnalyzerCore:
                 parsed.setdefault("quality_score", 5)
                 parsed.setdefault("suggested_tags", [])
                 parsed.setdefault("summary", content[:200])
+                # Coerce to lists if needed (handle None values)
+                if parsed.get("key_concepts") is None:
+                    parsed["key_concepts"] = []
+                if parsed.get("suggested_tags") is None:
+                    parsed["suggested_tags"] = []
+                if parsed.get("action_items") is None:
+                    parsed["action_items"] = []
+                if parsed.get("insights") is None:
+                    parsed["insights"] = []
                 return parsed
-            except json.JSONDecodeError:
-                logger.error(f"Error: {e}")
-                pass
+            except json.JSONDecodeError as e:
+                logger.error(f"JSON decode error in extracted JSON block: {e}")
 
         # If still no JSON, try to extract structured data from text
         key_concepts = []
@@ -319,13 +370,15 @@ class ContentAnalyzerCore:
         return {
             "ai_service": ai_service,
             "sentiment_analysis": sentiment_scores,
+            "ai_summary": content[:400] if len(content) > 400 else content,
+            "summary": content[:200] if len(content) > 200 else content,
             "key_concepts": key_concepts,
             "insights": insights if insights else ["Analysis completed"],
             "action_items": action_items,
             "educational_value": "Analysis completed",
             "quality_score": quality_score,
+            "tags": key_concepts[:5],  # Use concepts as tags
             "suggested_tags": key_concepts[:5],  # Use concepts as tags
-            "summary": content[:200] if len(content) > 200 else content,
         }
 
     def _basic_analysis_fallback(self, sentiment_scores: Dict) -> Dict[str, Any]:
@@ -333,11 +386,13 @@ class ContentAnalyzerCore:
         return {
             "ai_service": "basic",
             "sentiment_analysis": sentiment_scores,
+            "ai_summary": "Content processed with basic analysis",
+            "summary": "Content processed with basic analysis",
             "key_concepts": [],
             "insights": ["Content analysis completed with basic processing"],
             "action_items": [],
             "educational_value": "Basic analysis completed",
             "quality_score": 5,
+            "tags": [],
             "suggested_tags": [],
-            "summary": "Content processed with basic analysis",
         }

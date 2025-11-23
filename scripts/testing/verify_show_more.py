@@ -54,7 +54,7 @@ async def main():
     actual_content = await get_actual_tweet_content(test_url)
     
     # Compare with what we have in DB
-    from src.supabase_manager import SupabaseManager
+    from src.infrastructure.database.manager import SupabaseManager
     sm = SupabaseManager()
     
     result = sm.client.table('posts').select('content').eq('url', test_url).execute()

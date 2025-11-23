@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 
-from src.publishing.rag_system import ExampleVectorDatabase
+from src.domain.publishing.rag_system import ExampleVectorDatabase
 
 
 class RAGBridge:

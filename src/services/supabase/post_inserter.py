@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict
 
-from src.utils.logging_config import get_logger
+from src.shared.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -75,6 +75,7 @@ class PostInserter:
                 "sentiment",
                 "key_concepts",
                 "tags",
+                "action_items",
                 "analysis_model",
                 "value_score",
                 "quality_score",
@@ -130,12 +131,12 @@ class PostInserter:
             # Generate post_id using deterministic ID generator (NO random UUIDs)
             post_id = clean_post_data.get("post_id")
             if not post_id:
-                from src.storage.id_generator import PostIDGenerator
+                from src.infrastructure.database.storage.id_generator import PostIDGenerator
 
                 post_id = PostIDGenerator.generate_post_id(clean_post_data)
             else:
                 # Normalize existing post_id
-                from src.storage.id_generator import PostIDGenerator
+                from src.infrastructure.database.storage.id_generator import PostIDGenerator
 
                 platform = clean_post_data.get("platform", "")
                 post_id = PostIDGenerator._normalize_id(str(post_id), platform)
@@ -166,7 +167,7 @@ class PostInserter:
 
             # Make an UPSERT on post_id and update key fields to backfill missing data
             # Protected with circuit breaker
-            from src.utils.circuit_breaker_wrapper import get_circuit_breaker
+            from src.shared.utils.circuit_breaker_wrapper import get_circuit_breaker
 
             supabase_breaker = get_circuit_breaker(
                 "supabase", failure_threshold=5, recovery_timeout=60.0
@@ -174,14 +175,38 @@ class PostInserter:
 
             @supabase_breaker.protect
             def _execute_upsert():
-                """Execute Supabase upsert with circuit breaker protection"""
+                """Execute Supabase upsert with circuit breaker protection and retry logic"""
                 import time
 
                 attempts = 0
+                max_attempts = 3
                 last_error = None
-                while attempts < 2:
+                
+                # P0-3: Exponential backoff retry logic
+                while attempts < max_attempts:
                     try:
+                        # P1-3: Explicit existence check before upsert (for better error handling)
+                        # Note: upsert() is atomic, but we check first for better logging
+                        post_id = mapped_data.get("post_id")
+                        platform = mapped_data.get("platform")
+                        url = mapped_data.get("url")
+                        
+                        existing = None
+                        if post_id and platform:
+                            try:
+                                existing = (
+                                    self.client.table(self.table_name)
+                                    .select("post_id")
+                                    .eq("post_id", post_id)
+                                    .eq("platform", platform)
+                                    .limit(1)
+                                    .execute()
+                                )
+                            except Exception:
+                                pass  # Ignore check errors, proceed with upsert
+                        
                         # Upsert and update important analysis fields on conflict
+                        # P0-3: Idempotency key = post_id + platform (already in conflict_target)
                         response = (
                             self.client.table(self.table_name)
                             .upsert(
@@ -189,6 +214,13 @@ class PostInserter:
                             )
                             .execute()
                         )
+                        
+                        # Log whether this was an insert or update
+                        if existing and existing.data:
+                            logger.debug(f"✅ Updated existing post: {post_id} ({platform})")
+                        else:
+                            logger.debug(f"✅ Inserted new post: {post_id} ({platform})")
+                        
                         return response
                     except Exception as e:
                         msg = str(e)
@@ -198,17 +230,26 @@ class PostInserter:
                             )
                             return {"success": True}
                         last_error = e
-                        if any(code in msg for code in [" 520 ", " 502 ", " 503 "]):
-                            wait = 1.5 if attempts == 0 else 3.0
+                        
+                        # P0-3: Exponential backoff for transient errors
+                        if any(code in msg for code in [" 520 ", " 502 ", " 503 ", " 504 "]):
+                            wait = (1.5 ** attempts) * 1.0  # Exponential: 1.0s, 1.5s, 2.25s
                             logger.warning(
-                                f"Supabase transient error ({msg.strip()}), retrying in {wait}s..."
+                                f"Supabase transient error ({msg.strip()}), retrying in {wait:.2f}s... (attempt {attempts + 1}/{max_attempts})"
                             )
                             time.sleep(wait)
                             attempts += 1
                             continue
+                        
+                        # P0-3: For non-transient errors, log and fail
+                        logger.error(f"Supabase upsert failed (non-retryable): {msg[:200]}")
                         raise
+                
+                # P0-3: All retries exhausted
                 if last_error:
+                    logger.error(f"Supabase upsert failed after {max_attempts} attempts")
                     raise last_error
+                raise Exception("Unexpected: no error but upsert failed")
 
             response = _execute_upsert()
 
@@ -258,13 +299,13 @@ class PostInserter:
         """Map post data to Supabase schema"""
 
         # Helper to convert list to PostgreSQL array format
+        # Supabase Python client accepts Python lists directly - no need for string conversion
         def to_pg_array(value):
             if not value or value == []:
-                return None
+                return []  # Return empty array instead of None for array fields
             if isinstance(value, list):
-                # Escape quotes and wrap in array format
-                items = [str(item).replace('"', '\\"') for item in value]
-                return "{" + ",".join(f'"{item}"' for item in items) + "}"
+                # Return list directly - Supabase client will convert to PostgreSQL array
+                return [str(item) for item in value if item]  # Filter out None/empty items
             return value
 
         # Helper to normalize timestamps to ISO format
@@ -401,8 +442,11 @@ class PostInserter:
             "sentiment": "sentiment",
             "key_concepts": "key_concepts",
             "tags": "tags",
+            "action_items": "action_items",
             "category": "category",
-            "fit_categories": "fit_categories",  # Multiple categories this content fits
+            # Note: fit_categories column not yet in Supabase schema.
+            # To enable: Add TEXT[] column 'fit_categories' to posts table via migration.
+            # "fit_categories": "fit_categories",
             "analysis_model": "analysis_model",
             "embedding": "embedding",
             "embedding_model": "embedding_model",
@@ -430,6 +474,10 @@ class PostInserter:
 
         for source_field, target_field in analysis_fields_mapping.items():
             value = post_data.get(source_field)
+            
+            # Debug logging for action_items
+            if source_field == "action_items":
+                logger.debug(f"🔍 Mapping action_items: value={value}, type={type(value)}")
 
             # Apply defaults for important fields that should never be None
             if value is None:
@@ -453,6 +501,9 @@ class PostInserter:
                     value = {}
                 elif target_field in ["best_persona_key"]:
                     value = None  # Keep None for optional fields
+                elif target_field in ["action_items", "key_concepts", "tags", "rewrite_reasons", "rewrite_risks", "best_persona_reasons"]:
+                    # Array fields should default to empty array, not None
+                    value = []
                 else:
                     # Skip other None values
                     continue
@@ -464,10 +515,10 @@ class PostInserter:
             elif target_field in [
                 "key_concepts",
                 "tags",
+                "action_items",
                 "rewrite_reasons",
                 "rewrite_risks",
                 "best_persona_reasons",
-                "fit_categories",
                 "time_sensitive_reasons",
             ]:
                 # Handle JSON strings - parse them first
@@ -486,7 +537,11 @@ class PostInserter:
                         )
                         mapped_data[target_field] = to_pg_array([])
                 elif isinstance(value, list):
-                    mapped_data[target_field] = to_pg_array(value)
+                    mapped_value = to_pg_array(value)
+                    mapped_data[target_field] = mapped_value
+                    # Debug logging for action_items
+                    if target_field == "action_items":
+                        logger.debug(f"🔍 action_items mapped: {mapped_value}, type={type(mapped_value)}")
                 elif isinstance(value, (int, float)):
                     # Single number instead of list - convert to list with that number
                     logger.warning(
@@ -494,7 +549,8 @@ class PostInserter:
                     )
                     mapped_data[target_field] = to_pg_array([])
                 elif value is None:
-                    mapped_data[target_field] = None
+                    # For array fields, use empty array instead of None
+                    mapped_data[target_field] = []
                 else:
                     # Unknown type - use empty array
                     logger.warning(

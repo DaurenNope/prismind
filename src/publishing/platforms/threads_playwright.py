@@ -1,6 +1,6 @@
 """
 Threads Posting Service using Playwright (Browser Automation)
-Like mimesis autoposter - uses Playwright for Threads
+Uses Playwright for browser automation to post to Threads
 """
 
 import asyncio
@@ -13,17 +13,18 @@ from typing import Dict, Optional
 
 from playwright.async_api import async_playwright
 
+# Initialize logger before use
+logger = logging.getLogger(__name__)
+
 try:
     from playwright_stealth import stealth_async as stealth  # LIKE MIMESIS
-except ImportError:
+except ImportError as e:
     logger.error(f"Error: {e}")
     stealth = None
-    # Logger not available yet, will log warning later
+
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
-
-logger = logging.getLogger(__name__)
 
 
 async def post_to_threads_playwright(
@@ -43,7 +44,7 @@ async def post_to_threads_playwright(
         # Get credentials
         username = os.getenv("THREADS_USERNAME")
         password = os.getenv("THREADS_PASSWORD")
-        cookie_file = os.getenv("THREADS_COOKIES_FILE") or "cookies/threads_cookies.json"
+        cookie_file = os.getenv("THREADS_COOKIES_FILE") or "config/cookies/threads_cookies.json"
 
         if not username:
             return {"success": False, "error": "THREADS_USERNAME not set"}
@@ -95,23 +96,19 @@ async def post_to_threads_playwright(
             logger.info(
                 f"✅ Using storage_state from {cookie_file} (EXACTLY like extractor)"
             )
-            logger.info(f"✅ Loading cookies from: {cookie_file}")
         else:
             # No cookies - create context without cookies
             context = await browser.new_context(
                 viewport={"width": 1280, "height": 900},
                 user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
             )
-            logger.warning(f"Cookie file not found: {cookie_file}")
             logger.warning(f"⚠️  Cookie file not found: {cookie_file}")
 
         # VERIFY cookies were loaded
         try:
             cookies_loaded = await context.cookies()
             logger.info(f"✅ Loaded {len(cookies_loaded)} cookies into context")
-            logger.info(f"✅ Loaded {len(cookies_loaded)} cookies into context")
         except Exception as e:
-            logger.warning(f"Could not verify cookies: {e}")
             logger.warning(f"⚠️  Could not verify cookies: {e}")
 
         page = await context.new_page()
@@ -121,7 +118,6 @@ async def post_to_threads_playwright(
         logger.info(
             "🚀 Navigating directly to home page (optimized - skipping auth check)"
         )
-        logger.info("🚀 Navigating directly to home page...")
 
         try:
             # Navigate directly to home page (try threads.com first, fallback to threads.net)
@@ -147,7 +143,6 @@ async def post_to_threads_playwright(
                 "login" in current_url.lower()
                 or "accounts/login" in current_url.lower()
             ):
-                logger.error("❌ Redirected to login - cookies expired")
                 logger.error("❌ Redirected to login - cookies expired")
 
                 # Try login if password provided
@@ -235,11 +230,9 @@ async def post_to_threads_playwright(
             # Wait for page to be ready (minimal wait)
             await page.wait_for_load_state("networkidle", timeout=10000)
             logger.info("✅ Home page loaded")
-            logger.info("✅ Home page loaded")
 
         except Exception as e:
-            logger.warning(f"Home page navigation issue: {e} - continuing anyway")
-            logger.warning(f"⚠️  Navigation warning: {e}")
+            logger.warning(f"⚠️  Navigation warning: {e} - continuing anyway")
 
         # Now look for compose button
         logger.info("Looking for compose button on home page...")
@@ -274,7 +267,6 @@ async def post_to_threads_playwright(
         try:
             all_buttons = await page.query_selector_all('button, a, div[role="button"]')
             logger.debug(f"🔍 Found {len(all_buttons)} clickable elements on page")
-            logger.info(f"Found {len(all_buttons)} clickable elements on page")
 
             # If no buttons found, the page is likely not loaded or we're not logged in
             if len(all_buttons) == 0:
@@ -289,7 +281,6 @@ async def post_to_threads_playwright(
                     logger.error("📸 Screenshot saved: logs/threads_empty_page.png")
                 except Exception as e:
                     logger.error(f"Error: {e}")
-                    pass
                 return {
                     "success": False,
                     "error": "Page appears empty - not logged in or page failed to load. Check cookies.",
@@ -383,7 +374,6 @@ async def post_to_threads_playwright(
                     is_visible = await compose_button.is_visible()
                     if is_visible:
                         logger.info(f"✅ Found visible compose button: {selector}")
-                        logger.info(f"✅ Found compose button with selector: {selector}")
                         break
                     else:
                         logger.debug(f"Found button but not visible: {selector}")
@@ -405,7 +395,6 @@ async def post_to_threads_playwright(
                 if compose_button:
                     is_visible = await compose_button.is_visible()
                     if is_visible:
-                        logger.info("✅ Found compose button by aria-label!")
                         logger.info("✅ Found compose button by aria-label")
             except Exception as e:
                 logger.debug(f"Aria-label search failed: {e}")
@@ -415,7 +404,6 @@ async def post_to_threads_playwright(
 
         if compose_button:
             # Click compose button to open modal
-            logger.info("Clicking compose button...")
             logger.info("🖱️ Clicking compose button...")
 
             # Try multiple click methods to handle intercepting elements
@@ -448,7 +436,7 @@ async def post_to_threads_playwright(
                                 await parent.click()
                                 logger.info("✅ Clicked parent element")
                         except Exception as e4:
-                            logger.error(f"Error: {e}")
+                            logger.error(f"Error: {e4}")
                             raise Exception(
                                 f"All click methods failed: force={e1}, js={e2}, normal={e3}, parent={e4}"
                             )
@@ -527,7 +515,6 @@ async def post_to_threads_playwright(
                 logger.debug(f"Page text preview: {page_text[:500]}")
             except Exception as e:
                 logger.debug(f"Debug screenshot/text failed: {e}")
-                pass
 
             logger.error("❌ Could not find compose button or textarea")
             try:
@@ -539,7 +526,6 @@ async def post_to_threads_playwright(
                     await playwright.stop()
             except Exception as e:
                 logger.debug(f"Cleanup failed: {e}")
-                pass
             return {
                 "success": False,
                 "error": "Could not find compose button or textarea - may not be logged in or page structure changed",
@@ -578,8 +564,7 @@ async def post_to_threads_playwright(
             # Verify content was typed
             actual_content = await textarea.inner_text()
             if len(actual_content) > 0:
-                logger.info(f"✅ Content typed: {len(actual_content)} chars")
-                logger.info(f"✅ Content verified: {actual_content[:50]}...")
+                logger.info(f"✅ Content typed: {len(actual_content)} chars - {actual_content[:50]}...")
             else:
                 # Fallback: use innerHTML/textContent
                 await textarea.evaluate(
@@ -600,7 +585,6 @@ async def post_to_threads_playwright(
         # Find and click post button - find ALL buttons with "Post" and choose the right one
         post_button = None
         logger.info("🔍 Finding all post buttons on the page...")
-        logger.debug("🔍 Finding all post buttons...")
 
         # First, find all buttons with "Post" text or aria-label
         all_post_buttons = []
@@ -639,13 +623,9 @@ async def post_to_threads_playwright(
                 continue
 
         logger.info(f"Found {len(all_post_buttons)} post button(s)")
-        logger.info(f"Found {len(all_post_buttons)} post button(s)")
 
         # Log all found buttons for debugging
         for i, btn_info in enumerate(all_post_buttons):
-            logger.info(
-                f"  Button {i+1}: text='{btn_info['text'][:50]}', aria-label='{btn_info['aria_label'][:50]}'"
-            )
             logger.info(
                 f"  Button {i+1}: text='{btn_info['text'][:50]}', aria-label='{btn_info['aria_label'][:50]}'"
             )
@@ -670,11 +650,9 @@ async def post_to_threads_playwright(
                         logger.info(
                             f"✅ Selected post button from modal: text='{btn_info['text'][:50]}'"
                         )
-                        logger.info(f"✅ Selected post button from modal")
                         break
             except Exception as e:
                 logger.error(f"Error: {e}")
-                pass
 
         # If no button in modal, try the first enabled button
         if not post_button:
@@ -696,9 +674,6 @@ async def post_to_threads_playwright(
                             post_button = btn
                             logger.info(
                                 f"✅ Selected post button: text='{btn_info['text'][:50]}'"
-                            )
-                            logger.info(
-                                f"✅ Selected post button: '{btn_info['text'][:50]}'"
                             )
                             break
                 except Exception as e:
@@ -729,7 +704,6 @@ async def post_to_threads_playwright(
                     await playwright.stop()
             except Exception as e:
                 logger.debug(f"Cleanup failed: {e}")
-                pass
             return {
                 "success": False,
                 "error": f"Could not find enabled post button (found {len(all_post_buttons)} button(s) but none were suitable)",
@@ -743,9 +717,6 @@ async def post_to_threads_playwright(
             textarea_content = await textarea.inner_text()
             if len(textarea_content) < len(content) / 2:
                 logger.warning(
-                    f"Content may not be typed correctly: expected {len(content)} chars, got {len(textarea_content)}"
-                )
-                logger.warning(
                     f"⚠️ Content verification: expected {len(content)} chars, got {len(textarea_content)}"
                 )
                 # Try typing again
@@ -755,7 +726,6 @@ async def post_to_threads_playwright(
             logger.warning(f"Could not verify content: {e}")
 
         # Click post button - try multiple methods including keyboard
-        logger.info("Clicking post button...")
         logger.info("🖱️ Clicking post button...")
 
         # Debug: Check button state before clicking
@@ -878,7 +848,6 @@ async def post_to_threads_playwright(
                         # Take first 100 chars of our content to search
                         search_text = content[:100].strip()
                         if search_text in page_content:
-                            logger.info(f"✅ Post found in feed - content detected!")
                             logger.info(f"✅ Post successful - content found in feed")
                             post_success = True
 
@@ -903,7 +872,6 @@ async def post_to_threads_playwright(
                                 logger.debug(
                                     f"Failed to extract post URL from feed: {e}"
                                 )
-                                pass
                             break
                     except Exception as feed_check_error:
                         logger.debug(f"Feed check failed: {feed_check_error}")
@@ -925,22 +893,13 @@ async def post_to_threads_playwright(
                         logger.info(
                             f"✅ Post successful - modal closed, URL: {post_url}"
                         )
-                        logger.info(
-                            f"✅ Post successful - modal closed, URL: {post_url}"
-                        )
                         break
                     else:
                         # Modal closed but no URL change - might be success (post on same page)
-                        logger.warning(
-                            "⚠️ Modal closed but no URL change - post may be in feed"
-                        )
                         # Assume success if modal closed (Threads posts to feed, not new page)
                         post_success = True
                         logger.info(
-                            "✅ Post successful - modal closed (post likely in feed)"
-                        )
-                        logger.info(
-                            "✅ Post successful - modal closed (post likely in feed)"
+                            "✅ Post successful - modal closed (post likely in feed, no URL change)"
                         )
                         break
 
@@ -969,9 +928,6 @@ async def post_to_threads_playwright(
 
                                 # CRITICAL: "Posting..." message means the post WAS submitted!
                                 if "posting" in message_text.lower():
-                                    logger.info(
-                                        "✅ 'Posting...' message detected - post was submitted!"
-                                    )
                                     logger.info(
                                         "✅ 'Posting...' message detected - post was submitted!"
                                     )
@@ -1027,7 +983,6 @@ async def post_to_threads_playwright(
                                 )
 
                             if is_success_message:
-                                logger.info("✅ Success message detected!")
                                 logger.info("✅ Post successful - success message found")
 
                                 # Wait for modal to close after success
@@ -1039,9 +994,6 @@ async def post_to_threads_playwright(
                                 )
                                 if not textarea_check:
                                     post_success = True
-                                    logger.info(
-                                        "✅ Post successful - success message + textarea disappeared"
-                                    )
                                     logger.info(
                                         "✅ Post successful - success message + textarea disappeared"
                                     )
@@ -1062,16 +1014,11 @@ async def post_to_threads_playwright(
                                             break
                                     except Exception as e:
                                         logger.debug(f"Feed check failed: {e}")
-                                        pass
 
                             # Also check if "This post was shared to the fediverse" appears (specific success message)
                             if "fediverse" in message_text.lower():
-                                logger.info(
-                                    "✅ Fediverse message detected - post was shared!"
-                                )
-                                logger.info("✅ Post successful - fediverse message")
-                                post_success = True
                                 logger.info("✅ Post successful - shared to fediverse")
+                                post_success = True
                                 break
 
                             # Check if it's an error message
@@ -1091,7 +1038,7 @@ async def post_to_threads_playwright(
                                     f"Post failed with error: {message_text}"
                                 )
                     except Exception as check_error:
-                        logger.error(f"Error: {e}")
+                        logger.error(f"Error: {check_error}")
                         if "Post failed" in str(check_error):
                             raise  # Re-raise our error
                         continue
@@ -1108,13 +1055,11 @@ async def post_to_threads_playwright(
                         page_content = await page.evaluate("document.body.innerText")
                         search_text = content[:50].strip()
                         if search_text in page_content:
-                            logger.info(f"✅ Post found in feed - content detected!")
-                            post_success = True
                             logger.info("✅ Post successful - found in feed")
+                            post_success = True
                             break
                     except Exception as e:
                         logger.debug(f"Feed check failed: {e}")
-                        pass
 
                     # If modal is still open but textarea is gone, might be a confirmation or success state
                     if modal_open or compose_modal:
@@ -1162,7 +1107,6 @@ async def post_to_threads_playwright(
                 logger.error("📸 Screenshot: logs/threads_post_failed.png")
             except Exception as e:
                 logger.debug(f"Screenshot failed: {e}")
-                pass
 
             # Get page text to see what's happening
             try:
@@ -1170,7 +1114,6 @@ async def post_to_threads_playwright(
                 logger.debug(f"Page text after post attempt: {page_text[:500]}")
             except Exception as e:
                 logger.debug(f"Failed to get page text: {e}")
-                pass
 
             # Final check: Look for content in feed
             try:
@@ -1243,20 +1186,17 @@ async def post_to_threads_playwright(
                     await page.close()
             except Exception as e:
                 logger.debug(f"Page close failed: {e}")
-                pass
         if browser:
             try:
                 if browser.is_connected():
                     await browser.close()
             except Exception as e:
                 logger.debug(f"Browser close failed: {e}")
-                pass
         if playwright:
             try:
                 await playwright.stop()
             except Exception as e:
                 logger.debug(f"Playwright stop failed: {e}")
-                pass
 
 
 def post_to_threads_direct(content: str, image_url: Optional[str] = None) -> Dict:
@@ -1280,8 +1220,8 @@ def post_to_threads_direct(content: str, image_url: Optional[str] = None) -> Dic
                 )
                 return future.result()
         except RuntimeError:
-            logger.error(f"Error: {e}")
             # No event loop running - safe to use asyncio.run
+            logger.debug("No event loop running, using asyncio.run")
             return asyncio.run(post_to_threads_playwright(content, image_url=image_url))
     except Exception as e:
         import traceback

@@ -12,6 +12,10 @@ from typing import Any, Dict
 
 from dotenv import load_dotenv
 
+from src.shared.utils.logging_config import get_logger
+
+logger = get_logger(__name__)
+
 
 class Config:
     """
@@ -84,7 +88,6 @@ class Config:
         except Exception as e:
             logger.error(f"Error: {e}")
             # Non-fatal; keep defaults
-            pass
 
     def _apply_env_overrides(self) -> None:
         def env_bool(name: str, default: bool) -> bool:
@@ -99,8 +102,8 @@ class Config:
                 return default
             try:
                 return int(raw)
-            except ValueError:
-                logger.error(f"Error: {e}")
+            except ValueError as e:
+                logger.error(f"Error parsing {name} as integer: {e}")
                 return default
 
         self.flags["enable_threads"] = env_bool(
@@ -163,6 +166,43 @@ class Config:
         self.flags["rewriter_min_rewrite_score"] = env_int(
             "REWRITER_MIN_REWRITE_SCORE", int(self.flags["rewriter_min_rewrite_score"])
         )
+
+    def validate_startup_config(self) -> tuple[bool, list[str]]:
+        """
+        Validate critical configuration at startup.
+
+        Returns:
+            (is_valid, list_of_missing_vars)
+        """
+        missing = []
+
+        # P0: Critical - Supabase is required
+        if self.flags.get("supabase_enabled", True):
+            if not self.supabase_url or self.supabase_url == "":
+                missing.append("SUPABASE_URL")
+            if not self.supabase_key and not self.supabase_service_role_key:
+                missing.append("SUPABASE_KEY or SUPABASE_SERVICE_ROLE_KEY")
+
+        # P0: Critical - At least one AI service
+        has_mistral = bool(os.getenv("MISTRAL_API_KEY"))
+        has_gemini = bool(os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"))
+        ollama_url_env = os.getenv("OLLAMA_URL")
+        has_ollama = bool(ollama_url_env and ollama_url_env.strip())
+
+        if not (has_mistral or has_gemini or has_ollama):
+            missing.append("At least one AI service (MISTRAL_API_KEY, GEMINI_API_KEY, or OLLAMA_URL)")
+
+        # P1: Important - Database path validation if SQLite enabled
+        if self.flags.get("enable_sqlite_cache", False):
+            db_path = os.getenv("SQLITE_DB_PATH", "beyondlines.db")
+            db_dir = Path(db_path).parent
+            if not db_dir.exists():
+                try:
+                    db_dir.mkdir(parents=True, exist_ok=True)
+                except Exception as e:
+                    missing.append(f"SQLite path not writable: {db_path} ({e})")
+
+        return (len(missing) == 0, missing)
 
 
 _config_singleton: "Config | None" = None

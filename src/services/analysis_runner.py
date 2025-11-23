@@ -3,9 +3,12 @@
 import asyncio
 from typing import Any, Dict, List, Optional
 
-from src.services.analysis.post_analyzer import analyze_and_store_post, log
-from src.services.analysis_lock import analysis_lock_guard
+from src.domain.analysis.services.post_analyzer import analyze_and_store_post, log
+from src.domain.analysis.services_lock import analysis_lock_guard
 from src.services.new_database_manager import get_database_manager
+from src.shared.utils.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 async def _analyze_posts_async(
@@ -16,12 +19,12 @@ async def _analyze_posts_async(
 
     # Get Supabase manager for cloud sync
     try:
-        from src.database.manager import SupabaseManager
+        from src.infrastructure.database.manager import SupabaseManager
 
         supabase_manager = SupabaseManager()
-    except Exception as e:
-        logger.error(f"Error: {e}")
-        log(f"Supabase manager not available: {e}", "warning")
+    except Exception as exc:
+        logger.error(f"Error: {exc}")
+        log(f"Supabase manager not available: {exc}", "warning")
         supabase_manager = None
 
     processed = 0
@@ -34,7 +37,7 @@ async def _analyze_posts_async(
             )
             processed += 1
         except Exception as exc:  # pylint: disable=broad-except
-            logger.error(f"Error: {e}")
+            logger.error(f"Error: {exc}")
             log(f"Analysis failed for post {post.get('post_id')}: {exc}", "error")
             errors.append(str(exc))
 
@@ -67,7 +70,7 @@ def analyze_recent_posts(
         try:
             posts = db_manager.get_unanalyzed_posts(limit=limit, platforms=platforms)
         except Exception as exc:  # pylint: disable=broad-except
-            logger.error(f"Error: {e}")
+            logger.error(f"Error: {exc}")
             log(f"Unable to fetch unanalyzed posts: {exc}", "warning")
 
     if not posts:

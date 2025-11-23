@@ -1,5 +1,5 @@
 """Publishing-specific database operations."""
 
-from src.database.publishing.bridge import MimesisDB
+from src.infrastructure.database.publishing.bridge import MimesisDB, PersonaTransformationsDB
 
-__all__ = ["MimesisDB"]
+__all__ = ["MimesisDB", "PersonaTransformationsDB"]

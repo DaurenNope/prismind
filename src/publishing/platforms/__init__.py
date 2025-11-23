@@ -2,7 +2,7 @@
 
 # Make imports optional to avoid breaking if dependencies are missing
 try:
-    from src.publishing.platforms.twitter import TwitterPoster, post_to_twitter_direct
+    from src.domain.publishing.platforms.twitter import TwitterPoster, post_to_twitter_direct
 
     twitter_poster = TwitterPoster  # type: ignore
     twitter_post_direct = post_to_twitter_direct  # type: ignore
@@ -12,7 +12,7 @@ except ImportError:
     twitter_post_direct = None
 
 try:
-    from src.publishing.platforms.threads import ThreadsPoster, post_to_threads_direct
+    from src.domain.publishing.platforms.threads import ThreadsPoster, post_to_threads_direct
 
     threads_poster = ThreadsPoster  # type: ignore
     threads_post_direct = post_to_threads_direct  # type: ignore

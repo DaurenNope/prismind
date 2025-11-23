@@ -1,27 +1,48 @@
 #!/usr/bin/env python3
 """
 Orchestrator: single integration entry for Collect → Analyze → Store → Surface.
+
+DEPRECATED: This class is deprecated in favor of CollectionOrchestratorAgent.
+This file is maintained for backward compatibility. New code should use:
+    from src.domain.intelligence.agents.collection_orchestrator_agent import get_collection_orchestrator_agent
+    agent = get_collection_orchestrator_agent()
+    await agent.initialize()
+    result = await agent.execute({"action": "collect_all"})
 """
 
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
+import threading
+import warnings
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from src.scrape_state_manager import ScrapeStateManager
-from src.services.analysis_lock import acquire_analysis_lock, release_analysis_lock
-from src.storage.db import get_storage
-from src.utils.config import get_config
-from src.utils.logging_config import get_logger
+from src.infrastructure.database.scrape_state_manager import ScrapeStateManager
+from src.domain.analysis.services.analysis_lock import acquire_analysis_lock, release_analysis_lock
+from src.infrastructure.database.storage.db import get_storage
+from src.shared.utils.config import get_config
+from src.shared.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 
 
 class Orchestrator:
+    """
+    DEPRECATED: Use CollectionOrchestratorAgent instead.
+    
+    This class is maintained for backward compatibility only.
+    All new code should use the agent-based approach.
+    """
+    
     def __init__(self) -> None:
+        warnings.warn(
+            "Orchestrator class is deprecated. Use CollectionOrchestratorAgent instead. "
+            "See docs/agents/MIGRATION_ORCHESTRATOR.md for migration guide.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         self.config = get_config()
         self.storage = get_storage()
         self._ensure_state_sync()
@@ -34,7 +55,6 @@ class Orchestrator:
         except Exception as e:
             logger.debug(f"State sync skipped: {e}")
             # Silent - state sync is automatic recovery, not critical
-            pass
 
     async def collect_all(
         self, platforms: Optional[List[str]] = None
@@ -63,16 +83,42 @@ class Orchestrator:
         ):
             plat.append("telegram_channels")
 
+        # P1-4: Standardized result tracking with error aggregation
         results: Dict[str, Any] = {p: 0 for p in plat}
         results["errors"] = []
+        results["error_details"] = {}  # Platform -> error details
+        results["started_at"] = datetime.now(timezone.utc).isoformat()
 
         async def run_one(name: str):
+            platform_start = datetime.now(timezone.utc)
             try:
                 count = await self.collect_platform(name)
-                results[name] = count
+                platform_duration = (datetime.now(timezone.utc) - platform_start).total_seconds()
+                results[name] = {
+                    "count": count,
+                    "success": True,
+                    "duration_seconds": platform_duration,
+                    "started_at": platform_start.isoformat(),
+                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                }
             except Exception as exc:
-                results["errors"].append(f"{name}: {exc}")
-                logger.warning(f"Collection failed for {name}: {exc}")
+                platform_duration = (datetime.now(timezone.utc) - platform_start).total_seconds()
+                error_msg = str(exc)
+                results["errors"].append(f"{name}: {error_msg}")
+                results["error_details"][name] = {
+                    "error": error_msg,
+                    "error_type": type(exc).__name__,
+                    "duration_seconds": platform_duration,
+                    "started_at": platform_start.isoformat(),
+                    "failed_at": datetime.now(timezone.utc).isoformat(),
+                }
+                results[name] = {
+                    "count": 0,
+                    "success": False,
+                    "error": error_msg,
+                    "duration_seconds": platform_duration,
+                }
+                logger.warning(f"Collection failed for {name}: {exc}", exc_info=True)
 
         # Bounded concurrency
         semaphore = asyncio.Semaphore(3)
@@ -82,7 +128,29 @@ class Orchestrator:
                 await run_one(name)
 
         await asyncio.gather(*(guarded(p) for p in plat))
-        results["total"] = sum(v for k, v in results.items() if isinstance(v, int))
+        
+        # P1-4: Calculate totals and aggregate results
+        total_count = 0
+        for k, v in results.items():
+            if k not in ["errors", "error_details", "started_at", "total", "completed_at"]:
+                if isinstance(v, dict) and "count" in v:
+                    total_count += v["count"]
+                elif isinstance(v, int):
+                    total_count += v
+        
+        results["total"] = total_count
+        results["completed_at"] = datetime.now(timezone.utc).isoformat()
+        results["total_duration_seconds"] = (
+            datetime.fromisoformat(results["completed_at"].replace("Z", "+00:00")) -
+            datetime.fromisoformat(results["started_at"].replace("Z", "+00:00"))
+        ).total_seconds()
+        results["success_count"] = sum(
+            1 for k, v in results.items()
+            if k not in ["errors", "error_details", "started_at", "total", "completed_at", "total_duration_seconds", "success_count"]
+            and isinstance(v, dict) and v.get("success", False)
+        )
+        results["failure_count"] = len(results["errors"])
+        
         return results
 
     async def collect_platform(self, platform: str) -> int:
@@ -99,10 +167,10 @@ class Orchestrator:
             metadata: Optional[Dict[str, Any]] = None,
         ) -> None:
             try:
-                from src.database.database_agent import DatabaseAgent
+                from src.infrastructure.database.database_agent import get_database_agent
 
                 duration = (datetime.now(timezone.utc) - start_time).total_seconds()
-                DatabaseAgent().record_collection_result(
+                get_database_agent().record_collection_result(
                     platform,
                     collected,
                     success=success,
@@ -146,7 +214,7 @@ class Orchestrator:
         # Optional Supabase manager for collectors that support cloud sync
         supabase_manager = None
         try:
-            from src.database.manager import SupabaseManager
+            from src.infrastructure.database.manager import SupabaseManager
 
             supabase_manager = SupabaseManager()
         except Exception as e:
@@ -187,7 +255,7 @@ class Orchestrator:
                 logger.debug(f"Could not fetch existing IDs/URLs for {platform}: {e}")
 
         if platform == "twitter":
-            from src.services.collection.platform_collectors import (
+            from src.domain.collection.services.platform_collectors import (
                 collect_twitter_bookmarks,
             )
 
@@ -215,7 +283,7 @@ class Orchestrator:
                 )
                 raise
         if platform == "reddit":
-            from src.services.collection.platform_collectors import (
+            from src.domain.collection.services.platform_collectors import (
                 collect_reddit_bookmarks,
             )
 
@@ -243,7 +311,7 @@ class Orchestrator:
                 )
                 raise
         if platform == "threads":
-            from src.services.collection.platform_collectors import (
+            from src.domain.collection.services.platform_collectors import (
                 collect_threads_bookmarks,
             )
 
@@ -261,7 +329,7 @@ class Orchestrator:
                     "yes",
                 ):
                     try:
-                        from src.services.collection.platform_collectors import (
+                        from src.domain.collection.services.platform_collectors import (
                             analyze_threads_posts,
                         )
 
@@ -370,10 +438,10 @@ class Orchestrator:
             try:
                 import json
 
-                from src.core.extraction.telegram_channel_extractor import (
+                from src.domain.collection.extractors.telegram_channel_extractor import (
                     TelegramChannelExtractor,
                 )
-                from src.supabase_manager import SupabaseManager
+                from src.infrastructure.database.manager import SupabaseManager
 
                 logger.info("Collecting Telegram channel messages...")
 
@@ -487,15 +555,13 @@ class Orchestrator:
                 return 0
         if platform == "discovery":
             try:
-                result = await self.collect_discovery()
-                stories = result.get("saved", 0) if isinstance(result, dict) else 0
+                saved_count = await self.collect_discovery()
                 log_result(
-                    stories,
+                    saved_count,
                     success=True,
-                    message=f"Autonomous discovery completed ({stories} items saved)",
-                    metadata=result if isinstance(result, dict) else None,
+                    message=f"Discovery collection completed ({saved_count} items saved)",
                 )
-                return result
+                return saved_count
             except Exception as exc:
                 logger.error(f"Collection failed for {platform}: {exc}")
                 log_result(
@@ -510,22 +576,53 @@ class Orchestrator:
     async def autonomous_discover(self) -> Dict[str, Any]:
         """
         DEPRECATED: This method uses deprecated AutonomousDiscovery.
-        Consider using collect_discovery() or implementing discovery directly here.
+        Use collect_discovery() instead, which uses orchestrator methods directly.
         """
         import warnings
         warnings.warn(
-            "autonomous_discover() uses deprecated AutonomousDiscovery. "
-            "This will be replaced with direct orchestrator methods.",
+            "autonomous_discover() is deprecated. Use collect_discovery() instead.",
             DeprecationWarning,
             stacklevel=2
         )
-        from src.services.discovery import AutonomousDiscovery
+        # Delegate to collect_discovery for backward compatibility
+        saved = await self.collect_discovery()
+        return {"saved": saved}
 
-        engine = AutonomousDiscovery()
-        return await engine.discover_content()
+    async def collect_discovery(self) -> int:
+        """
+        Collect discovery content using orchestrator methods directly.
+        
+        This replaces the deprecated AutonomousDiscovery.discover_content() by
+        using the orchestrator's platform collection methods (github_trending, reddit, etc.).
+        """
+        try:
+            # Use orchestrator's platform collection methods directly
+            # This replaces the deprecated AutonomousDiscovery class
+            results = await self.collect_all(platforms=[
+                "github_trending",
+                "reddit",
+                # RSS discovery can be added as a separate platform if needed
+            ])
+            
+            # Count total items saved across all discovery platforms
+            total_saved = 0
+            for platform in ["github_trending", "reddit"]:
+                if platform in results:
+                    result = results[platform]
+                    if isinstance(result, dict) and "count" in result:
+                        total_saved += result["count"]
+                    elif isinstance(result, int):
+                        total_saved += result
+            
+            logger.info(f"Discovery collection completed: {total_saved} items saved")
+            return total_saved
+            
+        except Exception as e:
+            logger.error(f"Discovery collection failed: {e}")
+            return 0
 
     async def analyze_batch(self, limit: int = 20, *, force: bool = False) -> int:
-        from src.utils.observability_hub import get_observability_hub
+        from src.shared.utils.observability_hub import get_observability_hub
 
         hub = get_observability_hub()
         hub.metrics.increment(
@@ -539,17 +636,17 @@ class Orchestrator:
                 "orchestrator.analyze_batch.skipped",
                 labels={"reason": "disabled_by_config"},
             )
-            return 0
+            return {"count": 0, "analyzed_post_ids": []}
 
         if not acquire_analysis_lock():
             logger.info("Analysis skipped: another analysis run is already in progress")
             hub.metrics.increment(
                 "orchestrator.analyze_batch.skipped", labels={"reason": "lock_held"}
             )
-            return 0
+            return {"count": 0, "analyzed_post_ids": []}
 
         try:
-            from src.services.analysis.post_analyzer import analyze_and_store_post
+            from src.domain.analysis.services.post_analyzer import analyze_and_store_post
             from src.services.cancel_manager import is_cancelled
 
             # Get posts to analyze
@@ -566,7 +663,7 @@ class Orchestrator:
 
             if not posts:
                 logger.info("No posts available for analysis")
-                return 0
+                return {"count": 0, "analyzed_post_ids": []}
 
             # Shim DB manager that writes through storage facade (defined once outside loop)
             class ShimDB:
@@ -583,39 +680,59 @@ class Orchestrator:
             # Create shim instance once (reused for all posts)
             shim = ShimDB(self.storage)
 
-            count = 0
-            for p in posts:
-                try:
-                    if is_cancelled("analysis") or is_cancelled("all"):
-                        break
-                    # Prefer passing Supabase adapter if available to ensure cloud sync
-                    supabase_mgr = None
+            # Parallel processing with semaphore for concurrency control
+            semaphore = asyncio.Semaphore(5)  # 5 concurrent posts
+
+            async def analyze_with_limit(post: Dict[str, Any]) -> tuple[str, bool]:
+                """Analyze a single post with concurrency limit"""
+                async with semaphore:
                     try:
-                        supabase_mgr = getattr(self.storage, "_supabase", None)
-                    except Exception as e:
-                        logger.debug(
-                            f"Could not get Supabase manager from storage: {e}"
-                        )
+                        if is_cancelled("analysis") or is_cancelled("all"):
+                            return (post.get("post_id", "unknown"), False)
+
+                        # Prefer passing Supabase adapter if available to ensure cloud sync
                         supabase_mgr = None
-                    await analyze_and_store_post(shim, p, supabase_manager=supabase_mgr)
-                    count += 1
-                    hub.metrics.increment("orchestrator.analyze_batch.post_success")
-                except Exception as e:
-                    post_id = p.get("post_id", "unknown")
-                    platform = p.get("platform", "unknown")
-                    logger.warning(
-                        f"Failed to analyze post {post_id} ({platform}): {e}"
-                    )
-                    import traceback
+                        try:
+                            supabase_mgr = getattr(self.storage, "_supabase", None) if hasattr(self.storage, "_supabase") else None
+                        except Exception as e:
+                            logger.debug(
+                                f"Could not get Supabase manager from storage: {e}"
+                            )
+                            supabase_mgr = None
 
-                    logger.debug(f"Analysis error traceback:\n{traceback.format_exc()}")
+                        success = await analyze_and_store_post(shim, post, supabase_manager=supabase_mgr)
 
-                    # Track error
-                    hub.metrics.increment(
-                        "orchestrator.analyze_batch.post_failed",
-                        labels={"platform": platform, "error_type": type(e).__name__},
-                    )
-                    continue
+                        if success:
+                            hub.metrics.increment("orchestrator.analyze_batch.post_success")
+                        else:
+                            hub.metrics.increment(
+                                "orchestrator.analyze_batch.post_failed",
+                                labels={"platform": post.get("platform", "unknown")},
+                            )
+
+                        return (post.get("post_id", "unknown"), success)
+                    except Exception as e:
+                        post_id = post.get("post_id", "unknown")
+                        platform = post.get("platform", "unknown")
+                        logger.warning(
+                            f"Failed to analyze post {post_id} ({platform}): {e}"
+                        )
+                        import traceback
+
+                        logger.debug(f"Analysis error traceback:\n{traceback.format_exc()}")
+
+                        hub.metrics.increment(
+                            "orchestrator.analyze_batch.post_failed",
+                            labels={"platform": platform, "error_type": type(e).__name__},
+                        )
+                        return (post_id, False)
+
+            # Process all posts in parallel
+            logger.info(f"Processing {len(posts)} posts in parallel (max 5 concurrent)...")
+            results = await asyncio.gather(*[analyze_with_limit(p) for p in posts])
+
+            count = sum(1 for _, success in results if success)
+            analyzed_post_ids = [post_id for post_id, success in results if success]
 
             # Track batch completion
             hub.metrics.record_histogram(
@@ -624,7 +741,8 @@ class Orchestrator:
                 labels={"limit": str(limit), "force": str(force)},
             )
 
-            return count
+            # Return both count and analyzed post IDs for rewrite cycle
+            return {"count": count, "analyzed_post_ids": analyzed_post_ids}
         except Exception as e:
             logger.error(f"analyze_batch failed: {e}")
             import traceback
@@ -641,7 +759,8 @@ class Orchestrator:
                 labels={"error_type": type(e).__name__},
             )
 
-            return 0
+            # Return dict format even on error (for consistency)
+            return {"count": 0, "analyzed_post_ids": []}
         finally:
             release_analysis_lock()
 
@@ -651,7 +770,7 @@ class Orchestrator:
             posts = self.storage.get_posts(limit=20)
             return {"items": posts, "generated_at": asyncio.get_event_loop().time()}
         except Exception as e:
-            logger.error(f"Error in analyze_batch wrapper: {e}")
+            logger.error(f"Error in generate_digest: {e}")
             return {"error": str(e)}
 
     async def build_news_feed(self, limit: int = 50) -> List[Dict[str, Any]]:
@@ -725,21 +844,17 @@ class Orchestrator:
             return []
 
 
-# Global orchestrator instance
+# P1-2: Thread-safe singleton pattern
 _orchestrator_singleton: Optional[Orchestrator] = None
+_orchestrator_lock = threading.Lock()
 
 
 def get_orchestrator() -> Orchestrator:
+    """Thread-safe singleton for Orchestrator"""
     global _orchestrator_singleton
     if _orchestrator_singleton is None:
-        _orchestrator_singleton = Orchestrator()
+        with _orchestrator_lock:
+            # Double-check pattern to prevent race condition
+            if _orchestrator_singleton is None:
+                _orchestrator_singleton = Orchestrator()
     return _orchestrator_singleton
-
-    async def collect_discovery(self) -> int:
-        """Collect from autonomous discovery"""
-        try:
-            discovery_result = await self.autonomous_discover()
-            return discovery_result.get("saved", 0)
-        except Exception as e:
-            logger.error(f"Discovery collection failed: {e}")
-            return 0

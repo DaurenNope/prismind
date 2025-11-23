@@ -14,10 +14,10 @@ from flask import Flask, jsonify, redirect, render_template, request, url_for
 
 load_dotenv(override=True)
 
-from src.intelligence.trend_analyzer import TrendAnalyzer
-from src.publishing.rewriter import ContentRewriter
-from src.publishing.scheduler import PublishingScheduler
-from src.storage.db import StorageFacade
+from src.domain.intelligence.trend_analyzer import TrendAnalyzer
+from src.domain.publishing.modular_rewriter.compat import create_compat_rewriter
+from src.domain.publishing.scheduler import PublishingScheduler
+from src.infrastructure.database.storage.db import StorageFacade
 
 app = Flask(__name__)
 
@@ -28,7 +28,7 @@ APPROVED_DIR = Path("training_data/approved")
 
 # Initialize services
 db = StorageFacade()
-rewriter = ContentRewriter()
+rewriter = create_compat_rewriter()
 scheduler = PublishingScheduler()
 trend_analyzer = TrendAnalyzer()
 

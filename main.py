@@ -9,6 +9,7 @@ Autonomous content collection, analysis, and publishing system.
 import argparse
 import asyncio
 import os
+import signal
 import sys
 from pathlib import Path
 
@@ -28,6 +29,82 @@ def run_collector():
         sys.exit(1)
 
 
+def verify_posting():
+    """Run posting verification script"""
+    try:
+        import asyncio
+        from scripts.verify_posting import verify
+
+        asyncio.run(verify())
+    except ImportError as e:
+        print(f"❌ Could not import verification script: {e}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"❌ Verification failed: {e}")
+        sys.exit(1)
+
+
+def run_monitor():
+    """Run system monitoring dashboard"""
+    try:
+        import asyncio
+        from scripts.monitor_system import monitor
+
+        asyncio.run(monitor())
+    except ImportError as e:
+        print(f"❌ Could not import monitoring script: {e}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"❌ Monitoring failed: {e}")
+        sys.exit(1)
+
+
+def run_qa():
+    """Run QA checks"""
+    try:
+        import json
+        from src.agents.specialized.qa_agent import QAAgent
+
+        qa = QAAgent()
+        asyncio.run(qa.initialize())
+        results = asyncio.run(qa._run_qa_suite())
+
+        print("\n" + "=" * 80)
+        print("🔍 QA REPORT")
+        print("=" * 80)
+        print(f"Overall Score: {results['overall_score']:.1f}%")
+        print(f"Summary: {results['summary']}")
+        print("\nDetails:")
+        print(json.dumps(results, indent=2))
+    except ImportError as e:
+        print(f"❌ Could not import QA agent: {e}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"❌ QA check failed: {e}")
+        sys.exit(1)
+
+
+def start_integrated_automation():
+    """Start integrated automation system"""
+    from src.core.orchestration.integrated_automation import (
+        IntegratedAutomationOrchestrator,
+    )
+
+    orchestrator = IntegratedAutomationOrchestrator()
+
+    # Setup signal handlers
+    def signal_handler(sig, frame):
+        print("\n🛑 Shutting down...")
+        orchestrator.stop()
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+
+    # Run forever
+    asyncio.run(orchestrator.run_forever(interval_minutes=60, use_agent_graph=True))
+
+
 def setup_environment():
     """Check and setup environment"""
     env_file = Path(__file__).parent / ".env"
@@ -43,59 +120,42 @@ def setup_environment():
 
 
 def validate_startup_config():
-    """Validate configuration on startup"""
+    """Validate configuration at startup"""
+    from src.utils.config import get_config
+    from src.utils.logging_config import get_logger
+
+    logger = get_logger(__name__)
+
     try:
-        from src.utils.config import get_config
-        from src.utils.config_validator import validate_config
-
         config = get_config()
+        is_valid, missing = config.validate_startup_config()
 
-        # Convert config to dict for validation
-        config_dict = {
-            "supabase_url": config.supabase_url,
-            "supabase_service_role_key": config.supabase_service_role_key,
-            "supabase_enabled": config.flags.get("supabase_enabled", True),
-            "enable_sqlite_cache": config.flags.get("enable_sqlite_cache", False),
-            "enable_analysis": config.flags.get("enable_analysis", True),
-            "enable_threads": config.flags.get("enable_threads", False),
-            "auto_pipeline_batch_limit": config.flags.get(
-                "auto_pipeline_batch_limit", 25
-            ),
-            "rewriter_min_quality_score": config.flags.get(
-                "rewriter_min_quality_score", 5.0
-            ),
-        }
+        if not is_valid:
+            print("❌ CRITICAL: Missing required configuration:")
+            for var in missing:
+                print(f"   - {var}")
+            print("\nPlease set these in your .env file or environment.")
+            print("See docs/PRODUCTION_RUNBOOK.md for configuration guide.")
 
-        result = validate_config(config_dict)
+            # Log errors
+            for var in missing:
+                logger.error(f"Configuration error: Missing {var}")
 
-        if not result.is_valid:
-            print("❌ Configuration validation failed:")
-            for error in result.errors:
-                print(f"   - {error}")
+            sys.exit(1)
 
-            # Show warnings too
-            if result.warnings:
-                print("\n⚠️ Configuration warnings:")
-                for warning in result.warnings:
-                    print(f"   - {warning}")
-
-            print(
-                "\n⚠️ Continuing with invalid configuration (some features may not work)"
-            )
-            return False
-
-        if result.warnings:
-            print("⚠️ Configuration warnings:")
-            for warning in result.warnings:
-                print(f"   - {warning}")
+        # Optional: Warning for Redis URL (non-fatal)
+        redis_url = os.getenv("REDIS_URL", "")
+        if not redis_url:
+            logger.warning("REDIS_URL not set - workers may not function properly")
 
         print("✅ Configuration validated successfully")
-        return True
+        logger.info("✅ Startup configuration validation passed")
 
     except Exception as e:
-        print(f"⚠️ Configuration validation error: {e}")
-        print("⚠️ Continuing without validation (some features may not work)")
-        return False
+        print(f"\n❌ Configuration validation error: {e}")
+        logger.exception("Configuration validation failed with exception")
+        print("Please check your configuration and try again.\n")
+        sys.exit(1)
 
 
 def main():
@@ -106,7 +166,11 @@ def main():
         epilog="""
 Examples:
   python main.py collect          # Run collection service
-  python main.py --help           # Show this help message
+  python main.py integrated       # Run integrated automation (AgentGraph + FullAutomationLoop)
+  python main.py verify-posting   # Verify content posting is working
+  python main.py monitor          # Run real-time system monitoring dashboard
+  python main.py qa               # Run QA checks and quality assurance
+  python main.py --help          # Show this help message
         """,
     )
 
@@ -114,7 +178,7 @@ Examples:
         "command",
         nargs="?",
         default="collect",
-        choices=["collect"],
+        choices=["collect", "integrated", "verify-posting", "monitor", "qa"],
         help="Command to run (default: collect)",
     )
 
@@ -132,6 +196,14 @@ Examples:
     # Route to appropriate function
     if args.command == "collect":
         run_collector()
+    elif args.command == "integrated":
+        start_integrated_automation()
+    elif args.command == "verify-posting":
+        verify_posting()
+    elif args.command == "monitor":
+        run_monitor()
+    elif args.command == "qa":
+        run_qa()
     else:
         parser.print_help()
         sys.exit(1)

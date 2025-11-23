@@ -14,7 +14,8 @@ This is NOT a full "agent" - just a service/function integrated into analysis.
 import json
 import logging
 from pathlib import Path
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Any, Dict, List, Optional
+
 import numpy as np
 
 from src.core.indexing.embedding_service import EmbeddingService
@@ -183,8 +184,9 @@ class PersonaMatcher:
         """Check if post meets persona quality thresholds"""
         thresholds = persona.get('quality_thresholds', {})
         
+        # Standardized field names: value_score, quality_score (with legacy fallbacks)
         post_value_score = post.get('value_score') or post.get('intelligent_value_score') or 0.0
-        post_quality_score = post.get('content_quality_score') or post.get('quality_score') or 0.0
+        post_quality_score = post.get('quality_score') or post.get('content_quality_score') or 0.0
         
         min_value = thresholds.get('min_value_score', 0.0)
         min_quality = thresholds.get('min_content_quality', 0.0)

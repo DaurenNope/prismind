@@ -13,8 +13,8 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from src.services.profile_content_pipeline import ProfileContentPipeline
-from src.storage.db import get_storage
-from src.utils.config import get_config
+from src.infrastructure.database.storage.db import get_storage
+from src.shared.utils.config import get_config
 
 logger = logging.getLogger(__name__)
 
@@ -411,4 +411,4 @@ if __name__ == "__main__":
 
     logger.info("\n" + "=" * 80)
     logger.info("✅ Selector demo complete!")
-    print("=" * 80)
+    logger.info("=" * 80)

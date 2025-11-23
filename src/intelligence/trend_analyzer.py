@@ -387,7 +387,7 @@ def demo_trend_analysis():
     analyzer = TrendAnalyzer()
 
     # Load posts from database
-    from src.storage.db import StorageFacade
+    from src.infrastructure.database.storage.db import StorageFacade
 
     db = StorageFacade()
     posts = db.get_posts(limit=100)

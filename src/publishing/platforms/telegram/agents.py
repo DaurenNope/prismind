@@ -4,15 +4,16 @@ Telegram Bot Agent Commands Extension
 New commands for GitHub research, book analysis, and content rewriting
 """
 
-import logging
 import html
+import logging
+
 from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
-from src.publishing.rewriter import get_rewriter
-from src.agents.github_research_agent import get_github_agent
-from src.agents.librarian_book_agent import get_librarian
+from src.domain.intelligence.agents.github_research_agent import get_github_agent
+from src.domain.intelligence.agents.librarian_book_agent import get_librarian
+from src.domain.publishing.modular_rewriter import get_rewriter
 from src.services.new_database_manager import get_database_manager
 
 logger = logging.getLogger(__name__)

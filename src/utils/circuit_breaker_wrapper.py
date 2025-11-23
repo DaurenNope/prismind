@@ -14,8 +14,8 @@ from enum import Enum
 from functools import wraps
 from typing import Any, Callable, Dict, Optional, TypeVar
 
-from src.utils.logging_config import get_logger
-from src.utils.observability_hub import get_observability_hub
+from src.shared.utils.logging_config import get_logger
+from src.shared.utils.observability_hub import get_observability_hub
 
 T = TypeVar("T")
 logger = get_logger(__name__)

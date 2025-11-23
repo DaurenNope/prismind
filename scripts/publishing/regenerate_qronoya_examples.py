@@ -9,14 +9,14 @@ import os
 from dotenv import load_dotenv
 from supabase import create_client
 
-from src.publishing.rewriter import ContentRewriter
+from src.domain.publishing.modular_rewriter.compat import create_compat_rewriter
 
 load_dotenv()
 
 
 async def regenerate_examples():
     supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
-    rewriter = ContentRewriter()
+    rewriter = create_compat_rewriter()
 
     print("🔄 Regenerating qronoya voice examples with fixed rewriter...\n")
 

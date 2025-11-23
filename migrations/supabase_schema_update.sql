@@ -2,7 +2,7 @@
 -- Adding missing columns that the application is trying to insert
 
 ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS content_summary TEXT;
-ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS action_items TEXT;
+ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS action_items TEXT[];
 ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS insights TEXT;
 ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS recommendations TEXT;
 ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS educational_value TEXT;

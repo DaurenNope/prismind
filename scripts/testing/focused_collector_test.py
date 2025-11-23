@@ -10,9 +10,9 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from src.core.extraction.twitter_extractor_playwright import TwitterExtractorPlaywright
-from src.core.extraction.reddit_extractor import RedditExtractor
-from src.core.extraction.threads_extractor import ThreadsExtractor
+from src.domain.collection.extractors.twitter_extractor_playwright import TwitterExtractorPlaywright
+from src.domain.collection.extractors.reddit_extractor import RedditExtractor
+from src.domain.collection.extractors.threads_extractor import ThreadsExtractor
 
 async def test_twitter_extractor():
     """Test Twitter extractor directly"""

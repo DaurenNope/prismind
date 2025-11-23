@@ -17,7 +17,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 # Use the newer database bridge (supabase-backed) instead of legacy mimesis module
-from src.database.publishing.bridge import MimesisDB
+from src.infrastructure.database.publishing.bridge import MimesisDB
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"

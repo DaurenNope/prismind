@@ -10,7 +10,7 @@ Handles parsing and basic summarization functionality
 import re
 from typing import Any, Dict, List
 
-from src.core.analysis.thread_summary import ThreadSummary
+from src.domain.analysis.analyzers.thread_summary import ThreadSummary
 
 
 class ThreadSummarizerParser:

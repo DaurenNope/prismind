@@ -6,18 +6,16 @@ Provides reliable message processing with Redis Streams
 import asyncio
 import json
 import logging
-import pickle
 import time
 import uuid
-from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, TypeVar, Union
+from typing import Any, Callable, Dict, Optional, TypeVar
 
 import redis.asyncio as aioredis
 from redis.asyncio import Redis
 
-from ..utils.exceptions import QueueError, QueueTimeoutError
+from ..utils.exceptions import QueueError
 
 T = TypeVar("T")
 logger = logging.getLogger(__name__)

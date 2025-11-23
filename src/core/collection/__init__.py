@@ -1,22 +1,4 @@
 """
-BEYONDLINES Content Collection Module
-
-This module provides universal content collection capabilities for scraping
-any website, social media platform, or web application.
+Backward compatibility: Redirect to new domain structure
 """
-
-from .universal_collector import (
-    CollectionResult,
-    CollectionStrategy,
-    ContentType,
-    ScrapingConfig,
-    UniversalCollector,
-)
-
-__all__ = [
-    "UniversalCollector",
-    "CollectionStrategy",
-    "ContentType",
-    "ScrapingConfig",
-    "CollectionResult",
-]
+from src.domain.collection import *  # noqa

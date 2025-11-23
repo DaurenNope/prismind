@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Union
 
-from src.utils.logging_config import get_logger
+from src.shared.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -45,7 +45,6 @@ class DatabaseMetrics:
             self._sqlite.conn.commit()
         except Exception as e:
             logger.error(f"Error: {e}")
-            pass
 
     def get_collection_metrics(self, platform: str) -> Optional[Dict[str, Any]]:
         """Get collection metrics for a platform"""
@@ -65,7 +64,6 @@ class DatabaseMetrics:
                 logger.debug(
                     f"get_collection_metrics from Supabase failed for {platform}: {e}"
                 )
-                pass
         # Fallback to SQLite
         if self._sqlite is not None:
             try:
@@ -88,7 +86,6 @@ class DatabaseMetrics:
                     return dict(zip(cols, row))
             except Exception as e:
                 logger.error(f"Error: {e}")
-                pass
         return None
 
     def get_quality_metrics(
@@ -370,7 +367,6 @@ class DatabaseMetrics:
                 self._sqlite.conn.commit()
             except Exception as e:
                 logger.error(f"Error: {e}")
-                pass
         return True
 
     def record_post_operation(
@@ -423,7 +419,6 @@ class DatabaseMetrics:
                     logger.debug(f"post_operations tracking skipped: {e}")
                 else:
                     logger.warning(f"post_operations tracking failed: {e}")
-                pass
 
         # Track quality metrics if quality_score is present
         if quality_score is not None:
@@ -469,7 +464,6 @@ class DatabaseMetrics:
                 logger.debug(f"quality_metrics tracking skipped: {e}")
             else:
                 logger.warning(f"quality_metrics tracking failed: {e}")
-            pass
 
     def get_quality_metrics(
         self, platform: Optional[str] = None, hours: int = 24, limit: int = 100

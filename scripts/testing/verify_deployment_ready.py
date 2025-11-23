@@ -259,7 +259,7 @@ class DeploymentVerifier:
 
         # Check if health endpoints are defined in main API
         try:
-            import src.api.main
+            import src.application.api.main
 
             app = src.api.main.app
 

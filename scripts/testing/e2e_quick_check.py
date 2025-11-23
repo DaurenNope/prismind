@@ -8,7 +8,7 @@ Quick end-to-end check:
 
 import asyncio
 
-from src.pipeline.orchestrator import get_orchestrator
+from src.application.automation.orchestrator import get_orchestrator
 
 
 async def main():

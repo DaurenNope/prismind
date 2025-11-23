@@ -216,7 +216,7 @@ async def test_threads_live_posting():
         print(f"✅ Selected Threads mention: {selected_mention.content[:50]}...")
 
         # Generate reply using AI
-        from src.core.analysis.ai_service_manager import ai_service_manager
+        from src.domain.analysis.analyzers.ai_service_manager import ai_service_manager
 
         context_prompt = f"""
         You are Beyondlines on Threads. Reply to this mention:

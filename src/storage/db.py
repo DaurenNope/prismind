@@ -7,12 +7,15 @@ Provides a minimal, stable interface for saving and reading posts.
 
 from __future__ import annotations
 
+import asyncio
+import queue
+import threading
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from src.utils.config import get_config
-from src.utils.duplicate_detector import DuplicateDetector
-from src.utils.logging_config import get_logger
+from src.shared.utils.config import get_config
+from src.shared.utils.duplicate_detector import DuplicateDetector
+from src.shared.utils.logging_config import get_logger
 
 
 class StorageFacade:
@@ -24,15 +27,25 @@ class StorageFacade:
         self._supabase = None
         self._sqlite = None
         self._dupes = None
+        
+        # P0-1: Async SQLite sync queue (non-blocking cache sync)
+        self._sqlite_sync_queue: queue.Queue = queue.Queue(maxsize=1000)
+        self._sync_worker_thread: Optional[threading.Thread] = None
+        self._sync_worker_running = False
+        self._start_sync_worker()
+        
+        # P1-1: Thread-safe lock for duplicate detection (prevents race conditions)
+        # This makes duplicate check + write operation atomic within a single process
+        self._duplicate_check_lock = threading.Lock()
 
         if self.config.flags.get("supabase_enabled", True):
-            from src.storage.supabase_adapter import SupabaseAdapter
+            from src.infrastructure.database.storage.supabase_adapter import SupabaseAdapter
 
             self._supabase = SupabaseAdapter()
 
         if self.config.flags.get("enable_sqlite_cache", True):
             try:
-                from src.storage.sqlite_adapter import SQLiteAdapter
+                from src.infrastructure.database.storage.sqlite_adapter import SQLiteAdapter
 
                 self._sqlite = SQLiteAdapter()
             except Exception as exc:
@@ -45,132 +58,229 @@ class StorageFacade:
 
     # Write operations
     def save_post(self, post: Dict[str, Any]) -> bool:
+        """P2-3: Refactored save_post with extracted methods for single responsibility"""
+        # Step 1: Normalize post ID
+        post_id = self._normalize_post_id(post)
+        
+        # Step 2: Set collected_at timestamp
+        self._ensure_collected_at(post)
+        
+        # P1-1: Atomic duplicate check + write operation (prevents race conditions)
+        # Use lock to make duplicate detection and write atomic within a single process
+        with self._duplicate_check_lock:
+            # Step 3: Check for existing record (read-only)
+            updated_existing = self._check_existing_record(post_id)
+            
+            # Step 4: Detect duplicates (atomic with write)
+            duplicate_detected = self._detect_duplicates(post, post_id, updated_existing)
+            
+            # Step 5: Write to Supabase (PRIMARY) - atomic with duplicate check
+            supabase_ok = self._write_to_supabase(post, post_id)
+        
+        # Step 6: Determine success (Supabase only)
+        success = supabase_ok
+        
+        # Step 7: Queue async SQLite sync (non-blocking)
+        if success:
+            self._queue_sqlite_sync_safe(post, post_id)
+        
+        # Step 8: Log failure if needed
+        if not success:
+            self._log_save_failure(post, post_id, supabase_ok)
+        
+        # Step 9: Post-save monitoring (non-blocking)
+        if success:
+            self._monitor_post_save(post)
+        
+        return success
+
+    def check_batch_duplicates(self, posts: List[Dict[str, Any]]) -> Dict[str, bool]:
+        """
+        Check duplicates for multiple posts in single query.
+
+        Args:
+            posts: List of post dictionaries
+
+        Returns:
+            Dict mapping post_id to is_duplicate (True/False)
+        """
+        if not posts:
+            return {}
+
+        with self._duplicate_check_lock:
+            post_ids = [self._normalize_post_id(p) for p in posts if self._normalize_post_id(p)]
+            urls = [p.get("url", "").strip() for p in posts if p.get("url")]
+
+            duplicates = {}
+
+            # Batch query Supabase
+            if self._supabase and post_ids:
+                try:
+                    # Process in batches of 100 (Supabase limit)
+                    all_existing_ids = set()
+                    all_existing_urls = set()
+
+                    for i in range(0, len(post_ids), 100):
+                        batch_ids = post_ids[i:i + 100]
+                        existing = (
+                            self._supabase.client.table("posts")
+                            .select("post_id, url")
+                            .in_("post_id", batch_ids)
+                            .execute()
+                        )
+
+                        if existing.data:
+                            all_existing_ids.update(row.get("post_id") for row in existing.data if row.get("post_id"))
+                            all_existing_urls.update(row.get("url") for row in existing.data if row.get("url"))
+
+                    # Check URLs separately if we have URLs but not IDs
+                    if urls:
+                        # Query by URL (need to check each URL or use OR conditions)
+                        # For simplicity, check unique URLs in batches
+                        unique_urls = list(set(urls))
+                        for url in unique_urls[:100]:  # Limit to 100 URLs
+                            try:
+                                url_result = (
+                                    self._supabase.client.table("posts")
+                                    .select("url")
+                                    .eq("url", url)
+                                    .limit(1)
+                                    .execute()
+                                )
+                                if url_result.data:
+                                    all_existing_urls.add(url)
+                            except Exception:
+                                pass  # Skip if URL query fails
+
+                    # Build duplicate mapping
+                    for post in posts:
+                        post_id = self._normalize_post_id(post)
+                        url = post.get("url", "").strip()
+                        is_dup = (post_id and post_id in all_existing_ids) or (url and url in all_existing_urls)
+                        key = post_id or url or f"post_{posts.index(post)}"
+                        duplicates[key] = is_dup
+
+                except Exception as e:
+                    self.logger.warning(f"Batch duplicate check failed: {e}")
+                    # Return all as non-duplicates on error (conservative approach)
+                    duplicates = {
+                        self._normalize_post_id(p) or p.get("url", "") or str(i): False
+                        for i, p in enumerate(posts)
+                    }
+            else:
+                # No Supabase or no post_ids - return all as non-duplicates
+                duplicates = {
+                    self._normalize_post_id(p) or p.get("url", "") or str(i): False
+                    for i, p in enumerate(posts)
+                }
+
+            return duplicates
+
+    # P2-3: Extracted methods for single responsibility
+    
+    def _normalize_post_id(self, post: Dict[str, Any]) -> Optional[str]:
+        """Normalize post ID (e.g., Reddit t3_ prefix)"""
         post_id = post.get("post_id")
         platform_value = str(post.get("platform") or "").lower()
         if platform_value == "reddit":
             normalized_id = self._normalize_reddit_post_id(post_id)
             if normalized_id:
                 post["post_id"] = normalized_id
-                post_id = normalized_id
+                return normalized_id
+        return post_id
 
-        supabase_ok = False
-        sqlite_ok = False
-
-        # ALWAYS stamp ingest time for reliable "latest arrivals" sorting
-        # This is critical - collected_at must ALWAYS be set
+    def _ensure_collected_at(self, post: Dict[str, Any]) -> None:
+        """Ensure collected_at timestamp is set"""
         try:
             if "collected_at" not in post or not post.get("collected_at"):
                 post["collected_at"] = datetime.now(timezone.utc).isoformat()
         except Exception as e:
-            # If setting collected_at fails, log it but continue
             self.logger.warning(f"Failed to set collected_at: {e}")
             try:
                 post["collected_at"] = datetime.now(timezone.utc).isoformat()
             except Exception as e:
-                logger.error(f"Error: {e}")
-                pass
+                self.logger.error(f"Error: {e}")
 
-        # First attempt to update existing local record; if it succeeds, skip duplicate gate
-        updated_existing = False
+    def _check_existing_record(self, post_id: Optional[str]) -> bool:
+        """Check if record exists in SQLite cache (read-only)"""
         if post_id and self._sqlite is not None:
             try:
-                updated_existing = bool(self._sqlite.update_post(post_id, post))
-                if updated_existing:
-                    sqlite_ok = True
+                existing = self._sqlite.get_post(post_id)
+                return existing is not None
             except Exception as e:
-                import logging
+                self.logger.debug(f"⚠️ SQLite read check failed (non-critical): {e}")
+        return False
 
-                logger = logging.getLogger(__name__)
-                logger.warning(
-                    f"⚠️ SQLite update failed during save_post: {e}", exc_info=True
+    def _detect_duplicates(self, post: Dict[str, Any], post_id: Optional[str], updated_existing: bool) -> bool:
+        """Detect duplicate posts using duplicate detector"""
+        if updated_existing or not self._dupes:
+            return False
+        
+        try:
+            url = post.get("url", "")
+            if url and self._dupes.is_duplicate_url(url):
+                self.logger.info(f"🔁 Duplicate URL detected: {url} (post_id: {post_id})")
+                return True
+
+            content = post.get("content", "")
+            if content and self._dupes.is_duplicate_content(content):
+                self.logger.info(f"🔁 Duplicate content detected (post_id: {post_id})")
+                return True
+
+            if self._dupes.is_duplicate(post):
+                self.logger.info(f"🔁 Duplicate post detected (post_id: {post_id}, platform: {post.get('platform')})")
+                return True
+        except Exception as e:
+            self.logger.warning(f"⚠️ Duplicate check failed: {e}", exc_info=True)
+        
+        return False
+
+    def _write_to_supabase(self, post: Dict[str, Any], post_id: Optional[str]) -> bool:
+        """Write post to Supabase (PRIMARY storage)"""
+        if self._supabase is None:
+            return False
+        
+        try:
+            supabase_ok = self._supabase.save_post(post)
+            if not supabase_ok:
+                self.logger.warning(
+                    f"❌ Supabase save returned False (post_id: {post_id}, platform: {post.get('platform')})"
                 )
+            return supabase_ok
+        except Exception as e:
+            self.logger.error(f"❌ Supabase save failed: {e}", exc_info=True)
+            return False
 
-        # If no existing record was updated, enforce duplicate rules before insert
-        duplicate_detected = False
-        if not updated_existing:
-            try:
-                if self._dupes:
-                    url = post.get("url", "")
-                    if url and self._dupes.is_duplicate_url(url):
-                        self.logger.info(
-                            f"🔁 Duplicate URL detected, updating existing entry: {url} (post_id: {post_id})"
-                        )
-                        duplicate_detected = True
+    def _queue_sqlite_sync_safe(self, post: Dict[str, Any], post_id: Optional[str]) -> None:
+        """Queue SQLite sync safely (non-blocking, best effort)"""
+        if self._sqlite is None:
+            return
+        
+        try:
+            self._queue_sqlite_sync(post)
+        except queue.Full:
+            self.logger.warning(f"⚠️ SQLite sync queue full (non-critical) for post_id: {post_id}")
+        except Exception as e:
+            self.logger.debug(f"⚠️ SQLite sync queue error (non-critical): {e}")
 
-                    content = post.get("content", "")
-                    if content and self._dupes.is_duplicate_content(content):
-                        self.logger.info(
-                            f"🔁 Duplicate content detected, refreshing entry (post_id: {post_id})"
-                        )
-                        duplicate_detected = True
+    def _log_save_failure(self, post: Dict[str, Any], post_id: Optional[str], supabase_ok: bool) -> None:
+        """Log save failure with context"""
+        self.logger.warning(
+            f"❌ StorageFacade save_post failed for post_id: {post_id}, "
+            f"platform: {post.get('platform')}, "
+            f"supabase_ok: {supabase_ok}, "
+            f"url: {post.get('url', 'N/A')[:50]}"
+        )
 
-                    if self._dupes.is_duplicate(post):
-                        self.logger.info(
-                            f"🔁 Duplicate post detected via is_duplicate(); refreshing (post_id: {post_id}, platform: {post.get('platform')})"
-                        )
-                        duplicate_detected = True
-            except Exception as e:
-                import logging
-
-                logger = logging.getLogger(__name__)
-                logger.warning(f"⚠️ Duplicate check failed: {e}", exc_info=True)
-
-            # Try SQLite insert (primary storage)
-            if self._sqlite is not None and not duplicate_detected:
-                try:
-                    sqlite_ok = self._sqlite.save_post(post)
-                except Exception as e:
-                    import logging
-
-                    logger = logging.getLogger(__name__)
-                    logger.error(f"❌ SQLite save failed: {e}", exc_info=True)
-
-        # Supabase write (upsert) -- attempt even if local update succeeded
-        if self._supabase is not None:
-            try:
-                supabase_ok = self._supabase.save_post(post) or supabase_ok
-                if not supabase_ok:
-                    self.logger.warning(
-                        f"❌ Supabase save returned False (post_id: {post_id}, platform: {post.get('platform')})"
-                    )
-            except Exception as e:
-                import logging
-
-                logger = logging.getLogger(__name__)
-                logger.error(f"❌ Supabase save failed: {e}", exc_info=True)
-
-        success = sqlite_ok or supabase_ok
-
-        if not success:
-            self.logger.warning(
-                f"❌ StorageFacade save_post failed for post_id: {post_id}, "
-                f"platform: {post.get('platform')}, "
-                f"sqlite_ok: {sqlite_ok}, supabase_ok: {supabase_ok}, "
-                f"url: {post.get('url', 'N/A')[:50]}"
-            )
-
-        # DatabaseAgent: Proactive validation and monitoring (like a DBA)
-        if success:
-            try:
-                from src.database.database_agent import DatabaseAgent
-
-                agent = DatabaseAgent()
-
-                # Let DatabaseAgent do comprehensive validation and monitoring
-                # It will:
-                # 1. Validate the post (double-check)
-                # 2. Check data quality
-                # 3. Check for common issues
-                # 4. Track the operation
-                # 5. Alert on problems
-                agent.validate_and_monitor_post(post)
-            except Exception as e:
-                # Log but don't fail - monitoring shouldn't break saves
-                import logging
-
-                logging.debug(f"DatabaseAgent monitoring failed: {e}")
-
-        return success
+    def _monitor_post_save(self, post: Dict[str, Any]) -> None:
+        """Post-save monitoring via DatabaseAgent (non-blocking)"""
+        try:
+            from src.infrastructure.database.database_agent import get_database_agent
+            agent = get_database_agent()
+            agent.validate_and_monitor_post(post)
+        except Exception as e:
+            import logging
+            logging.debug(f"DatabaseAgent monitoring failed: {e}")
 
     @staticmethod
     def _normalize_reddit_post_id(post_id: Any) -> Optional[str]:
@@ -228,6 +338,27 @@ class StorageFacade:
                 logger.error(f"Error: {e}")
                 pass
         return []
+
+    def get_post_by_id(self, post_id: str) -> Optional[Dict[str, Any]]:
+        """Get a specific post by ID from storage."""
+        # Normalize post_id
+        normalized_id = self._normalize_post_id({"post_id": post_id}) or post_id
+
+        # Try Supabase first
+        if self._supabase is not None:
+            try:
+                return self._supabase.get_post_by_id(normalized_id)
+            except Exception as e:
+                self.logger.error(f"Error getting post from Supabase: {e}")
+
+        # Fallback to SQLite
+        if self._sqlite is not None:
+            try:
+                return self._sqlite.get_post_by_id(normalized_id)
+            except Exception as e:
+                self.logger.error(f"Error getting post from SQLite: {e}")
+
+        return None
 
     def save_github_trending_repo(self, repo_data: Dict[str, Any]) -> bool:
         """Save GitHub trending repository to native table."""
@@ -351,7 +482,7 @@ class StorageFacade:
 
     def save_transformation(self, transformation: Dict[str, Any]) -> bool:
         """
-        Save a rewrite transformation to mimesis_transformations table.
+        Save a rewrite transformation to persona_transformations table.
         Syncs to Supabase (publishing tables are Supabase-only).
         """
         if not transformation.get("persona_key"):
@@ -364,7 +495,7 @@ class StorageFacade:
 
         try:
             result = (
-                self._supabase.client.table("mimesis_transformations")
+                self._supabase.client.table("persona_transformations")
                 .upsert(transformation, on_conflict="id")  # Update if exists
                 .execute()
             )
@@ -449,12 +580,81 @@ class StorageFacade:
             self.logger.error(f"❌ Supabase rewrite_feedback save failed: {e}")
             return False
 
+    # P0-1: Async SQLite sync methods
+    def _queue_sqlite_sync(self, post: Dict[str, Any]) -> None:
+        """Queue post for async SQLite sync (non-blocking)"""
+        try:
+            self._sqlite_sync_queue.put_nowait(post)
+        except queue.Full:
+            # Queue full - log warning but don't block
+            self.logger.warning(
+                f"⚠️ SQLite sync queue full, dropping post {post.get('post_id', 'unknown')}"
+            )
+            raise
+
+    def _start_sync_worker(self) -> None:
+        """Start background thread for async SQLite sync"""
+        if self._sync_worker_running:
+            return
+        
+        def sync_worker():
+            """Background worker that syncs posts to SQLite cache"""
+            self._sync_worker_running = True
+            self.logger.info("🔄 SQLite sync worker started")
+            
+            while self._sync_worker_running:
+                try:
+                    # Get post from queue (blocking with timeout)
+                    try:
+                        post = self._sqlite_sync_queue.get(timeout=1.0)
+                    except queue.Empty:
+                        continue
+                    
+                    # Sync to SQLite (best effort)
+                    if self._sqlite is not None:
+                        try:
+                            self._sqlite.save_post(post)
+                            self.logger.debug(
+                                f"✅ SQLite cache synced: {post.get('post_id', 'unknown')}"
+                            )
+                        except Exception as e:
+                            self.logger.debug(
+                                f"⚠️ SQLite sync failed (non-critical): {e}"
+                            )
+                    
+                    # Mark task as done
+                    self._sqlite_sync_queue.task_done()
+                    
+                except Exception as e:
+                    self.logger.error(f"❌ SQLite sync worker error: {e}", exc_info=True)
+            
+            self.logger.info("🛑 SQLite sync worker stopped")
+        
+        # Start worker thread
+        self._sync_worker_thread = threading.Thread(
+            target=sync_worker,
+            daemon=True,
+            name="SQLiteSyncWorker"
+        )
+        self._sync_worker_thread.start()
+
+    def __del__(self):
+        """Cleanup: stop sync worker on destruction"""
+        self._sync_worker_running = False
+        if self._sync_worker_thread and self._sync_worker_thread.is_alive():
+            self._sync_worker_thread.join(timeout=1.0)
+
 
 _storage_singleton: Optional[StorageFacade] = None
+_storage_lock = threading.Lock()
 
 
 def get_storage() -> StorageFacade:
+    """Thread-safe singleton for StorageFacade"""
     global _storage_singleton
     if _storage_singleton is None:
-        _storage_singleton = StorageFacade()
+        with _storage_lock:
+            # Double-check pattern to prevent race condition
+            if _storage_singleton is None:
+                _storage_singleton = StorageFacade()
     return _storage_singleton

@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from src.utils.logging_config import get_logger
+from src.shared.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -270,7 +270,6 @@ class DatabaseRepair:
                         return {"updated": 0, "skipped": True, "reason": "recently-ran"}
             except Exception as e:
                 logger.error(f"Error: {e}")
-                pass
 
         page_size = 500
         inspected = 0
@@ -422,14 +421,12 @@ class DatabaseRepair:
                         self._sqlite.conn.commit()
                     except Exception as e:
                         logger.error(f"Error: {e}")
-                        pass
 
         if not dry_run:
             try:
                 _PLATFORM_FIX_MARKER.write_text(str(time.time()))
             except Exception as e:
                 logger.error(f"Error: {e}")
-                pass
 
             if local_candidates:
                 cur = self._sqlite.conn.cursor()
@@ -451,7 +448,6 @@ class DatabaseRepair:
                     self._sqlite.conn.commit()
                 except Exception as e:
                     logger.error(f"Error: {e}")
-                    pass
 
                 if self._post_inserter is not None:
                     for post in local_candidates:

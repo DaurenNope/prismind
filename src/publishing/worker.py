@@ -2,12 +2,11 @@ import asyncio
 import logging
 import os
 import threading
-import time
 from typing import Optional
 
 import requests
 
-from src.database.publishing.bridge import MimesisDB
+from src.infrastructure.database.publishing.bridge import MimesisDB
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +22,7 @@ def _track_engagement_async(
 ) -> None:
     """Helper to track engagement asynchronously (non-blocking)"""
     try:
-        from src.publishing.engagement_tracker import get_engagement_tracker
+        from src.domain.publishing.engagement_tracker import get_engagement_tracker
 
         tracker = get_engagement_tracker()
         # Run in new event loop to avoid conflicts
@@ -57,7 +56,7 @@ def post_to_twitter_direct(content: str) -> dict:
     """
     # Try Playwright first (primary method like mimesis)
     try:
-        from src.publishing.platforms.twitter_playwright import (
+        from src.domain.publishing.platforms.twitter_playwright import (
             post_to_twitter_direct as twitter_post_playwright,
         )
 
@@ -73,7 +72,7 @@ def post_to_twitter_direct(content: str) -> dict:
 
     # Fallback to API
     try:
-        from src.publishing.platforms.twitter import (
+        from src.domain.publishing.platforms.twitter import (
             post_to_twitter_direct as twitter_post_api,
         )
 
@@ -96,7 +95,7 @@ def post_to_threads_direct(content: str, image_url: Optional[str] = None) -> dic
     """
     # Use Playwright ONLY (like mimesis - no API fallback)
     try:
-        from src.publishing.platforms.threads_playwright import (
+        from src.domain.publishing.platforms.threads_playwright import (
             post_to_threads_direct as threads_post_playwright,
         )
 
@@ -282,7 +281,7 @@ class PublisherWorker:
 
             # Global platform gating via config
             try:
-                from src.utils.config import get_config
+                from src.shared.utils.config import get_config
 
                 cfg = get_config()
                 telegram_enabled = bool(cfg.flags.get("enable_telegram_channels", True))
@@ -304,7 +303,6 @@ class PublisherWorker:
                         failed_count += 1
                     except Exception as e:
                         logger.error(f"Error: {e}")
-                        pass
                     continue
 
                 try:
@@ -383,7 +381,7 @@ class PublisherWorker:
             elif platform == "twitter":
                 # Check daily rate limit (Free tier: 17 tweets/day)
                 try:
-                    from src.publishing.twitter_rate_limiter import get_twitter_limiter
+                    from src.domain.publishing.twitter_rate_limiter import get_twitter_limiter
 
                     limiter = get_twitter_limiter()
                     can_post, reason = limiter.can_post()
@@ -415,7 +413,6 @@ class PublisherWorker:
                             limiter.record_post()
                         except Exception as e:
                             logger.error(f"Error: {e}")
-                            pass
                         platform_post_id = result.get("tweet_id")
                         post_url = result.get("url")
                         db.mark_posted(
@@ -426,7 +423,7 @@ class PublisherWorker:
 
                         # Track engagement
                         try:
-                            from src.publishing.engagement_tracker import (
+                            from src.domain.publishing.engagement_tracker import (
                                 get_engagement_tracker,
                             )
 
@@ -476,7 +473,7 @@ class PublisherWorker:
 
                         # Track engagement
                         try:
-                            from src.publishing.engagement_tracker import (
+                            from src.domain.publishing.engagement_tracker import (
                                 get_engagement_tracker,
                             )
 
@@ -539,7 +536,7 @@ class PublisherWorker:
 
                     # Global platform gating via config
                     try:
-                        from src.utils.config import get_config
+                        from src.shared.utils.config import get_config
 
                         cfg = get_config()
                         telegram_enabled = bool(
@@ -563,7 +560,6 @@ class PublisherWorker:
                                 )
                             except Exception as e:
                                 logger.error(f"Error: {e}")
-                                pass
                             continue
 
                         # Use direct Telegram Bot API (no webhook needed)

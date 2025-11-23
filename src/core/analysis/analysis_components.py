@@ -8,12 +8,11 @@ Each component handles a specific aspect of content analysis.
 Author: BEYONDLINES AI System
 """
 
-import json
 import re
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List
 
-from src.core.extraction.social_extractor_base import SocialPost
+from src.domain.collection.extractors.social_extractor_base import SocialPost
 
 
 class ContentAnalyzer:
@@ -537,7 +536,6 @@ class TimeSensitivityDetector:
                 urgency += 0.15
         except Exception as e:
             logger.error(f"Error: {e}")
-            pass
 
         # Platform hints
         if post.platform in ("twitter", "threads"):

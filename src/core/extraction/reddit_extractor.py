@@ -1,19 +1,17 @@
-import asyncio
 import json
 import logging
-import os
 import random
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple
 
 import dns.resolver
 import praw
 import prawcore
 import requests
 import urllib3
-from playwright.async_api import Browser, Page, async_playwright
+from playwright.async_api import async_playwright
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -22,7 +20,7 @@ from .social_extractor_base import SocialExtractorBase, SocialPost
 logger = logging.getLogger(__name__)
 try:
     # Optional universal fallback
-    from src.core.collection import UniversalCollector  # type: ignore
+    from src.domain.collection import UniversalCollector  # type: ignore
 
     universal_collector = UniversalCollector  # type: ignore
 except Exception:
@@ -746,7 +744,6 @@ class RedditExtractor(SocialExtractorBase):
                         "valuable_comments_count": len(top_comments),
                     },
                     is_saved=is_saved,
-                    saved_at=datetime.now() if is_saved else None,
                     folder_category=f"r/{item.subreddit.display_name}"
                     if hasattr(item, "subreddit") and item.subreddit
                     else "Unknown",
@@ -786,7 +783,6 @@ class RedditExtractor(SocialExtractorBase):
                         else 0,
                     },
                     is_saved=is_saved,
-                    saved_at=datetime.now() if is_saved else None,
                     folder_category=f"r/{item.subreddit.display_name}",
                 )
 

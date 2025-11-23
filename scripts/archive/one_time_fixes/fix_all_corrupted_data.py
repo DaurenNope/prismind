@@ -15,8 +15,8 @@ import json
 import sqlite3
 from datetime import datetime
 
-from src.database.database_agent import DatabaseAgent
-from src.utils.logging_config import get_logger
+from src.infrastructure.database.database_agent import DatabaseAgent
+from src.shared.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -255,7 +255,7 @@ def fix_supabase_database(limit=None):
         if db_agent._supabase and not db_agent._post_inserter:
             try:
                 from src.services.supabase.post_inserter import PostInserter
-                from src.utils.duplicate_detector import DuplicateDetector
+                from src.shared.utils.duplicate_detector import DuplicateDetector
 
                 duplicate_checker = None
                 if db_agent._dupes:

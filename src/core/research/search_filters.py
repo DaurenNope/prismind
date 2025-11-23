@@ -7,7 +7,7 @@ Search Filters for Research Engine
 Handles filtering and result processing
 """
 
-from typing import Any, Dict, List
+from typing import Dict, List
 
 from .search_types import SearchFilter, SearchResult
 

@@ -10,9 +10,9 @@ from datetime import datetime, timedelta, timezone
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.database.manager import SupabaseManager
-from src.storage.db import StorageFacade
-from src.utils.post_validator import validate_post
+from src.infrastructure.database.manager import SupabaseManager
+from src.infrastructure.database.storage.db import StorageFacade
+from src.shared.utils.post_validator import validate_post
 
 def main():
     print("=" * 60)

@@ -8,12 +8,17 @@ from dotenv import load_dotenv
 from playwright.async_api import async_playwright
 from playwright_stealth import stealth_async as stealth
 
+# Default cookie path matching threads extractor expectations
+# Primary location: cookies/config/threads_cookies.json (as per Ticket #11.2)
+# Fallback: cookies/threads_cookies.json (extractor default)
 OUTPUT_PATH = Path(
     os.getenv(
         "THREADS_COOKIES_FILE",
-        "/Users/mac/Documents/Development/beyondlines/config/threads_cookies.json",
+        "cookies/config/threads_cookies.json",
     )
 )
+# Legacy path for backward compatibility
+LEGACY_OUTPUT_PATH = Path("config/threads_cookies.json")
 
 
 async def _wait_for_user_confirmation(
@@ -81,12 +86,42 @@ async def capture_cookies(username: str, password: str, output: Path) -> None:
                 c2.pop("url", None)
             normalized.append(c2)
 
+        if not normalized:
+            print("⚠️ Warning: No cookies captured. Authentication may not be complete.")
+            await context.close()
+            await browser.close()
+            return
+
+        # Save to primary location
         output.parent.mkdir(parents=True, exist_ok=True)
         with open(output, "w") as f:
             json.dump(normalized, f, indent=2)
+        print(f"✅ Cookies saved to: {output}")
+        print(f"   ({len(normalized)} cookies captured)")
+
+        # Also save to extractor's expected default location for backward compatibility
+        extractor_default = Path("cookies/threads_cookies.json")
+        if output != extractor_default:
+            extractor_default.parent.mkdir(parents=True, exist_ok=True)
+            with open(extractor_default, "w") as f:
+                json.dump(normalized, f, indent=2)
+            print(f"✅ Also saved to extractor default location: {extractor_default}")
+
+        # Save to legacy location for maximum compatibility
+        if output != LEGACY_OUTPUT_PATH:
+            LEGACY_OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                with open(LEGACY_OUTPUT_PATH, "w") as f:
+                    json.dump(normalized, f, indent=2)
+                print(f"✅ Also saved to legacy location: {LEGACY_OUTPUT_PATH}")
+            except Exception as legacy_err:
+                print(f"⚠️ Could not save to legacy location: {legacy_err}")
 
         await context.close()
         await browser.close()
+        
+        print("\n✅ Cookie capture complete!")
+        print("   You can now use Threads collection with these cookies.")
 
 
 def main() -> None:

@@ -11,8 +11,8 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List, Optional
 
-from src.core.extraction.social_extractor_base import SocialPost
-from src.utils.logging_config import get_logger
+from src.domain.collection.extractors.social_extractor_base import SocialPost
+from src.shared.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 

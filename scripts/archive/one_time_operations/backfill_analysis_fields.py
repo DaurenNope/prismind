@@ -14,8 +14,8 @@ sys.path.insert(0, str(project_root))
 import sqlite3
 from datetime import datetime
 
-from src.database.database_agent import DatabaseAgent
-from src.utils.logging_config import get_logger
+from src.infrastructure.database.database_agent import DatabaseAgent
+from src.shared.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 
