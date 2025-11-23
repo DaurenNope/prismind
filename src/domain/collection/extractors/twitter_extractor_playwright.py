@@ -10,7 +10,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 
 from playwright.async_api import Browser, Page, async_playwright
 
-from ..rate_limiting.rate_limit_config import RateLimitConfig
+from src.core.rate_limiting.rate_limit_config import RateLimitConfig
 from .social_extractor_base import SocialExtractorBase, SocialPost
 from .twitter.api_client import TwitterAPIClient
 from .twitter_cookies import TwitterCookieStore

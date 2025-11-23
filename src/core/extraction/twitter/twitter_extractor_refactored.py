@@ -10,7 +10,7 @@ from typing import Dict, List, Optional
 
 from playwright.async_api import Browser, Page, async_playwright
 
-from ..rate_limiting.rate_limit_config import RateLimitConfig
+from src.core.rate_limiting.rate_limit_config import RateLimitConfig
 from ..social_extractor_base import SocialExtractorBase, SocialPost
 from .auth_manager import TwitterAuthManager
 from .data_extractor import TwitterDataExtractor
